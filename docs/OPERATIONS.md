@@ -19,6 +19,7 @@ OPENAI_API_KEY=...
 OPENAI_MODEL=...
 GITHUB_TOKEN=...
 GITHUB_WEBHOOK_SECRET=...
+AGENT_TRIGGER_MENTION=@agent-prd
 REDIS_URL=redis://localhost:6379
 ```
 
@@ -91,6 +92,17 @@ POST /webhooks/github
 - `issues.opened`
 - `issues.labeled`
 - `issues.reopened`
+- `issue_comment.created`
+
+触发方式：
+
+1. 自动模式：新建 / 重新打开 / 打标签 Issue 会自动创建任务。
+2. @ 机器人模式：在 Issue 评论中包含 `.env` 里的 `AGENT_TRIGGER_MENTION`，默认 `@agent-prd`，会创建或重新入队该 Issue 任务。
+
+GitHub Webhook 配置时，`Events` 至少选择：
+
+- Issues
+- Issue comments
 
 如果设置了 `GITHUB_WEBHOOK_SECRET`，服务会使用 `x-hub-signature-256` 做真实验签。
 
