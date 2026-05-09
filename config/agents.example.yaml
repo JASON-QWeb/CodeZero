@@ -1,0 +1,33 @@
+providers:
+  default:
+    type: openai-compatible
+    base_url: "${OPENAI_BASE_URL}"
+    api_key_env: "OPENAI_API_KEY"
+    model: "${OPENAI_MODEL}"
+    supports_tools: true
+    supports_structured_output: true
+
+agents:
+  prd:
+    provider: default
+    system_prompt: prompts/system/prd-agent.md
+    skills:
+      - brainstorm-requirements
+      - draft-prd
+  search_planner:
+    provider: default
+    system_prompt: prompts/system/search-planner-agent.md
+    skills:
+      - agentic-code-search
+  implementation:
+    provider: default
+    system_prompt: prompts/system/main-agent.md
+    skills:
+      - repo-context-compress
+      - minimal-change-planner
+  review:
+    provider: default
+    system_prompt: prompts/system/review-agent.md
+    skills:
+      - pr-compliance-review
+

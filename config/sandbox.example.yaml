@@ -1,0 +1,17 @@
+sandbox:
+  mode: docker
+  image: agent-sandbox-node:latest
+  root_dir: "./sandboxes"
+  network:
+    allow:
+      - github.com
+      - api.openai.com
+      - registry.npmjs.org
+  filesystem:
+    allow_repo_only: true
+  limits:
+    max_runtime_minutes: 90
+    max_diff_files: 30
+    max_diff_lines: 1200
+    max_quality_gate_retries: 3
+

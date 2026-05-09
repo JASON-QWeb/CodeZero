@@ -1,0 +1,18 @@
+repositories:
+  - id: example-web
+    github_owner: your-org
+    github_repo: your-repo
+    default_branch: main
+    project_skill_path: ".agent"
+    quality_gates:
+      build: "npm run build"
+      lint: "npm run lint"
+      typecheck: "npm run typecheck"
+      unit_test: "npm test"
+    frontend:
+      dev_command: "npm run dev"
+      screenshot_urls:
+        - "http://localhost:3000/"
+    pr:
+      default_draft: true
+

@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "declaration": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@agent/shared": ["packages/shared/src/index.ts"],
+      "@agent/config": ["packages/config/src/index.ts"],
+      "@agent/persistence": ["packages/persistence/src/index.ts"],
+      "@agent/orchestrator": ["packages/orchestrator/src/index.ts"],
+      "@agent/agent-runtime": ["packages/agent-runtime/src/index.ts"],
+      "@agent/sandbox": ["packages/sandbox/src/index.ts"],
+      "@agent/codebase-intelligence": ["packages/codebase-intelligence/src/index.ts"],
+      "@agent/skills": ["packages/skills/src/index.ts"],
+      "@agent/project-context": ["packages/project-context/src/index.ts"],
+      "@agent/verification": ["packages/verification/src/index.ts"],
+      "@agent/github": ["packages/github/src/index.ts"],
+      "@agent/workflows": ["packages/workflows/src/index.ts"]
+    }
+  }
+}

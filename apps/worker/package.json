@@ -1,0 +1,27 @@
+{
+  "name": "@agent/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/worker.js",
+  "scripts": {
+    "build": "tsup src/worker.ts --format esm --dts",
+    "dev": "tsx watch src/worker.ts",
+    "start": "node dist/worker.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agent/config": "workspace:*",
+    "@agent/orchestrator": "workspace:*",
+    "@agent/persistence": "workspace:*",
+    "@agent/shared": "workspace:*",
+    "@agent/workflows": "workspace:*",
+    "bullmq": "^5.64.1",
+    "ioredis": "^5.8.2"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

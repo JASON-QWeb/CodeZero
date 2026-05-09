@@ -1,0 +1,24 @@
+flowchart TD
+  A["ISSUE_RECEIVED"] --> B["CONTEXT_COLLECTING"]
+  B --> C["BRAINSTORMING"]
+  C --> D["PRD_DRAFTED"]
+  D --> E{"requires_human_review?"}
+  E -->|true| F["PRD_REVIEW_REQUIRED"]
+  F --> G["PRD_APPROVED"]
+  E -->|false| H["SANDBOX_PREPARING"]
+  G --> H
+  H --> Q["ISSUE_BRANCH_CREATED"]
+  Q --> X["CODEBASE_INDEXING"]
+  X --> Y["AGENTIC_SEARCHING"]
+  Y --> Z["CONTEXT_PACK_CREATED"]
+  Z --> I["IMPLEMENTING"]
+  I --> J["QUALITY_GATES_RUNNING"]
+  J --> K{"build/lint/test/typecheck passed?"}
+  K -->|false| L["BLOCKED or RETRY"]
+  L --> I
+  K -->|true| R["SUBAGENT_REVIEWING"]
+  R --> S{"review approved?"}
+  S -->|false| L
+  S -->|true| M["PR_CREATING"]
+  M --> N["HUMAN_REVIEW"]
+  N --> O["DONE"]
