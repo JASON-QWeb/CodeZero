@@ -294,6 +294,7 @@ GET    /settings/config
 GET    /settings/config/:section
 POST   /settings/config/:section/validate
 PUT    /settings/config/:section
+POST   /settings/providers/validate
 ```
 
 ## 5. 看板页面

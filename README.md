@@ -65,7 +65,7 @@ pnpm dev:web
 
 - GitHub Bot 形态：支持 webhook、Issue 评论触发，目标支持每个仓库配置 `auto`、`mention`、`label`、`manual` 或 `disabled`。
 - Agent 运行时：OpenAI-compatible provider、结构化输出、角色化 Agent、Review subagent 和 guardrail 门禁。
-- WebUI 配置：Settings Console 可编辑并校验 `agents.yaml`、`repositories.yaml`、`tools.yaml`、`policies.yaml` 和 `sandbox.yaml`，覆盖模型、仓库、触发方式、仓库级工具权限、Policy 和沙箱。
+- WebUI 配置：Settings Console 可编辑并校验 `agents.yaml`、`repositories.yaml`、`tools.yaml`、`policies.yaml` 和 `sandbox.yaml`，覆盖模型、仓库、触发方式、仓库级工具权限、Policy 和沙箱，并可点击 Test 验证模型 API key/base URL/model 是否可用。
 - 模型路由：每个 Agent step 可指定 provider，implementation/review 还支持按 PRD complexity score 选择 low/medium/high provider。
 - 记忆管理：已有 `@agent/memory`、memory proposal artifact、episodic/procedural 记忆草案、approved-only 本地 Memory Store，并把 approved memory 接入 ContextPack。
 - 仓库导航图：为 Agent 构建入口、符号、依赖、调用链、测试、ownership 和历史变更图，提升大仓库读代码速度和准确度。

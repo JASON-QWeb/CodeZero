@@ -118,11 +118,13 @@ GET  http://localhost:4000/settings/config
 GET  http://localhost:4000/settings/config/<agents|repositories|tools|policies|sandbox>
 POST http://localhost:4000/settings/config/<section>/validate
 PUT  http://localhost:4000/settings/config/<section>
+POST http://localhost:4000/settings/providers/validate
 ```
 
 Settings Console 会保存到实际 `config/*.yaml`，保存前使用同一套 Zod schema 校验。当前可在 WebUI 完成：
 
 - 大模型 provider 配置：DeepSeek、Qwen、OpenAI-compatible gateway。
+- 大模型连通性验证：选择 provider 后点击 Test，会真实请求 `/chat/completions` 验证 base URL、model 和 API key 是否可用。
 - Agent step routing：`prd`、`implementation`、`review` 等步骤选择 provider。
 - Complexity routing：`provider_by_complexity.low|medium|high`，让简单任务走快速/便宜模型，复杂任务走强模型。
 - GitHub 仓库配置：owner、repo、default branch、trigger mode、quality gates、frontend screenshot URLs。
@@ -131,7 +133,7 @@ Settings Console 会保存到实际 `config/*.yaml`，保存前使用同一套 Z
 - Policy-as-code：路径、命令、权限、工具名匹配，以及 `block` / `require_approval` 动作。
 - Sandbox：docker/worktree、image、network allowlist、runtime limits。
 
-Secret 不直接明文保存在 WebUI 中；provider 仍通过 `api_key_env` 引用 `.env` 或部署环境变量。
+Secret 不直接明文保存在 WebUI 中；provider 仍通过 `api_key_env` 引用 `.env` 或部署环境变量。Provider Connection Test 支持输入一次性 API key 做验证，但该 key 只用于本次请求，不写入 YAML。
 
 Complexity routing 示例：
 

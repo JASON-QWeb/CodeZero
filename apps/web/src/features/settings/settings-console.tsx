@@ -28,6 +28,17 @@ type ValidationResponse = {
   message?: string;
 };
 
+type ProviderValidationResponse = {
+  providerId: string;
+  valid: boolean;
+  message: string;
+  baseUrl?: string;
+  model?: string;
+  statusCode?: number;
+  latencyMs?: number;
+  usedApiKeySource?: "request" | "env" | "missing";
+};
+
 const sectionMeta: Record<ConfigSectionName, { title: string; icon: React.ReactNode; description: string }> = {
   agents: {
     title: "Model Providers & Agents",
@@ -99,11 +110,32 @@ async function saveConfig(input: { section: ConfigSectionName; content: string }
   return (await response.json()) as ConfigSection;
 }
 
+async function validateProviderConnection(input: { content: string; providerId: string; apiKey?: string }): Promise<ProviderValidationResponse> {
+  const response = await fetch(`${apiBaseUrl()}/settings/providers/validate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  const body = (await response.json().catch(() => ({}))) as Partial<ProviderValidationResponse> & { message?: string };
+
+  if (!response.ok) {
+    return {
+      providerId: input.providerId,
+      valid: false,
+      message: body.message ?? "Provider validation failed"
+    };
+  }
+
+  return body as ProviderValidationResponse;
+}
+
 export function SettingsConsole() {
   const queryClient = useQueryClient();
   const [selectedSection, setSelectedSection] = useState<ConfigSectionName>("agents");
   const [draft, setDraft] = useState("");
   const [validation, setValidation] = useState<ValidationResponse | undefined>();
+  const [providerId, setProviderId] = useState("");
+  const [providerApiKey, setProviderApiKey] = useState("");
   const configQuery = useQuery({
     queryKey: ["settings-config"],
     queryFn: fetchConfig,
@@ -121,9 +153,13 @@ export function SettingsConsole() {
       await queryClient.invalidateQueries({ queryKey: ["settings-config"] });
     }
   });
+  const providerTestMutation = useMutation({
+    mutationFn: validateProviderConnection
+  });
   const sections = configQuery.data?.sections ?? [];
   const selected = sections.find((section) => section.section === selectedSection);
   const summary = useMemo(() => buildSummary(selected), [selected]);
+  const providerIds = useMemo(() => (selected?.section === "agents" ? collectProviderIds(selected.parsed, draft) : []), [draft, selected?.parsed, selected?.section]);
 
   useEffect(() => {
     if (selected) {
@@ -131,6 +167,16 @@ export function SettingsConsole() {
       setValidation(undefined);
     }
   }, [selected?.section, selected?.content]);
+
+  useEffect(() => {
+    if (selected?.section !== "agents") {
+      return;
+    }
+
+    if (providerIds.length > 0 && !providerIds.includes(providerId)) {
+      setProviderId(providerIds[0] ?? "");
+    }
+  }, [providerId, providerIds, selected?.section]);
 
   return (
     <section className="settingsShell" aria-label="Configuration center">
@@ -206,11 +252,37 @@ export function SettingsConsole() {
                 ))}
               </div>
 
+              {selected.section === "agents" ? (
+                <ProviderConnectionTest
+                  apiKey={providerApiKey}
+                  isPending={providerTestMutation.isPending}
+                  onApiKeyChange={(value) => {
+                    setProviderApiKey(value);
+                    providerTestMutation.reset();
+                  }}
+                  onProviderChange={(value) => {
+                    setProviderId(value);
+                    providerTestMutation.reset();
+                  }}
+                  onTest={() =>
+                    providerTestMutation.mutate({
+                      content: draft,
+                      providerId,
+                      apiKey: providerApiKey.trim() || undefined
+                    })
+                  }
+                  providerId={providerId}
+                  providerIds={providerIds}
+                  result={providerTestMutation.data}
+                />
+              ) : null}
+
               <textarea
                 className="yamlEditor"
                 onChange={(event) => {
                   setDraft(event.target.value);
                   setValidation(undefined);
+                  providerTestMutation.reset();
                 }}
                 spellCheck={false}
                 value={draft}
@@ -233,6 +305,74 @@ export function SettingsConsole() {
         </section>
       </div>
     </section>
+  );
+}
+
+function ProviderConnectionTest({
+  apiKey,
+  isPending,
+  onApiKeyChange,
+  onProviderChange,
+  onTest,
+  providerId,
+  providerIds,
+  result
+}: {
+  apiKey: string;
+  isPending: boolean;
+  onApiKeyChange: (value: string) => void;
+  onProviderChange: (value: string) => void;
+  onTest: () => void;
+  providerId: string;
+  providerIds: string[];
+  result?: ProviderValidationResponse;
+}) {
+  return (
+    <div className="providerVerifier" aria-label="Provider connection test">
+      <div>
+        <h3>Provider Connection Test</h3>
+        <span>Use a one-time key here, or leave it empty to use the provider's api_key_env on the API server.</span>
+      </div>
+      <div className="providerVerifierControls">
+        <label>
+          <span>Provider</span>
+          <select disabled={providerIds.length === 0} onChange={(event) => onProviderChange(event.target.value)} value={providerId}>
+            {providerIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>One-time API key</span>
+          <input
+            autoComplete="off"
+            onChange={(event) => onApiKeyChange(event.target.value)}
+            placeholder="Optional"
+            type="password"
+            value={apiKey}
+          />
+        </label>
+        <button className="iconButton neutral" disabled={providerIds.length === 0 || !providerId || isPending} onClick={onTest} type="button">
+          <CheckCircle2 size={16} aria-hidden />
+          <span>{isPending ? "Testing" : "Test"}</span>
+        </button>
+      </div>
+      <div className={`validationBar ${result?.valid ? "validationGood" : result ? "validationBad" : ""}`}>
+        {result ? (
+          <>
+            {result.valid ? <CheckCircle2 size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
+            <span>
+              {result.message}
+              {result.model && result.latencyMs !== undefined ? ` Model: ${result.model}. Latency: ${result.latencyMs}ms.` : ""}
+            </span>
+          </>
+        ) : (
+          <span>Provider test sends one minimal chat completion request and never saves the one-time key.</span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -285,6 +425,34 @@ function buildSummary(section: ConfigSection | undefined): Array<{ label: string
     { label: "Image", value: String(sandbox.image ?? "unknown") },
     { label: "Root", value: String(sandbox.root_dir ?? "unknown") }
   ];
+}
+
+function collectProviderIds(parsed: unknown, draft: string): string[] {
+  const ids = new Set(Object.keys(asRecord(asRecord(parsed).providers)));
+  let inProviders = false;
+
+  for (const line of draft.split("\n")) {
+    if (/^providers:\s*$/.test(line)) {
+      inProviders = true;
+      continue;
+    }
+
+    if (inProviders && /^\S/.test(line)) {
+      inProviders = false;
+    }
+
+    if (!inProviders) {
+      continue;
+    }
+
+    const match = line.match(/^ {2}([A-Za-z0-9_.-]+):\s*(?:#.*)?$/);
+
+    if (match?.[1]) {
+      ids.add(match[1]);
+    }
+  }
+
+  return [...ids];
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

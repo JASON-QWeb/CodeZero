@@ -7,6 +7,7 @@ import {
   parseConfigSection,
   readConfigSection,
   writeConfigSection,
+  type AgentsFileConfig,
   type ConfigSectionName
 } from "@agent/config";
 
@@ -14,8 +15,32 @@ const updateConfigBodySchema = z.object({
   content: z.string().min(1)
 });
 
+const validateProviderBodySchema = z.object({
+  content: z.string().min(1),
+  providerId: z.string().min(1),
+  apiKey: z.string().optional()
+});
+
 export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/settings/config", async () => loadEditableConfig());
+
+  app.post<{ Body: { content?: string; providerId?: string; apiKey?: string } }>("/settings/providers/validate", async (request, reply) => {
+    const parsed = validateProviderBodySchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({ valid: false, message: "Invalid provider validation payload", issues: parsed.error.issues });
+    }
+
+    try {
+      return await validateProviderConnection(parsed.data);
+    } catch (error) {
+      return reply.code(400).send({
+        providerId: parsed.data.providerId,
+        valid: false,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
 
   app.get<{ Params: { section: string } }>("/settings/config/:section", async (request, reply) => {
     const section = parseSection(request.params.section);
@@ -74,4 +99,107 @@ function parseSection(value: string): ConfigSectionName | undefined {
 
 async function resolveRootDir(): Promise<string> {
   return process.env.PROJECT_ROOT ?? (await findWorkspaceRoot(process.cwd()));
+}
+
+async function validateProviderConnection(input: { content: string; providerId: string; apiKey?: string }) {
+  const agentsConfig = parseConfigSection("agents", input.content) as AgentsFileConfig;
+  const provider = agentsConfig.providers[input.providerId];
+
+  if (!provider) {
+    return {
+      providerId: input.providerId,
+      valid: false,
+      message: `Provider '${input.providerId}' is not defined in agents config`
+    };
+  }
+
+  if (hasUnresolvedPlaceholder(provider.base_url) || hasUnresolvedPlaceholder(provider.model)) {
+    return {
+      providerId: input.providerId,
+      valid: false,
+      baseUrl: provider.base_url,
+      model: provider.model,
+      message: "Provider base_url or model still contains unresolved environment placeholders"
+    };
+  }
+
+  const apiKey = input.apiKey?.trim() || process.env[provider.api_key_env];
+
+  if (!apiKey) {
+    return {
+      providerId: input.providerId,
+      valid: false,
+      baseUrl: provider.base_url,
+      model: provider.model,
+      usedApiKeySource: "missing",
+      message: `Missing API key. Set ${provider.api_key_env} in the API server environment or enter a one-time key in WebUI.`
+    };
+  }
+
+  const startedAt = Date.now();
+  const timeoutMs = Math.min(provider.timeout_ms ?? 15_000, 30_000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${provider.base_url.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model: provider.model,
+        messages: [{ role: "user", content: "Reply with ok." }],
+        temperature: 0,
+        max_tokens: 4
+      })
+    });
+    const latencyMs = Date.now() - startedAt;
+
+    if (!response.ok) {
+      const body = await response.text();
+      return {
+        providerId: input.providerId,
+        valid: false,
+        baseUrl: provider.base_url,
+        model: provider.model,
+        statusCode: response.status,
+        latencyMs,
+        usedApiKeySource: input.apiKey?.trim() ? "request" : "env",
+        message: `Provider returned ${response.status}: ${body.slice(0, 500)}`
+      };
+    }
+
+    return {
+      providerId: input.providerId,
+      valid: true,
+      baseUrl: provider.base_url,
+      model: provider.model,
+      statusCode: response.status,
+      latencyMs,
+      usedApiKeySource: input.apiKey?.trim() ? "request" : "env",
+      message: `Provider '${input.providerId}' responded successfully in ${latencyMs}ms.`
+    };
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    const message = error instanceof Error && error.name === "AbortError" ? `Provider validation timed out after ${timeoutMs}ms` : error instanceof Error ? error.message : String(error);
+
+    return {
+      providerId: input.providerId,
+      valid: false,
+      baseUrl: provider.base_url,
+      model: provider.model,
+      latencyMs,
+      usedApiKeySource: input.apiKey?.trim() ? "request" : "env",
+      message
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function hasUnresolvedPlaceholder(value: string): boolean {
+  return value.includes("${");
 }

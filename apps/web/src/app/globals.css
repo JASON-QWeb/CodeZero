@@ -653,6 +653,58 @@ p {
   white-space: nowrap;
 }
 
+.providerVerifier {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 13px;
+}
+
+.providerVerifier h3 {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.providerVerifier > div > span,
+.providerVerifier label span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.providerVerifierControls {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.2fr) max-content;
+  gap: 10px;
+  align-items: end;
+}
+
+.providerVerifier label {
+  display: grid;
+  gap: 6px;
+}
+
+.providerVerifier input,
+.providerVerifier select {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  padding: 0 10px;
+}
+
+.providerVerifier input:focus,
+.providerVerifier select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
 .yamlEditor {
   width: 100%;
   min-height: 460px;
@@ -703,7 +755,8 @@ p {
   .workspaceGrid,
   .settingsTopline,
   .settingsGrid,
-  .editorHeader {
+  .editorHeader,
+  .providerVerifierControls {
     align-items: stretch;
     grid-template-columns: 1fr;
   }
@@ -733,11 +786,13 @@ p {
 
   .settingsHealth,
   .editorActions,
-  .editorActions .iconButton {
+  .editorActions .iconButton,
+  .providerVerifierControls .iconButton {
     width: 100%;
   }
 
-  .editorActions .iconButton {
+  .editorActions .iconButton,
+  .providerVerifierControls .iconButton {
     justify-content: center;
   }
 }
