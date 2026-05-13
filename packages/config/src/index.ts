@@ -47,8 +47,11 @@ const agentsFileSchema = z
     }
   });
 
-const triggerModeSchema = z.enum(["auto", "mention", "label", "manual", "disabled"]);
-const toolPermissionSchema = z.enum(["read", "safe_write", "repo_write", "external_write", "dangerous"]);
+export const repositoryTriggerModes = ["auto", "mention", "label", "manual", "disabled"] as const;
+export const toolPermissionLevels = ["read", "safe_write", "repo_write", "external_write", "dangerous"] as const;
+
+const triggerModeSchema = z.enum(repositoryTriggerModes);
+const toolPermissionSchema = z.enum(toolPermissionLevels);
 
 const repositoryTriggerSchema = z
   .object({
@@ -206,6 +209,14 @@ export type AgentsFileConfig = z.infer<typeof agentsFileSchema>;
 export type RepositoryConfig = z.infer<typeof repositorySchema>;
 export type RepositoryTriggerConfig = RepositoryConfig["trigger"];
 export type RepositoryTriggerMode = RepositoryTriggerConfig["mode"];
+export type ToolPermissionLevel = z.infer<typeof toolPermissionSchema>;
+export type RepositoryRuntimeSettingsPatch = {
+  triggerMode?: RepositoryTriggerMode;
+  mention?: string;
+  maxConcurrentIssues?: number;
+  allowedPermissions?: ToolPermissionLevel[];
+  blockedPermissions?: ToolPermissionLevel[];
+};
 export type SandboxFileConfig = z.infer<typeof sandboxFileSchema>;
 export type PoliciesFileConfig = z.infer<typeof policiesFileSchema>;
 export type PolicyConfig = z.infer<typeof policySchema>;
@@ -339,6 +350,46 @@ export async function writeConfigSection(rootDir: string, section: ConfigSection
   await writeFile(tempPath, content.endsWith("\n") ? content : `${content}\n`);
   await rename(tempPath, paths.path);
   return readConfigSection(rootDir, section);
+}
+
+export async function updateRepositoryRuntimeSettings(
+  rootDir: string,
+  repositoryId: string,
+  patch: RepositoryRuntimeSettingsPatch
+): Promise<EditableConfigSection> {
+  const current = await readConfigSection(rootDir, "repositories");
+  const config = repositoriesFileSchema.parse(YAML.parse(interpolateEnv(current.content)));
+  const index = config.repositories.findIndex((repository) => repository.id === repositoryId);
+
+  if (index < 0) {
+    throw new Error(`Repository '${repositoryId}' is not defined in repositories config`);
+  }
+
+  const repository = config.repositories[index];
+
+  if (!repository) {
+    throw new Error(`Repository '${repositoryId}' is not defined in repositories config`);
+  }
+
+  config.repositories[index] = {
+    ...repository,
+    trigger: {
+      ...repository.trigger,
+      mode: patch.triggerMode ?? repository.trigger.mode,
+      mention: patch.mention?.trim() || repository.trigger.mention
+    },
+    queue: {
+      ...repository.queue,
+      max_concurrent_issues: patch.maxConcurrentIssues ?? repository.queue.max_concurrent_issues
+    },
+    permissions: {
+      ...repository.permissions,
+      allowed_permissions: patch.allowedPermissions ?? repository.permissions.allowed_permissions,
+      blocked_permissions: patch.blockedPermissions ?? repository.permissions.blocked_permissions
+    }
+  };
+
+  return writeConfigSection(rootDir, "repositories", YAML.stringify(config));
 }
 
 export function parseConfigSection(section: ConfigSectionName, content: string): unknown {

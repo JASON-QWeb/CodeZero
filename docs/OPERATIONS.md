@@ -129,6 +129,7 @@ GET  http://localhost:4000/settings/config/<agents|repositories|tools|policies|s
 POST http://localhost:4000/settings/config/<section>/validate
 PUT  http://localhost:4000/settings/config/<section>
 POST http://localhost:4000/settings/providers/validate
+PUT  http://localhost:4000/settings/repositories/<repository-id>/runtime
 ```
 
 Settings Console 会保存到实际 `config/*.yaml`，保存前使用同一套 Zod schema 校验。当前可在 WebUI 完成：
@@ -140,6 +141,7 @@ Settings Console 会保存到实际 `config/*.yaml`，保存前使用同一套 Z
 - GitHub 仓库配置：owner、repo、default branch、trigger mode、quality gates、frontend screenshot URLs。
 - 仓库级运行上限：`queue.max_concurrent_issues` 控制每个仓库最多同时执行几个 issue。
 - 仓库级权限：每个 repository 可配置 tool allowlist/blocklist 和 permission allowlist/blocklist，执行时会合成 Tool Gateway policy。
+- 仓库快捷配置：Repository Quick Settings 可直接修改 trigger mode、mention、并发上限、allowed permissions 和 blocked permissions。
 - Tool Gateway 权限：tool permission、timeout、policy refs。
 - Policy-as-code：路径、命令、权限、工具名匹配，以及 `block` / `require_approval` 动作。
 - Sandbox：docker/worktree、image、network allowlist、runtime limits。

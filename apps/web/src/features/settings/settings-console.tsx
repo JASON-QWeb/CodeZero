@@ -39,6 +39,32 @@ type ProviderValidationResponse = {
   usedApiKeySource?: "request" | "env" | "missing";
 };
 
+type TriggerMode = "auto" | "mention" | "label" | "manual" | "disabled";
+type ToolPermissionLevel = "read" | "safe_write" | "repo_write" | "external_write" | "dangerous";
+
+type RepositoryQuickConfig = {
+  id: string;
+  owner: string;
+  repo: string;
+  triggerMode: TriggerMode;
+  mention: string;
+  maxConcurrentIssues: number;
+  allowedPermissions: ToolPermissionLevel[];
+  blockedPermissions: ToolPermissionLevel[];
+};
+
+type RepositoryRuntimeSettingsInput = {
+  repositoryId: string;
+  triggerMode: TriggerMode;
+  mention: string;
+  maxConcurrentIssues: number;
+  allowedPermissions: ToolPermissionLevel[];
+  blockedPermissions: ToolPermissionLevel[];
+};
+
+const triggerModes: TriggerMode[] = ["auto", "mention", "label", "manual", "disabled"];
+const permissionLevels: ToolPermissionLevel[] = ["read", "safe_write", "repo_write", "external_write", "dangerous"];
+
 const sectionMeta: Record<ConfigSectionName, { title: string; icon: React.ReactNode; description: string }> = {
   agents: {
     title: "Model Providers & Agents",
@@ -129,6 +155,27 @@ async function validateProviderConnection(input: { content: string; providerId: 
   return body as ProviderValidationResponse;
 }
 
+async function updateRepositoryRuntimeSettings(input: RepositoryRuntimeSettingsInput): Promise<ConfigSection> {
+  const response = await fetch(`${apiBaseUrl()}/settings/repositories/${encodeURIComponent(input.repositoryId)}/runtime`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      triggerMode: input.triggerMode,
+      mention: input.mention,
+      maxConcurrentIssues: input.maxConcurrentIssues,
+      allowedPermissions: input.allowedPermissions,
+      blockedPermissions: input.blockedPermissions
+    })
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? "Failed to update repository settings");
+  }
+
+  return (await response.json()) as ConfigSection;
+}
+
 export function SettingsConsole() {
   const queryClient = useQueryClient();
   const [selectedSection, setSelectedSection] = useState<ConfigSectionName>("agents");
@@ -156,10 +203,20 @@ export function SettingsConsole() {
   const providerTestMutation = useMutation({
     mutationFn: validateProviderConnection
   });
+  const repositoryRuntimeMutation = useMutation({
+    mutationFn: updateRepositoryRuntimeSettings,
+    onSuccess: async (section) => {
+      setDraft(section.content);
+      setValidation({ section: section.section, valid: true, parsed: section.parsed });
+      await queryClient.invalidateQueries({ queryKey: ["settings-config"] });
+      await queryClient.invalidateQueries({ queryKey: ["task-repositories"] });
+    }
+  });
   const sections = configQuery.data?.sections ?? [];
   const selected = sections.find((section) => section.section === selectedSection);
   const summary = useMemo(() => buildSummary(selected), [selected]);
   const providerIds = useMemo(() => (selected?.section === "agents" ? collectProviderIds(selected.parsed, draft) : []), [draft, selected?.parsed, selected?.section]);
+  const repositories = useMemo(() => (selected?.section === "repositories" ? collectRepositoryQuickConfigs(selected.parsed) : []), [selected?.parsed, selected?.section]);
 
   useEffect(() => {
     if (selected) {
@@ -277,12 +334,22 @@ export function SettingsConsole() {
                 />
               ) : null}
 
+              {selected.section === "repositories" ? (
+                <RepositoryQuickSettings
+                  errorMessage={repositoryRuntimeMutation.error instanceof Error ? repositoryRuntimeMutation.error.message : undefined}
+                  isPending={repositoryRuntimeMutation.isPending}
+                  onSave={(input) => repositoryRuntimeMutation.mutate(input)}
+                  repositories={repositories}
+                />
+              ) : null}
+
               <textarea
                 className="yamlEditor"
                 onChange={(event) => {
                   setDraft(event.target.value);
                   setValidation(undefined);
                   providerTestMutation.reset();
+                  repositoryRuntimeMutation.reset();
                 }}
                 spellCheck={false}
                 value={draft}
@@ -376,6 +443,155 @@ function ProviderConnectionTest({
   );
 }
 
+function RepositoryQuickSettings({
+  errorMessage,
+  isPending,
+  onSave,
+  repositories
+}: {
+  errorMessage?: string;
+  isPending: boolean;
+  onSave: (input: RepositoryRuntimeSettingsInput) => void;
+  repositories: RepositoryQuickConfig[];
+}) {
+  return (
+    <div className="repositoryQuickEditor" aria-label="Repository quick settings">
+      <div className="repositoryQuickHeader">
+        <div>
+          <h3>Repository Quick Settings</h3>
+          <span>{repositories.length} repositories</span>
+        </div>
+        {errorMessage ? (
+          <span className="quickSettingsError">
+            <AlertCircle size={14} aria-hidden />
+            {errorMessage}
+          </span>
+        ) : null}
+      </div>
+      <div className="repositoryQuickList">
+        {repositories.map((repository) => (
+          <RepositoryQuickSettingsItem isPending={isPending} key={repository.id} onSave={onSave} repository={repository} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RepositoryQuickSettingsItem({
+  isPending,
+  onSave,
+  repository
+}: {
+  isPending: boolean;
+  onSave: (input: RepositoryRuntimeSettingsInput) => void;
+  repository: RepositoryQuickConfig;
+}) {
+  const [triggerMode, setTriggerMode] = useState<TriggerMode>(repository.triggerMode);
+  const [mention, setMention] = useState(repository.mention);
+  const [maxConcurrentIssues, setMaxConcurrentIssues] = useState(String(repository.maxConcurrentIssues));
+  const [allowedPermissions, setAllowedPermissions] = useState<ToolPermissionLevel[]>(repository.allowedPermissions);
+  const [blockedPermissions, setBlockedPermissions] = useState<ToolPermissionLevel[]>(repository.blockedPermissions);
+
+  useEffect(() => {
+    setTriggerMode(repository.triggerMode);
+    setMention(repository.mention);
+    setMaxConcurrentIssues(String(repository.maxConcurrentIssues));
+    setAllowedPermissions(repository.allowedPermissions);
+    setBlockedPermissions(repository.blockedPermissions);
+  }, [repository]);
+
+  return (
+    <article className="repositoryQuickItem">
+      <div className="repositoryQuickTitle">
+        <strong>{repository.id}</strong>
+        <span>
+          {repository.owner}/{repository.repo}
+        </span>
+      </div>
+
+      <div className="repositoryQuickControls">
+        <label>
+          <span>Trigger</span>
+          <select onChange={(event) => setTriggerMode(event.target.value as TriggerMode)} value={triggerMode}>
+            {triggerModes.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <span>Mention</span>
+          <input onChange={(event) => setMention(event.target.value)} type="text" value={mention} />
+        </label>
+
+        <label>
+          <span>Max Running</span>
+          <input min={1} onChange={(event) => setMaxConcurrentIssues(event.target.value)} step={1} type="number" value={maxConcurrentIssues} />
+        </label>
+      </div>
+
+      <PermissionChecklist label="Allowed Permissions" onChange={setAllowedPermissions} selected={allowedPermissions} />
+      <PermissionChecklist label="Blocked Permissions" onChange={setBlockedPermissions} selected={blockedPermissions} />
+
+      <div className="repositoryQuickActions">
+        <button
+          className="iconButton positive"
+          disabled={isPending || !Number.isFinite(Number(maxConcurrentIssues)) || Number(maxConcurrentIssues) < 1 || !mention.trim()}
+          onClick={() =>
+            onSave({
+              repositoryId: repository.id,
+              triggerMode,
+              mention: mention.trim(),
+              maxConcurrentIssues: Math.max(1, Math.floor(Number(maxConcurrentIssues))),
+              allowedPermissions,
+              blockedPermissions
+            })
+          }
+          type="button"
+        >
+          <Save size={16} aria-hidden />
+          <span>{isPending ? "Saving" : "Save Repo"}</span>
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function PermissionChecklist({
+  label,
+  onChange,
+  selected
+}: {
+  label: string;
+  onChange: (value: ToolPermissionLevel[]) => void;
+  selected: ToolPermissionLevel[];
+}) {
+  return (
+    <fieldset className="permissionChecklist">
+      <legend>{label}</legend>
+      <div>
+        {permissionLevels.map((permission) => {
+          const checked = selected.includes(permission);
+          return (
+            <label key={permission}>
+              <input
+                checked={checked}
+                onChange={(event) => {
+                  onChange(event.target.checked ? [...selected, permission] : selected.filter((item) => item !== permission));
+                }}
+                type="checkbox"
+              />
+              <span>{permission}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
 function buildSummary(section: ConfigSection | undefined): Array<{ label: string; value: string }> {
   if (!section) {
     return [];
@@ -456,8 +672,50 @@ function collectProviderIds(parsed: unknown, draft: string): string[] {
   return [...ids];
 }
 
+function collectRepositoryQuickConfigs(parsed: unknown): RepositoryQuickConfig[] {
+  const repositories = asRecord(parsed).repositories;
+
+  if (!Array.isArray(repositories)) {
+    return [];
+  }
+
+  return repositories.map((entry) => {
+    const repository = asRecord(entry);
+    const trigger = asRecord(repository.trigger);
+    const queue = asRecord(repository.queue);
+    const permissions = asRecord(repository.permissions);
+    return {
+      id: String(repository.id ?? ""),
+      owner: String(repository.github_owner ?? ""),
+      repo: String(repository.github_repo ?? ""),
+      triggerMode: normalizeTriggerMode(trigger.mode),
+      mention: String(trigger.mention ?? "@agent-prd"),
+      maxConcurrentIssues: normalizePositiveInteger(queue.max_concurrent_issues),
+      allowedPermissions: normalizePermissionList(permissions.allowed_permissions),
+      blockedPermissions: normalizePermissionList(permissions.blocked_permissions)
+    };
+  });
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function normalizeTriggerMode(value: unknown): TriggerMode {
+  return triggerModes.includes(value as TriggerMode) ? (value as TriggerMode) : "manual";
+}
+
+function normalizePositiveInteger(value: unknown): number {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? Math.floor(numberValue) : 1;
+}
+
+function normalizePermissionList(value: unknown): ToolPermissionLevel[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is ToolPermissionLevel => permissionLevels.includes(item as ToolPermissionLevel));
 }
 
 function summarizeRepositoryPermissions(repositories: unknown[]): string {

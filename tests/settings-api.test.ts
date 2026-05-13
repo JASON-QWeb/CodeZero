@@ -1,5 +1,8 @@
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildServer } from "../apps/api/src/server.js";
 
@@ -136,6 +139,59 @@ describe("settings api", () => {
 
     await app.close();
     await modelServer.close();
+  });
+
+  it("updates repository runtime settings without requiring manual YAML edits", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-settings-api-"));
+    await mkdir(path.join(dir, "config"), { recursive: true });
+    await writeFile(
+      path.join(dir, "config", "repositories.yaml"),
+      [
+        "repositories:",
+        "  - id: shop",
+        "    github_owner: acme",
+        "    github_repo: shop",
+        "    trigger:",
+        "      mode: mention",
+        "      mention: \"@agent-prd\"",
+        "    queue:",
+        "      max_concurrent_issues: 1",
+        ""
+      ].join("\n")
+    );
+    process.env.PROJECT_ROOT = dir;
+    const app = await buildServer();
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/settings/repositories/shop/runtime",
+      payload: {
+        triggerMode: "label",
+        mention: "@repo-agent",
+        maxConcurrentIssues: 3,
+        allowedPermissions: ["read", "repo_write"],
+        blockedPermissions: ["dangerous"]
+      }
+    });
+    const body = response.json<{
+      parsed: {
+        repositories: Array<{
+          trigger: { mode: string; mention: string };
+          queue: { max_concurrent_issues: number };
+          permissions: { allowed_permissions: string[]; blocked_permissions: string[] };
+        }>;
+      };
+    }>();
+    const repository = body.parsed.repositories[0];
+
+    expect(response.statusCode).toBe(200);
+    expect(repository?.trigger.mode).toBe("label");
+    expect(repository?.trigger.mention).toBe("@repo-agent");
+    expect(repository?.queue.max_concurrent_issues).toBe(3);
+    expect(repository?.permissions.allowed_permissions).toEqual(["read", "repo_write"]);
+    expect(repository?.permissions.blocked_permissions).toEqual(["dangerous"]);
+
+    await app.close();
   });
 });
 

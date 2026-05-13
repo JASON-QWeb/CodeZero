@@ -6,6 +6,9 @@ import {
   loadEditableConfig,
   parseConfigSection,
   readConfigSection,
+  repositoryTriggerModes,
+  toolPermissionLevels,
+  updateRepositoryRuntimeSettings,
   writeConfigSection,
   type AgentsFileConfig,
   type ConfigSectionName
@@ -20,6 +23,16 @@ const validateProviderBodySchema = z.object({
   providerId: z.string().min(1),
   apiKey: z.string().optional()
 });
+
+const repositoryRuntimeSettingsSchema = z
+  .object({
+    triggerMode: z.enum(repositoryTriggerModes).optional(),
+    mention: z.string().min(1).optional(),
+    maxConcurrentIssues: z.number().int().positive().max(50).optional(),
+    allowedPermissions: z.array(z.enum(toolPermissionLevels)).optional(),
+    blockedPermissions: z.array(z.enum(toolPermissionLevels)).optional()
+  })
+  .refine((value) => Object.values(value).some((entry) => entry !== undefined), "At least one repository setting must be provided");
 
 export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get("/settings/config", async () => loadEditableConfig());
@@ -50,6 +63,29 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     }
 
     return readConfigSection(await resolveRootDir(), section);
+  });
+
+  app.put<{
+    Params: { repositoryId: string };
+    Body: {
+      triggerMode?: string;
+      mention?: string;
+      maxConcurrentIssues?: number;
+      allowedPermissions?: string[];
+      blockedPermissions?: string[];
+    };
+  }>("/settings/repositories/:repositoryId/runtime", async (request, reply) => {
+    const parsed = repositoryRuntimeSettingsSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({ message: "Invalid repository runtime settings", issues: parsed.error.issues });
+    }
+
+    try {
+      return await updateRepositoryRuntimeSettings(await resolveRootDir(), request.params.repositoryId, parsed.data);
+    } catch (error) {
+      return reply.code(400).send({ message: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   app.post<{ Params: { section: string }; Body: { content?: string } }>("/settings/config/:section/validate", async (request, reply) => {

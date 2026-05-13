@@ -806,6 +806,135 @@ p {
   outline: none;
 }
 
+.repositoryQuickEditor {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 13px;
+}
+
+.repositoryQuickHeader,
+.repositoryQuickTitle,
+.repositoryQuickActions,
+.quickSettingsError {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repositoryQuickHeader {
+  justify-content: space-between;
+}
+
+.repositoryQuickHeader h3 {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.repositoryQuickHeader span,
+.repositoryQuickTitle span,
+.repositoryQuickControls label span,
+.permissionChecklist legend {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quickSettingsError {
+  color: var(--blocked);
+}
+
+.repositoryQuickList {
+  display: grid;
+  gap: 12px;
+}
+
+.repositoryQuickItem {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.repositoryQuickTitle {
+  justify-content: space-between;
+}
+
+.repositoryQuickTitle strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repositoryQuickControls {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.7fr) minmax(180px, 1fr) minmax(120px, 0.55fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.repositoryQuickControls label {
+  display: grid;
+  gap: 6px;
+}
+
+.repositoryQuickControls input,
+.repositoryQuickControls select {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  padding: 0 10px;
+}
+
+.repositoryQuickControls input:focus,
+.repositoryQuickControls select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.permissionChecklist {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.permissionChecklist > div {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.permissionChecklist label {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.permissionChecklist input {
+  accent-color: var(--accent);
+}
+
+.repositoryQuickActions {
+  justify-content: flex-end;
+}
+
 .yamlEditor {
   width: 100%;
   min-height: 460px;
@@ -857,7 +986,9 @@ p {
   .settingsTopline,
   .settingsGrid,
   .editorHeader,
-  .providerVerifierControls {
+  .providerVerifierControls,
+  .repositoryQuickControls,
+  .permissionChecklist > div {
     align-items: stretch;
     grid-template-columns: 1fr;
   }
@@ -888,12 +1019,14 @@ p {
   .settingsHealth,
   .editorActions,
   .editorActions .iconButton,
-  .providerVerifierControls .iconButton {
+  .providerVerifierControls .iconButton,
+  .repositoryQuickActions .iconButton {
     width: 100%;
   }
 
   .editorActions .iconButton,
-  .providerVerifierControls .iconButton {
+  .providerVerifierControls .iconButton,
+  .repositoryQuickActions .iconButton {
     justify-content: center;
   }
 }
