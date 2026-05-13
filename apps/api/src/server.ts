@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { registerGitHubWebhookRoutes } from "./routes/github-webhook.js";
 import { registerMemoryRoutes } from "./routes/memories.js";
+import { registerSettingsRoutes } from "./routes/settings.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 
 export async function buildServer() {
@@ -34,6 +35,7 @@ export async function buildServer() {
   await registerGitHubWebhookRoutes(app);
   await registerTaskRoutes(app);
   await registerMemoryRoutes(app);
+  await registerSettingsRoutes(app);
 
   return app;
 }

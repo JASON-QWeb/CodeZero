@@ -139,7 +139,8 @@ type ProviderCapabilities = {
 - 已完成基础实现：JSON action parser/runner，支持国产 OpenAI-compatible provider 走 JSON action fallback。
 - 已完成基础实现：workflow implementation 阶段接入 Tool Gateway，旧 `unifiedDiff` 会自动包装成 `repo.apply_patch` action。
 - 已完成基础实现：tool call event、policy decision event 和 `tool-call` artifact。
-- 后续增强：tool input schema 校验、审批恢复和看板 Tool Permission UI。
+- 已完成基础实现：仓库级 `permissions` 会合成 Tool Gateway policy，支持 per-repo tool allowlist/blocklist 和 permission allowlist/blocklist。
+- 后续增强：tool input schema 校验、审批恢复和看板 Tool Approval UI。
 
 验收：
 
@@ -247,9 +248,29 @@ type ProviderCapabilities = {
 - 已完成基础实现：对新仓库运行 onboarding 后，能得到可审查的 `.agent/*` 建议。
 - 人审后即可进入 Issue workflow。
 
+### Phase 10：WebUI Settings Console 和模型路由
+
+目标：尽量让用户在 WebUI 完成运行配置，而不是直接改源码。
+
+当前状态：基础实现已落地。
+
+实现：
+
+- 已完成基础实现：Settings API 支持读取、校验、保存 `agents.yaml`、`repositories.yaml`、`tools.yaml`、`policies.yaml` 和 `sandbox.yaml`。
+- 已完成基础实现：WebUI Settings Console 提供 YAML 编辑、schema validate、save 和配置摘要。
+- 已完成基础实现：每个 Agent step 可配置 provider，implementation/review 支持 `provider_by_complexity.low|medium|high`。
+- 已完成基础实现：仓库配置支持 trigger、navigation graph、quality gates、frontend screenshot URLs、PR draft 策略和仓库级工具权限。
+- 已完成基础实现：provider 引用会在保存时校验，避免 step 指向不存在的模型 provider。
+
+验收：
+
+- 用户启动 API/Web 后，可以在 `http://localhost:3000` 配置模型、仓库、工具、policy 和 sandbox。
+- 简单任务可以路由到 Qwen 等快速/低成本 provider，复杂实现或 Review 可以路由到 DeepSeek 等更强 provider。
+- 仓库级权限配置会影响 Tool Gateway 执行，而不只是 UI 展示。
+
 ## 5. 推荐最小代码落地路径
 
-为了尽快进入可演示状态，建议先做 6 个 PR：
+为了尽快进入可演示状态，建议先做 8 个 PR：
 
 1. `RepositoryConfig.trigger` + webhook 触发策略。已完成基础实现。
 2. `RepoGraphBuilder` + `NavigationRouteBuilder`。已完成基础实现。
@@ -257,8 +278,10 @@ type ProviderCapabilities = {
 4. PR body Local Verification 生成器。已完成基础实现。
 5. Tool Gateway + JSON action runner。已完成基础实现，并已接入 implementation workflow。
 6. Trace span 数据模型和 task trace API。已完成基础实现。
+7. Settings API + WebUI Settings Console。已完成基础实现。
+8. 模型 step routing + complexity routing + 仓库级工具权限。已完成基础实现。
 
-做完这 6 个 PR，项目就从“能跑的 Agent workflow”升级成“有仓库理解、有工具边界、有可解释性的 Agent 平台”。
+做完这 8 个 PR，项目就从“能跑的 Agent workflow”升级成“有仓库理解、有工具边界、有可解释性、可配置性的 Agent 平台”。
 
 ## 6. 目录建议
 
@@ -293,4 +316,5 @@ packages/
 3. 模型不直接执行工具，所有 action 通过 Tool Gateway、Policy 和 Trace。
 4. PR 不只是生成代码，还生成开发者可本地验证的说明。
 5. 系统通过 golden issue eval 和 trace replay 持续提高可靠性。
-6. 国产 API 只需要符合 OpenAI-compatible 或 JSON action 输出，就能接入完整 workflow。
+6. 模型路由按 step 和 PRD complexity 选择 provider，简单任务走快速模型，复杂任务走强模型。
+7. 国产 API 只需要符合 OpenAI-compatible 或 JSON action 输出，就能接入完整 workflow。

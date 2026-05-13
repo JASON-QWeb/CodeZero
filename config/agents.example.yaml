@@ -6,6 +6,21 @@ providers:
     model: "${OPENAI_MODEL}"
     supports_tools: true
     supports_structured_output: true
+  # Optional extra providers for cost/quality routing.
+  # qwen_fast:
+  #   type: openai-compatible
+  #   base_url: "${QWEN_BASE_URL}"
+  #   api_key_env: "QWEN_API_KEY"
+  #   model: "qwen3.5"
+  #   supports_tools: true
+  #   supports_structured_output: true
+  # deepseek_strong:
+  #   type: openai-compatible
+  #   base_url: "${DEEPSEEK_BASE_URL}"
+  #   api_key_env: "DEEPSEEK_API_KEY"
+  #   model: "deepseek-v4"
+  #   supports_tools: true
+  #   supports_structured_output: true
 
 # Domestic OpenAI-compatible examples:
 # DeepSeek:
@@ -29,12 +44,19 @@ agents:
       - agentic-code-search
   implementation:
     provider: default
+    # Optional complexity routing after PRD complexity scoring:
+    # provider_by_complexity:
+    #   low: qwen_fast
+    #   medium: default
+    #   high: deepseek_strong
     system_prompt: prompts/system/main-agent.md
     skills:
       - repo-context-compress
       - minimal-change-planner
   review:
     provider: default
+    # provider_by_complexity:
+    #   high: deepseek_strong
     system_prompt: prompts/system/review-agent.md
     skills:
       - pr-compliance-review

@@ -109,7 +109,57 @@ Run Console：
 http://localhost:3000
 ```
 
-看板会展示 task 列表、选中 task 的 Trace Replay、tool/policy/quality gate 摘要，以及 Memory Inbox。Memory Inbox 的 approve/reject 会调用同一组 Memory API，因此可以直接演示“proposal -> human review -> approved memory -> ContextPack”的闭环。
+看板会展示 task 列表、选中 task 的 Trace Replay、tool/policy/quality gate 摘要、Settings Console 配置中心，以及 Memory Inbox。Memory Inbox 的 approve/reject 会调用同一组 Memory API，因此可以直接演示“proposal -> human review -> approved memory -> ContextPack”的闭环。
+
+Settings API：
+
+```text
+GET  http://localhost:4000/settings/config
+GET  http://localhost:4000/settings/config/<agents|repositories|tools|policies|sandbox>
+POST http://localhost:4000/settings/config/<section>/validate
+PUT  http://localhost:4000/settings/config/<section>
+```
+
+Settings Console 会保存到实际 `config/*.yaml`，保存前使用同一套 Zod schema 校验。当前可在 WebUI 完成：
+
+- 大模型 provider 配置：DeepSeek、Qwen、OpenAI-compatible gateway。
+- Agent step routing：`prd`、`implementation`、`review` 等步骤选择 provider。
+- Complexity routing：`provider_by_complexity.low|medium|high`，让简单任务走快速/便宜模型，复杂任务走强模型。
+- GitHub 仓库配置：owner、repo、default branch、trigger mode、quality gates、frontend screenshot URLs。
+- 仓库级权限：每个 repository 可配置 tool allowlist/blocklist 和 permission allowlist/blocklist，执行时会合成 Tool Gateway policy。
+- Tool Gateway 权限：tool permission、timeout、policy refs。
+- Policy-as-code：路径、命令、权限、工具名匹配，以及 `block` / `require_approval` 动作。
+- Sandbox：docker/worktree、image、network allowlist、runtime limits。
+
+Secret 不直接明文保存在 WebUI 中；provider 仍通过 `api_key_env` 引用 `.env` 或部署环境变量。
+
+Complexity routing 示例：
+
+```yaml
+providers:
+  qwen_fast:
+    type: openai-compatible
+    base_url: "${QWEN_BASE_URL}"
+    api_key_env: "QWEN_API_KEY"
+    model: "qwen3.5"
+  deepseek_strong:
+    type: openai-compatible
+    base_url: "${DEEPSEEK_BASE_URL}"
+    api_key_env: "DEEPSEEK_API_KEY"
+    model: "deepseek-v4"
+
+agents:
+  implementation:
+    provider: qwen_fast
+    provider_by_complexity:
+      low: qwen_fast
+      medium: qwen_fast
+      high: deepseek_strong
+    system_prompt: prompts/system/main-agent.md
+    skills:
+      - repo-context-compress
+      - minimal-change-planner
+```
 
 Golden Issue Eval：
 
@@ -203,6 +253,19 @@ repositories:
       label_blocklist:
         - no-agent
         - security-review
+    permissions:
+      allowed_tools:
+        - repo.search
+        - repo.read_file
+        - repo.apply_patch
+        - shell.run
+      blocked_tools: []
+      allowed_permissions:
+        - read
+        - repo_write
+        - safe_write
+      blocked_permissions:
+        - dangerous
 ```
 
 推荐使用方式：
@@ -238,6 +301,7 @@ worker 会按顺序执行：
 
 - `config/policies.yaml`：危险路径、危险命令、高风险领域和审批策略。
 - `config/tools.yaml`：工具 schema、权限等级、timeout 和 policy refs。
+- `config/repositories.yaml`：仓库级触发策略、工具权限、质量门禁、截图 URL 和 PR draft 策略。
 - `repositories.yaml` 中的 `codebase_intelligence.navigation_graph`：是否构建 Repo Navigation Graph。
 
 Tool Gateway 会按这些配置记录 tool call、policy decision 和 navigation route；后续 trace replay 会复用同一批事件。

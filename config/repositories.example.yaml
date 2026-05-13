@@ -23,6 +23,21 @@ repositories:
         include_git_history: true
         include_codeowners: true
         max_depth: 4
+    # Repository-level tool boundary. Empty allowlists mean "use global defaults";
+    # non-empty allowlists make this repo stricter than the global Tool Gateway policy.
+    permissions:
+      allowed_tools:
+        - repo.search
+        - repo.read_file
+        - repo.apply_patch
+        - shell.run
+      blocked_tools: []
+      allowed_permissions:
+        - read
+        - repo_write
+        - safe_write
+      blocked_permissions:
+        - dangerous
     quality_gates:
       build: "npm run build"
       lint: "npm run lint"

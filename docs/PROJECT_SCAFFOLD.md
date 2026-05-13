@@ -125,22 +125,36 @@ providers:
     model: "${OPENAI_MODEL}"
     supports_tools: true
     supports_structured_output: true
+  qwen_fast:
+    type: openai-compatible
+    base_url: "${QWEN_BASE_URL}"
+    api_key_env: "QWEN_API_KEY"
+    model: "qwen3.5"
+  deepseek_strong:
+    type: openai-compatible
+    base_url: "${DEEPSEEK_BASE_URL}"
+    api_key_env: "DEEPSEEK_API_KEY"
+    model: "deepseek-v4"
 
 agents:
   prd:
-    provider: default
+    provider: qwen_fast
     system_prompt: prompts/system/prd-agent.md
     skills:
       - brainstorm-requirements
       - draft-prd
   implementation:
-    provider: default
+    provider: qwen_fast
+    provider_by_complexity:
+      low: qwen_fast
+      medium: qwen_fast
+      high: deepseek_strong
     system_prompt: prompts/system/main-agent.md
     skills:
       - repo-context-compress
       - minimal-change-planner
   review:
-    provider: default
+    provider: deepseek_strong
     system_prompt: prompts/system/review-agent.md
     skills:
       - pr-compliance-review
@@ -171,6 +185,19 @@ repositories:
         include_git_history: true
         include_codeowners: true
         max_depth: 4
+    permissions:
+      allowed_tools:
+        - repo.search
+        - repo.read_file
+        - repo.apply_patch
+        - shell.run
+      blocked_tools: []
+      allowed_permissions:
+        - read
+        - repo_write
+        - safe_write
+      blocked_permissions:
+        - dangerous
     frontend:
       dev_command: "npm run dev"
       test_command: "npm test"
@@ -263,17 +290,21 @@ POST   /tasks/:id/tool-approvals/:approvalId/approve
 POST   /tasks/:id/tool-approvals/:approvalId/reject
 POST   /repositories/:id/onboard
 POST   /evals/golden-issues/run
+GET    /settings/config
+GET    /settings/config/:section
+POST   /settings/config/:section/validate
+PUT    /settings/config/:section
 ```
 
 ## 5. 看板页面
 
 当前第一版页面：
 
-- `/`：Run Console，包含任务列表、选中 task 详情、Trace Replay timeline、质量/工具/policy 摘要、Memory Inbox approve/reject。
+- `/`：Run Console + Settings Console，包含任务列表、选中 task 详情、Trace Replay timeline、质量/工具/policy 摘要、Memory Inbox approve/reject，以及模型、仓库、工具权限、Policy、沙箱配置编辑。
 - `/tasks/:id`：任务详情。
-- `/settings/agents`：Agent provider 和模型配置。
-- `/settings/repositories`：仓库配置。
-- `/settings/skills`：平台 skill 版本和项目 skill 检查。
+- `/settings/agents`：后续可拆出的 Agent provider 和模型配置页面。
+- `/settings/repositories`：后续可拆出的仓库配置页面。
+- `/settings/skills`：后续可拆出的平台 skill 版本和项目 skill 检查页面。
 
 ## 6. MVP 实现顺序
 

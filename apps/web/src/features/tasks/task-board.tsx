@@ -390,12 +390,13 @@ function EmptyState({ label }: { label: string }) {
 }
 
 function formatTime(value: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date(value));
+  const date = new Date(value);
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getUTCMonth()] ?? "Jan";
+  return `${month} ${pad2(date.getUTCDate())}, ${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())} UTC`;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
 }
 
 function mockTrace(task: Task): TaskTrace {

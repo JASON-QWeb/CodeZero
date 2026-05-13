@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
@@ -17,16 +17,38 @@ const providerSchema = z.object({
 
 const agentSchema = z.object({
   provider: z.string().min(1),
+  provider_by_complexity: z
+    .object({
+      low: z.string().optional(),
+      medium: z.string().optional(),
+      high: z.string().optional()
+    })
+    .default({}),
   system_prompt: z.string().min(1),
   skills: z.array(z.string()).default([])
 });
 
-const agentsFileSchema = z.object({
-  providers: z.record(z.string(), providerSchema),
-  agents: z.record(z.string(), agentSchema)
-});
+const agentsFileSchema = z
+  .object({
+    providers: z.record(z.string(), providerSchema),
+    agents: z.record(z.string(), agentSchema)
+  })
+  .superRefine((config, context) => {
+    const providerIds = new Set(Object.keys(config.providers));
+
+    for (const [agentName, agent] of Object.entries(config.agents)) {
+      validateAgentProviderRef(context, providerIds, ["agents", agentName, "provider"], agent.provider);
+
+      for (const [complexity, providerId] of Object.entries(agent.provider_by_complexity)) {
+        if (providerId) {
+          validateAgentProviderRef(context, providerIds, ["agents", agentName, "provider_by_complexity", complexity], providerId);
+        }
+      }
+    }
+  });
 
 const triggerModeSchema = z.enum(["auto", "mention", "label", "manual", "disabled"]);
+const toolPermissionSchema = z.enum(["read", "safe_write", "repo_write", "external_write", "dangerous"]);
 
 const repositoryTriggerSchema = z
   .object({
@@ -71,6 +93,20 @@ const repositoryCodebaseIntelligenceSchema = z
     }
   });
 
+const repositoryPermissionsSchema = z
+  .object({
+    allowed_tools: z.array(z.string()).default([]),
+    blocked_tools: z.array(z.string()).default([]),
+    allowed_permissions: z.array(toolPermissionSchema).default([]),
+    blocked_permissions: z.array(toolPermissionSchema).default([])
+  })
+  .default({
+    allowed_tools: [],
+    blocked_tools: [],
+    allowed_permissions: [],
+    blocked_permissions: []
+  });
+
 const repositorySchema = z.object({
   id: z.string().min(1),
   github_owner: z.string().min(1),
@@ -79,6 +115,7 @@ const repositorySchema = z.object({
   project_skill_path: z.string().default(".agent"),
   trigger: repositoryTriggerSchema,
   codebase_intelligence: repositoryCodebaseIntelligenceSchema,
+  permissions: repositoryPermissionsSchema,
   quality_gates: z
     .object({
       build: z.string().optional(),
@@ -131,7 +168,6 @@ const sandboxFileSchema = z.object({
 });
 
 const policyActionSchema = z.enum(["allow", "audit", "require_approval", "block"]);
-const toolPermissionSchema = z.enum(["read", "safe_write", "repo_write", "external_write", "dangerous"]);
 
 const policySchema = z.object({
   id: z.string().min(1),
@@ -168,6 +204,25 @@ export type PoliciesFileConfig = z.infer<typeof policiesFileSchema>;
 export type PolicyConfig = z.infer<typeof policySchema>;
 export type ToolsFileConfig = z.infer<typeof toolsFileSchema>;
 export type ToolConfig = z.infer<typeof toolSchema>;
+
+export const configSectionNames = ["agents", "repositories", "sandbox", "policies", "tools"] as const;
+
+export type ConfigSectionName = (typeof configSectionNames)[number];
+
+export type EditableConfigSection = {
+  section: ConfigSectionName;
+  path: string;
+  fallbackPath: string;
+  exists: boolean;
+  content: string;
+  parsed: unknown;
+  updatedAt?: string;
+};
+
+export type EditableConfigSnapshot = {
+  rootDir: string;
+  sections: EditableConfigSection[];
+};
 
 export type RepositoryTriggerDecisionInput = {
   repository?: RepositoryConfig;
@@ -243,6 +298,60 @@ export async function loadAppConfig(rootDir?: string): Promise<AppConfig> {
       webhookSecret: process.env.GITHUB_WEBHOOK_SECRET
     }
   };
+}
+
+export async function loadEditableConfig(rootDir?: string): Promise<EditableConfigSnapshot> {
+  const resolvedRootDir = rootDir ?? process.env.PROJECT_ROOT ?? (await findWorkspaceRoot(process.cwd()));
+  const sections = await Promise.all(configSectionNames.map((section) => readConfigSection(resolvedRootDir, section)));
+  return { rootDir: resolvedRootDir, sections };
+}
+
+export async function readConfigSection(rootDir: string, section: ConfigSectionName): Promise<EditableConfigSection> {
+  const paths = getConfigSectionPaths(rootDir, section);
+  const primary = await readFile(paths.path, "utf8")
+    .then((content) => ({ content, exists: true }))
+    .catch(async () => ({ content: await readFile(paths.fallbackPath, "utf8"), exists: false }));
+  const stats = await stat(paths.path).catch(() => undefined);
+
+  return {
+    section,
+    path: paths.path,
+    fallbackPath: paths.fallbackPath,
+    exists: primary.exists,
+    content: primary.content,
+    parsed: parseConfigSection(section, primary.content),
+    updatedAt: stats?.mtime.toISOString()
+  };
+}
+
+export async function writeConfigSection(rootDir: string, section: ConfigSectionName, content: string): Promise<EditableConfigSection> {
+  parseConfigSection(section, content);
+  const paths = getConfigSectionPaths(rootDir, section);
+  await mkdir(path.dirname(paths.path), { recursive: true });
+  const tempPath = `${paths.path}.tmp`;
+  await writeFile(tempPath, content.endsWith("\n") ? content : `${content}\n`);
+  await rename(tempPath, paths.path);
+  return readConfigSection(rootDir, section);
+}
+
+export function parseConfigSection(section: ConfigSectionName, content: string): unknown {
+  return schemaForSection(section).parse(YAML.parse(interpolateEnv(content)));
+}
+
+export function isConfigSectionName(value: string): value is ConfigSectionName {
+  return configSectionNames.includes(value as ConfigSectionName);
+}
+
+function validateAgentProviderRef(context: z.RefinementCtx, providerIds: Set<string>, path: (string | number)[], providerId: string): void {
+  if (providerIds.has(providerId)) {
+    return;
+  }
+
+  context.addIssue({
+    code: "custom",
+    path,
+    message: `Unknown provider '${providerId}'`
+  });
 }
 
 export async function findWorkspaceRoot(startDir: string): Promise<string> {
@@ -363,4 +472,26 @@ async function readYaml<T>(primaryPath: string, fallbackPath: string, schema: z.
   const content = await readFile(primaryPath, "utf8").catch(async () => readFile(fallbackPath, "utf8"));
   const interpolated = interpolateEnv(content);
   return schema.parse(YAML.parse(interpolated));
+}
+
+function getConfigSectionPaths(rootDir: string, section: ConfigSectionName): { path: string; fallbackPath: string } {
+  return {
+    path: path.join(rootDir, "config", `${section}.yaml`),
+    fallbackPath: path.join(rootDir, "config", `${section}.example.yaml`)
+  };
+}
+
+function schemaForSection(section: ConfigSectionName): z.ZodType<unknown> {
+  switch (section) {
+    case "agents":
+      return agentsFileSchema;
+    case "repositories":
+      return repositoriesFileSchema;
+    case "sandbox":
+      return sandboxFileSchema;
+    case "policies":
+      return policiesFileSchema;
+    case "tools":
+      return toolsFileSchema;
+  }
 }

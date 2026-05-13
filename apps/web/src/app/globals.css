@@ -41,6 +41,13 @@ button {
   padding: 28px 0 48px;
 }
 
+.settingsShell {
+  width: min(1360px, calc(100vw - 32px));
+  margin: 0 auto 56px;
+  border-top: 1px solid var(--line);
+  padding-top: 28px;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -150,7 +157,9 @@ p {
 }
 
 .sectionHeader,
-.detailHeader {
+.detailHeader,
+.settingsTopline,
+.editorHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -482,10 +491,219 @@ p {
   color: var(--muted);
 }
 
+.settingsTopline {
+  margin-bottom: 18px;
+}
+
+.settingsTopline h1 {
+  font-size: 28px;
+}
+
+.settingsTopline span,
+.editorHeader p,
+.editorHeader span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.settingsHealth {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0 12px;
+  font-weight: 800;
+}
+
+.settingsGood {
+  color: var(--accent-strong);
+}
+
+.settingsBad {
+  color: var(--blocked);
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.settingsNav,
+.settingsEditor {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px;
+}
+
+.settingsNav {
+  display: grid;
+  gap: 10px;
+}
+
+.settingsNavItem {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 4px 10px;
+  width: 100%;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  padding: 12px;
+  text-align: left;
+}
+
+.settingsNavItem:hover,
+.settingsNavItemActive {
+  border-color: var(--accent);
+  background: #f8fbfa;
+}
+
+.settingsNavItem > span {
+  grid-row: span 2;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--accent-strong);
+}
+
+.settingsNavItem strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsNavItem small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.settingsEditor {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.editorHeader {
+  border-bottom: 1px solid var(--line);
+  padding: 2px 0 14px;
+}
+
+.editorHeader h2 {
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.editorActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.neutral {
+  color: var(--accent-strong);
+}
+
+.settingsSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settingsSummary div {
+  min-height: 68px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 11px;
+}
+
+.settingsSummary span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.settingsSummary strong {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yamlEditor {
+  width: 100%;
+  min-height: 460px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+  color: var(--text);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 14px;
+  tab-size: 2;
+}
+
+.yamlEditor:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.validationBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  padding: 9px 11px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.validationGood {
+  border-color: var(--done);
+  color: var(--done);
+}
+
+.validationBad {
+  border-color: var(--blocked);
+  color: var(--blocked);
+}
+
 @media (max-width: 760px) {
   .topbar,
   .taskRow,
-  .workspaceGrid {
+  .workspaceGrid,
+  .settingsTopline,
+  .settingsGrid,
+  .editorHeader {
     align-items: stretch;
     grid-template-columns: 1fr;
   }
@@ -495,7 +713,8 @@ p {
   }
 
   .metrics,
-  .traceSummary {
+  .traceSummary,
+  .settingsSummary {
     grid-template-columns: 1fr;
   }
 
@@ -510,5 +729,15 @@ p {
   .traceStatus {
     grid-column: 2;
     width: max-content;
+  }
+
+  .settingsHealth,
+  .editorActions,
+  .editorActions .iconButton {
+    width: 100%;
+  }
+
+  .editorActions .iconButton {
+    justify-content: center;
   }
 }

@@ -20,7 +20,15 @@ import {
 } from "@agent/sandbox";
 import type { Artifact, JsonObject, MinimalChangePlan, PrdDocument, QualityGateResult, ReviewResult, Task } from "@agent/shared";
 import { loadPlatformSkills } from "@agent/skills";
-import { createBuiltInToolRegistry, ToolGateway, type JsonToolAction, type PolicyDefinition, type ToolCallResult } from "@agent/tool-gateway";
+import {
+  createBuiltInToolRegistry,
+  toolPermissions,
+  ToolGateway,
+  type JsonToolAction,
+  type PolicyDefinition,
+  type ToolCallResult,
+  type ToolDefinition
+} from "@agent/tool-gateway";
 import { createQualityGateCommands, runFrontendScreenshotGate, runQualityGates } from "@agent/verification";
 import { z } from "zod";
 import { createAgentPrBody, createPrLocalVerificationPlan, detectInstallCommand } from "./pr-local-verification.js";
@@ -109,10 +117,11 @@ export class IssueWorkflowRunner {
     try {
       const repositoryConfig = this.requiredRepository(task);
       const runner = await this.createAgentRunner();
-      const agents = await this.createAgents();
+      const prdAgent = await this.createAgent("prd", "prd");
 
-      const prd = task.prd ?? (await this.draftPrd(task, runner, agents.prd));
+      const prd = task.prd ?? (await this.draftPrd(task, runner, prdAgent));
       let updated = task.prd ? task : await this.updateStatus(task.id, "PRD_DRAFTED", { prd });
+      const agents = await this.createExecutionAgents(prd.complexity.score);
 
       if (updated.status !== "PRD_APPROVED" && shouldRequirePrdReview(prd.complexity)) {
         updated = await this.updateStatus(updated.id, "PRD_REVIEW_REQUIRED");
@@ -129,7 +138,7 @@ export class IssueWorkflowRunner {
       const plan = await this.createMinimalChangePlan(updated, runner, agents.implementation);
       updated = await this.updateStatus(updated.id, "IMPLEMENTING", { minimalChangePlan: plan });
 
-      await this.applyImplementation(updated, sandbox, runner, agents.implementation);
+      await this.applyImplementation(updated, sandbox, repositoryConfig, runner, agents.implementation);
 
       const qualityGateResults = await this.runQualityGates(updated, sandbox, repositoryConfig);
       updated = await this.updateStatus(updated.id, "QUALITY_GATES_RUNNING", { qualityGateResults });
@@ -289,7 +298,7 @@ export class IssueWorkflowRunner {
     return plan;
   }
 
-  private async applyImplementation(task: Task, sandbox: Sandbox, runner: AgentRunner, agent: AgentDefinition): Promise<void> {
+  private async applyImplementation(task: Task, sandbox: Sandbox, repositoryConfig: RepositoryConfig, runner: AgentRunner, agent: AgentDefinition): Promise<void> {
     const snippets = await readContextFileSnippets(sandbox.repoDir, task.contextPack ?? this.missing("ContextPack"));
     let previousApplyError = "";
 
@@ -316,13 +325,14 @@ export class IssueWorkflowRunner {
           contextPack: task.contextPack as unknown as JsonObject,
           minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
           fileSnippets: snippets as JsonObject,
-          availableTools: createBuiltInToolRegistry().list() as unknown as JsonObject,
-          policies: this.config.policies as unknown as JsonObject
+          availableTools: this.getAvailableTools(repositoryConfig) as unknown as JsonObject,
+          policies: this.config.policies as unknown as JsonObject,
+          repositoryPermissions: repositoryConfig.permissions as unknown as JsonObject
         }
       });
       const implementation = implementationSchema.parse(result);
       const actions = this.implementationToToolActions(implementation);
-      const toolResults = await this.executeToolActions(task, sandbox, actions, attempt);
+      const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, actions, attempt);
       const failedToolCall = toolResults.find((toolResult) => toolResult.status !== "success");
 
       if (!failedToolCall) {
@@ -364,8 +374,14 @@ export class IssueWorkflowRunner {
     ];
   }
 
-  private async executeToolActions(task: Task, sandbox: Sandbox, actions: JsonToolAction[], attempt: number): Promise<ToolCallResult[]> {
-    const gateway = this.createToolGateway();
+  private async executeToolActions(
+    task: Task,
+    sandbox: Sandbox,
+    repositoryConfig: RepositoryConfig,
+    actions: JsonToolAction[],
+    attempt: number
+  ): Promise<ToolCallResult[]> {
+    const gateway = this.createToolGateway(repositoryConfig);
     const results: ToolCallResult[] = [];
 
     for (const action of actions) {
@@ -565,15 +581,14 @@ export class IssueWorkflowRunner {
     return new AgentRunner(providers);
   }
 
-  private async createAgents(): Promise<{ prd: AgentDefinition; implementation: AgentDefinition; review: AgentDefinition }> {
+  private async createExecutionAgents(complexityScore: number): Promise<{ implementation: AgentDefinition; review: AgentDefinition }> {
     return {
-      prd: await this.createAgent("prd", "prd"),
-      implementation: await this.createAgent("implementation", "main-implementation"),
-      review: await this.createAgent("review", "review")
+      implementation: await this.createAgent("implementation", "main-implementation", complexityScore),
+      review: await this.createAgent("review", "review", complexityScore)
     };
   }
 
-  private async createAgent(configKey: string, role: AgentDefinition["role"]): Promise<AgentDefinition> {
+  private async createAgent(configKey: string, role: AgentDefinition["role"], complexityScore?: number): Promise<AgentDefinition> {
     const config = this.config.agents.agents[configKey];
 
     if (!config) {
@@ -586,7 +601,7 @@ export class IssueWorkflowRunner {
     return {
       id: configKey,
       role,
-      providerId: config.provider,
+      providerId: selectProviderForComplexity(config.provider, config.provider_by_complexity, complexityScore),
       systemPrompt,
       skillRefs: config.skills,
       tools: this.config.tools.map((tool) => tool.name),
@@ -594,21 +609,29 @@ export class IssueWorkflowRunner {
     };
   }
 
-  private createToolGateway(): ToolGateway {
+  private createToolGateway(repositoryConfig: RepositoryConfig): ToolGateway {
+    const registry = createBuiltInToolRegistry();
     return new ToolGateway({
-      registry: createBuiltInToolRegistry(),
-      policies: this.config.policies.map(
-        (policy): PolicyDefinition => ({
-          id: policy.id,
-          description: policy.description,
-          toolNames: policy.tool_names.length > 0 ? policy.tool_names : undefined,
-          permissions: policy.permissions.length > 0 ? policy.permissions : undefined,
-          matchPaths: policy.match_paths.length > 0 ? policy.match_paths : undefined,
-          matchCommands: policy.match_commands.length > 0 ? policy.match_commands : undefined,
-          action: policy.action
-        })
-      )
+      registry,
+      policies: [
+        ...this.config.policies.map(
+          (policy): PolicyDefinition => ({
+            id: policy.id,
+            description: policy.description,
+            toolNames: policy.tool_names.length > 0 ? policy.tool_names : undefined,
+            permissions: policy.permissions.length > 0 ? policy.permissions : undefined,
+            matchPaths: policy.match_paths.length > 0 ? policy.match_paths : undefined,
+            matchCommands: policy.match_commands.length > 0 ? policy.match_commands : undefined,
+            action: policy.action
+          })
+        ),
+        ...createRepositoryPermissionPolicies(repositoryConfig, registry.list())
+      ]
     });
+  }
+
+  private getAvailableTools(repositoryConfig: RepositoryConfig): ToolDefinition[] {
+    return createBuiltInToolRegistry().list().filter((tool) => repositoryAllowsTool(repositoryConfig, tool));
   }
 
   private requiredRepository(task: Task): RepositoryConfig {
@@ -666,9 +689,94 @@ export class IssueWorkflowRunner {
   }
 }
 
+export function createRepositoryPermissionPolicies(repositoryConfig: Pick<RepositoryConfig, "id" | "permissions">, registeredTools: ToolDefinition[]): PolicyDefinition[] {
+  const permissions = repositoryConfig.permissions;
+  const policies: PolicyDefinition[] = [];
+  const toolsOutsideAllowlist =
+    permissions.allowed_tools.length > 0 ? registeredTools.map((tool) => tool.name).filter((toolName) => !permissions.allowed_tools.includes(toolName)) : [];
+  const permissionsOutsideAllowlist =
+    permissions.allowed_permissions.length > 0 ? toolPermissions.filter((permission) => !permissions.allowed_permissions.includes(permission)) : [];
+
+  if (toolsOutsideAllowlist.length > 0) {
+    policies.push({
+      id: `repo-${repositoryConfig.id}-tool-allowlist`,
+      description: "Repository tool allowlist blocked a tool call.",
+      toolNames: toolsOutsideAllowlist,
+      action: "block"
+    });
+  }
+
+  if (permissions.blocked_tools.length > 0) {
+    policies.push({
+      id: `repo-${repositoryConfig.id}-blocked-tools`,
+      description: "Repository tool blocklist blocked a tool call.",
+      toolNames: permissions.blocked_tools,
+      action: "block"
+    });
+  }
+
+  if (permissionsOutsideAllowlist.length > 0) {
+    policies.push({
+      id: `repo-${repositoryConfig.id}-permission-allowlist`,
+      description: "Repository permission allowlist blocked a tool call.",
+      permissions: permissionsOutsideAllowlist,
+      action: "block"
+    });
+  }
+
+  if (permissions.blocked_permissions.length > 0) {
+    policies.push({
+      id: `repo-${repositoryConfig.id}-blocked-permissions`,
+      description: "Repository permission blocklist blocked a tool call.",
+      permissions: permissions.blocked_permissions,
+      action: "block"
+    });
+  }
+
+  return policies;
+}
+
+export function repositoryAllowsTool(repositoryConfig: Pick<RepositoryConfig, "permissions">, tool: ToolDefinition): boolean {
+  const permissions = repositoryConfig.permissions;
+
+  if (permissions.blocked_tools.includes(tool.name) || permissions.blocked_permissions.includes(tool.permission)) {
+    return false;
+  }
+
+  if (permissions.allowed_tools.length > 0 && !permissions.allowed_tools.includes(tool.name)) {
+    return false;
+  }
+
+  if (permissions.allowed_permissions.length > 0 && !permissions.allowed_permissions.includes(tool.permission)) {
+    return false;
+  }
+
+  return true;
+}
+
 function summarizeToolFailure(result: ToolCallResult): string {
   const output = result.output && typeof result.output === "object" && !Array.isArray(result.output) ? result.output : undefined;
   const stdout = typeof output?.stdout === "string" ? output.stdout : "";
   const stderr = typeof output?.stderr === "string" ? output.stderr : "";
   return [`Tool ${result.toolName} finished with ${result.status}`, result.error, stderr, stdout].filter(Boolean).join("\n");
+}
+
+function selectProviderForComplexity(
+  fallbackProvider: string,
+  providerByComplexity: { low?: string; medium?: string; high?: string } | undefined,
+  complexityScore: number | undefined
+): string {
+  if (complexityScore === undefined) {
+    return fallbackProvider;
+  }
+
+  if (complexityScore <= 35) {
+    return providerByComplexity?.low ?? fallbackProvider;
+  }
+
+  if (complexityScore <= 70) {
+    return providerByComplexity?.medium ?? fallbackProvider;
+  }
+
+  return providerByComplexity?.high ?? fallbackProvider;
 }

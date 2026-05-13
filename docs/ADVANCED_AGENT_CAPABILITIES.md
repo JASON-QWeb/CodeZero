@@ -14,6 +14,7 @@
 - PR Local Verification Plus
 - Memory Feedback Loop
 - Tool Permission UI
+- WebUI Config Center
 - Multi-Agent File Ownership / Conflict Manager
 - Cost / Latency / Model Router
 - Prompt / Skill Registry
@@ -33,6 +34,7 @@
 | PR Local Verification Plus | 让 PR 可以一键本地验证或在 Codespaces/Dev Container 中验证 | `agent-verify.sh`、Codespaces URL、devcontainer suggestion |
 | Memory Feedback Loop | 从已完成任务提取经验，生成可审核 memory proposal | run summary、memory update、project-map update |
 | Tool Permission UI | 在看板展示和审批高风险工具调用 | pending tool approvals、permission timeline |
+| WebUI Config Center | 在 WebUI 中编辑、校验、保存运行配置 | settings API、YAML editor、schema validation、repo permission summary |
 | Multi-Agent Conflict Manager | 管理多个 worker 的文件所有权和 patch 合并 | ownership plan、conflict report、merge decision |
 | Cost / Latency / Model Router | 根据任务复杂度、预算和质量要求选择模型 | routing policy、cost report、latency metrics |
 | Prompt / Skill Registry | prompt、skill、模型配置版本化，可回放和回归 | registry、version lock、prompt diff |
@@ -286,6 +288,13 @@ Policy engine 输入：
 
 模型路由可以展示成本和质量意识。
 
+当前基础实现：
+
+- `agents.yaml` 的每个 Agent step 都可配置 provider。
+- `implementation` / `review` 等执行阶段可通过 `provider_by_complexity.low|medium|high` 按 PRD complexity score 切换 provider。
+- provider 引用会在 Settings API 保存时校验，避免配置指向不存在的模型。
+- WebUI Settings Console 可以编辑和校验 provider、step routing 与 complexity routing。
+
 路由依据：
 
 - task type。
@@ -309,6 +318,18 @@ model_routing:
     high_risk: strong
   review:
     default: strong
+```
+
+当前配置示例：
+
+```yaml
+agents:
+  implementation:
+    provider: qwen_fast
+    provider_by_complexity:
+      low: qwen_fast
+      medium: qwen_fast
+      high: deepseek_strong
 ```
 
 记录指标：
