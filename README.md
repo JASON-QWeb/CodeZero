@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-MVP 已可本地运行：支持 GitHub Issue webhook/手动导入、仓库级触发策略、PRD 生成、人工 PRD 审批门禁、Repo Navigation Graph MVP、导航路线与 approved memory 驱动的 ContextPack、Tool Gateway + JSON action fallback、Trace Replay API、Run Console 看板、Settings Console 配置中心、Memory Inbox 审核、Golden Issue Eval CLI/CI、Repository Onboarding、沙箱实现、质量门禁、Review subagent、PR Local Verification Writer、推送分支并创建 draft PR。
+MVP 已可本地运行：支持 GitHub Issue webhook/手动导入、仓库级触发策略、仓库级队列与并发上限、PRD 生成、人工 PRD 审批门禁、Repo Navigation Graph MVP、导航路线与 approved memory 驱动的 ContextPack、Tool Gateway + JSON action fallback、Trace Replay API、Run Console 看板、Settings Console 配置中心、Memory Inbox 审核、Golden Issue Eval CLI/CI、Repository Onboarding、沙箱实现、质量门禁、Review subagent、PR Local Verification Writer、推送分支并创建 draft PR。
 
 验证命令：
 
@@ -64,6 +64,7 @@ pnpm dev:web
 ## 作品集亮点
 
 - GitHub Bot 形态：支持 webhook、Issue 评论触发，目标支持每个仓库配置 `auto`、`mention`、`label`、`manual` 或 `disabled`。
+- 仓库级运行控制：Run Console 按仓库分组展示 issue 队列，并通过 `queue.max_concurrent_issues` 限制每个仓库同时运行的任务数，超额任务保持 `QUEUED`。
 - Agent 运行时：OpenAI-compatible provider、结构化输出、角色化 Agent、Review subagent 和 guardrail 门禁。
 - WebUI 配置：Settings Console 可编辑并校验 `agents.yaml`、`repositories.yaml`、`tools.yaml`、`policies.yaml` 和 `sandbox.yaml`，覆盖模型、仓库、触发方式、仓库级工具权限、Policy 和沙箱，并可点击 Test 验证模型 API key/base URL/model 是否可用。
 - 模型路由：每个 Agent step 可指定 provider，implementation/review 还支持按 PRD complexity score 选择 low/medium/high provider。

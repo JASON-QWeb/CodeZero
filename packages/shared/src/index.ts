@@ -3,6 +3,7 @@ export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
 
 export const taskStatuses = [
+  "QUEUED",
   "ISSUE_RECEIVED",
   "CONTEXT_COLLECTING",
   "BRAINSTORMING",
@@ -106,6 +107,7 @@ export type Task = {
 
 export type TaskEventType =
   | "TASK_CREATED"
+  | "TASK_QUEUED"
   | "ISSUE_CONTEXT_COLLECTED"
   | "PRD_DRAFTED"
   | "PRD_APPROVED"

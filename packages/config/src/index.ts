@@ -115,6 +115,13 @@ const repositorySchema = z.object({
   project_skill_path: z.string().default(".agent"),
   trigger: repositoryTriggerSchema,
   codebase_intelligence: repositoryCodebaseIntelligenceSchema,
+  queue: z
+    .object({
+      max_concurrent_issues: z.number().int().positive().default(1)
+    })
+    .default({
+      max_concurrent_issues: 1
+    }),
   permissions: repositoryPermissionsSchema,
   quality_gates: z
     .object({

@@ -185,6 +185,8 @@ repositories:
         include_git_history: true
         include_codeowners: true
         max_depth: 4
+    queue:
+      max_concurrent_issues: 2
     permissions:
       allowed_tools:
         - repo.search
@@ -269,6 +271,7 @@ sandbox:
 POST   /webhooks/github
 POST   /tasks/import-issue
 GET    /tasks
+GET    /tasks/repositories
 GET    /tasks/:id
 GET    /tasks/:id/events
 POST   /tasks/:id/approve-prd
@@ -301,7 +304,7 @@ POST   /settings/providers/validate
 
 当前第一版页面：
 
-- `/`：Run Console + Settings Console，包含任务列表、选中 task 详情、Trace Replay timeline、质量/工具/policy 摘要、Memory Inbox approve/reject，以及模型、仓库、工具权限、Policy、沙箱配置编辑。
+- `/`：Run Console + Settings Console，包含仓库队列卡片、仓库级 queued/running/limit 计数、选中仓库的任务列表、选中 task 详情、Trace Replay timeline、质量/工具/policy 摘要、Memory Inbox approve/reject，以及模型、仓库、工具权限、Policy、沙箱配置编辑。
 - `/tasks/:id`：任务详情。
 - `/settings/agents`：后续可拆出的 Agent provider 和模型配置页面。
 - `/settings/repositories`：后续可拆出的仓库配置页面。

@@ -1,6 +1,7 @@
 import type { TaskStatus } from "@agent/shared";
 
 const toneByStatus: Partial<Record<TaskStatus, string>> = {
+  QUEUED: "statusQueued",
   DONE: "statusDone",
   BLOCKED: "statusBlocked",
   FAILED: "statusBlocked",
@@ -15,4 +16,3 @@ const toneByStatus: Partial<Record<TaskStatus, string>> = {
 export function StatusPill({ status }: { status: TaskStatus }) {
   return <span className={`statusPill ${toneByStatus[status] ?? "statusDefault"}`}>{status.replaceAll("_", " ")}</span>;
 }
-

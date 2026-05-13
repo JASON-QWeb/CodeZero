@@ -1,7 +1,7 @@
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { loadAppConfig, type AppConfig } from "@agent/config";
-import { createTask, makeIssueBranchName } from "@agent/orchestrator";
+import { createTask, makeIssueBranchName, transitionTask } from "@agent/orchestrator";
 import { createRepository, createTaskEvent, type TaskRepository } from "@agent/persistence";
 import type { IssueContext, Task } from "@agent/shared";
 
@@ -19,6 +19,10 @@ let servicesPromise: Promise<ApiServices> | undefined;
 export async function getServices(): Promise<ApiServices> {
   servicesPromise ??= createServices();
   return servicesPromise;
+}
+
+export function resetServicesForTests(): void {
+  servicesPromise = undefined;
 }
 
 export async function createAndEnqueueTask(issue: IssueContext): Promise<Task> {
@@ -42,11 +46,13 @@ export async function createAndEnqueueTask(issue: IssueContext): Promise<Task> {
     await services.tasks.appendEvent(
       createTaskEvent({
         taskId: created.id,
-        type: "ISSUE_CONTEXT_COLLECTED",
+        type: "TASK_QUEUED",
         message: "Workflow queued"
       })
     );
   } catch (error) {
+    const blocked = transitionTask(created, "BLOCKED");
+    await services.tasks.updateTask(created.id, { status: blocked.status, updatedAt: blocked.updatedAt });
     await services.tasks.appendEvent(
       createTaskEvent({
         taskId: created.id,

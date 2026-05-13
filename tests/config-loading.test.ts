@@ -9,6 +9,7 @@ describe("app config loading", () => {
     const config = await loadAppConfig(process.cwd());
 
     expect(config.repositories[0]?.trigger.mode).toBe("mention");
+    expect(config.repositories[0]?.queue.max_concurrent_issues).toBe(2);
     expect(config.repositories[0]?.permissions.blocked_permissions).toContain("dangerous");
     expect(config.tools.map((tool) => tool.name)).toContain("repo.apply_patch");
     expect(config.policies.map((policy) => policy.id)).toContain("block-dangerous-shell");

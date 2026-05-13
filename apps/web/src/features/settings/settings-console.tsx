@@ -398,6 +398,7 @@ function buildSummary(section: ConfigSection | undefined): Array<{ label: string
     return [
       { label: "Repositories", value: String(repositories.length) },
       { label: "Triggers", value: repositories.map((repo) => asRecord(asRecord(repo).trigger).mode).join(", ") || "none" },
+      { label: "Queue Limits", value: repositories.map((repo) => String(asRecord(asRecord(repo).queue).max_concurrent_issues ?? 1)).join(", ") || "none" },
       { label: "Quality Gates", value: String(repositories.filter((repo) => Object.keys(asRecord(asRecord(repo).quality_gates)).length > 0).length) },
       { label: "Repo Permissions", value: summarizeRepositoryPermissions(repositories) }
     ];

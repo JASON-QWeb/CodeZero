@@ -23,6 +23,10 @@ repositories:
         include_git_history: true
         include_codeowners: true
         max_depth: 4
+    # Hard cap for compute-heavy issue workflows in this repository.
+    # Extra issues stay QUEUED and are retried by the worker.
+    queue:
+      max_concurrent_issues: 2
     # Repository-level tool boundary. Empty allowlists mean "use global defaults";
     # non-empty allowlists make this repo stricter than the global Tool Gateway policy.
     permissions:

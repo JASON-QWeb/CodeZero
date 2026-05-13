@@ -138,6 +138,10 @@ function taskStatusToTraceStatus(status: Task["status"]): TraceSpanStatus {
     return "success";
   }
 
+  if (status === "QUEUED" || status === "ISSUE_RECEIVED") {
+    return "info";
+  }
+
   return "running";
 }
 

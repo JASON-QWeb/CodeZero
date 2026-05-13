@@ -8,9 +8,26 @@ import type {
 } from "@agent/shared";
 
 const terminalStatuses = new Set<TaskStatus>(["DONE", "BLOCKED", "FAILED", "CANCELLED"]);
+const queueWaitingStatuses = new Set<TaskStatus>(["QUEUED", "ISSUE_RECEIVED", "PRD_APPROVED"]);
+const humanWaitingStatuses = new Set<TaskStatus>(["PRD_REVIEW_REQUIRED", "HUMAN_REVIEW"]);
+const computeActiveStatuses = new Set<TaskStatus>([
+  "CONTEXT_COLLECTING",
+  "BRAINSTORMING",
+  "PRD_DRAFTED",
+  "SANDBOX_PREPARING",
+  "ISSUE_BRANCH_CREATED",
+  "CODEBASE_INDEXING",
+  "AGENTIC_SEARCHING",
+  "CONTEXT_PACK_CREATED",
+  "IMPLEMENTING",
+  "QUALITY_GATES_RUNNING",
+  "SUBAGENT_REVIEWING",
+  "PR_CREATING"
+]);
 
 const transitions: Record<TaskStatus, TaskStatus[]> = {
-  ISSUE_RECEIVED: ["CONTEXT_COLLECTING", "CANCELLED"],
+  QUEUED: ["CONTEXT_COLLECTING", "CANCELLED", "BLOCKED"],
+  ISSUE_RECEIVED: ["QUEUED", "CONTEXT_COLLECTING", "CANCELLED", "BLOCKED"],
   CONTEXT_COLLECTING: ["BRAINSTORMING", "FAILED", "CANCELLED"],
   BRAINSTORMING: ["PRD_DRAFTED", "FAILED", "CANCELLED"],
   PRD_DRAFTED: ["PRD_REVIEW_REQUIRED", "SANDBOX_PREPARING", "FAILED", "CANCELLED"],
@@ -38,7 +55,7 @@ export function createTask(issue: IssueContext, now = new Date()): Task {
   return {
     id: `task-${issue.owner}-${issue.repo}-${issue.number}`,
     issue,
-    status: "ISSUE_RECEIVED",
+    status: "QUEUED",
     createdAt: timestamp,
     updatedAt: timestamp
   };
@@ -86,6 +103,106 @@ export function reviewAllowsPr(review: ReviewResult): boolean {
   return review.approved && review.blockingFindings.length === 0 && review.scopeViolations.length === 0;
 }
 
+export type RepositoryConcurrencyConfig = {
+  id: string;
+  github_owner: string;
+  github_repo: string;
+  queue?: {
+    max_concurrent_issues?: number;
+  };
+};
+
+export type RepositoryQueueState = {
+  maxConcurrentIssues: number;
+  runningCount: number;
+  queuedCount: number;
+  reviewCount: number;
+  blockedCount: number;
+  completedCount: number;
+  totalCount: number;
+  availableSlots: number;
+};
+
+export type RepositoryConcurrencyDecision = RepositoryQueueState & {
+  shouldDefer: boolean;
+  reason: string;
+};
+
+export function isTerminalTaskStatus(status: TaskStatus): boolean {
+  return terminalStatuses.has(status);
+}
+
+export function isQueueWaitingStatus(status: TaskStatus): boolean {
+  return queueWaitingStatuses.has(status);
+}
+
+export function isHumanWaitingStatus(status: TaskStatus): boolean {
+  return humanWaitingStatuses.has(status);
+}
+
+export function isComputeActiveStatus(status: TaskStatus): boolean {
+  return computeActiveStatuses.has(status);
+}
+
+export function computeRepositoryQueueState(tasks: Task[], repository: RepositoryConcurrencyConfig): RepositoryQueueState {
+  const repositoryTasks = tasks.filter((task) => isTaskForRepository(task, repository));
+  const maxConcurrentIssues = normalizeMaxConcurrentIssues(repository.queue?.max_concurrent_issues);
+  const runningCount = repositoryTasks.filter((task) => isComputeActiveStatus(task.status)).length;
+  const queuedCount = repositoryTasks.filter((task) => isQueueWaitingStatus(task.status)).length;
+  const reviewCount = repositoryTasks.filter((task) => isHumanWaitingStatus(task.status)).length;
+  const blockedCount = repositoryTasks.filter((task) => task.status === "BLOCKED" || task.status === "FAILED").length;
+  const completedCount = repositoryTasks.filter((task) => task.status === "DONE" || task.status === "CANCELLED").length;
+
+  return {
+    maxConcurrentIssues,
+    runningCount,
+    queuedCount,
+    reviewCount,
+    blockedCount,
+    completedCount,
+    totalCount: repositoryTasks.length,
+    availableSlots: Math.max(0, maxConcurrentIssues - runningCount)
+  };
+}
+
+export function shouldDeferForRepositoryConcurrency(
+  tasks: Task[],
+  task: Task,
+  repository: RepositoryConcurrencyConfig
+): RepositoryConcurrencyDecision {
+  const state = computeRepositoryQueueState(tasks, repository);
+
+  if (isComputeActiveStatus(task.status)) {
+    return {
+      ...state,
+      shouldDefer: false,
+      reason: "Task is already running"
+    };
+  }
+
+  if (state.runningCount >= state.maxConcurrentIssues) {
+    return {
+      ...state,
+      shouldDefer: true,
+      reason: `Repository ${repository.github_owner}/${repository.github_repo} is at capacity ${state.runningCount}/${state.maxConcurrentIssues}`
+    };
+  }
+
+  return {
+    ...state,
+    shouldDefer: false,
+    reason: `Repository ${repository.github_owner}/${repository.github_repo} has ${state.availableSlots} available slot(s)`
+  };
+}
+
+function isTaskForRepository(task: Task, repository: RepositoryConcurrencyConfig): boolean {
+  return task.issue.owner === repository.github_owner && task.issue.repo === repository.github_repo;
+}
+
+function normalizeMaxConcurrentIssues(value: number | undefined): number {
+  return Number.isFinite(value) && value && value > 0 ? Math.floor(value) : 1;
+}
+
 export type WorkflowStep =
   | "collect-context"
   | "brainstorm"
@@ -114,4 +231,3 @@ export function createDefaultWorkflowPlan(): WorkflowStep[] {
     "create-draft-pr"
   ];
 }
-

@@ -109,7 +109,17 @@ Run Console：
 http://localhost:3000
 ```
 
-看板会展示 task 列表、选中 task 的 Trace Replay、tool/policy/quality gate 摘要、Settings Console 配置中心，以及 Memory Inbox。Memory Inbox 的 approve/reject 会调用同一组 Memory API，因此可以直接演示“proposal -> human review -> approved memory -> ContextPack”的闭环。
+看板会按仓库展示运行队列、queued/running/review/blocked 计数、仓库并发上限、选中仓库的 issue 列表、选中 task 的 Trace Replay、tool/policy/quality gate 摘要、Settings Console 配置中心，以及 Memory Inbox。Memory Inbox 的 approve/reject 会调用同一组 Memory API，因此可以直接演示“proposal -> human review -> approved memory -> ContextPack”的闭环。
+
+Task API：
+
+```text
+GET  http://localhost:4000/tasks
+GET  http://localhost:4000/tasks/repositories
+GET  http://localhost:4000/tasks/<task-id>/trace
+POST http://localhost:4000/tasks/import-issue
+POST http://localhost:4000/tasks/<task-id>/approve-prd
+```
 
 Settings API：
 
@@ -128,6 +138,7 @@ Settings Console 会保存到实际 `config/*.yaml`，保存前使用同一套 Z
 - Agent step routing：`prd`、`implementation`、`review` 等步骤选择 provider。
 - Complexity routing：`provider_by_complexity.low|medium|high`，让简单任务走快速/便宜模型，复杂任务走强模型。
 - GitHub 仓库配置：owner、repo、default branch、trigger mode、quality gates、frontend screenshot URLs。
+- 仓库级运行上限：`queue.max_concurrent_issues` 控制每个仓库最多同时执行几个 issue。
 - 仓库级权限：每个 repository 可配置 tool allowlist/blocklist 和 permission allowlist/blocklist，执行时会合成 Tool Gateway policy。
 - Tool Gateway 权限：tool permission、timeout、policy refs。
 - Policy-as-code：路径、命令、权限、工具名匹配，以及 `block` / `require_approval` 动作。
@@ -255,6 +266,8 @@ repositories:
       label_blocklist:
         - no-agent
         - security-review
+    queue:
+      max_concurrent_issues: 2
     permissions:
       allowed_tools:
         - repo.search
@@ -276,6 +289,16 @@ repositories:
 - 开源或多人协作仓库：`mention`。
 - 已有 triage 流程的团队仓库：`label`。
 - 高风险或灰度仓库：`manual` 或 `disabled`。
+
+### 5.2 仓库级并发队列
+
+`repositories.yaml` 的 `queue.max_concurrent_issues` 是每个仓库的硬上限。worker 启动多个并发槽位时，会先检查同仓库正在消耗算力的任务数；达到上限后，后续任务保持 `QUEUED`，并按 `REPOSITORY_QUEUE_RETRY_MS` 延迟重试。
+
+```bash
+WORKER_CONCURRENCY=4 REPOSITORY_QUEUE_RETRY_MS=15000 pnpm dev:worker
+```
+
+Run Console 的 repository cards 会显示每个仓库的 queued 数、running/max、review 和 blocked 数，点击仓库即可查看该仓库的 issue 队列。
 
 ## 6. 执行门禁
 
@@ -303,7 +326,7 @@ worker 会按顺序执行：
 
 - `config/policies.yaml`：危险路径、危险命令、高风险领域和审批策略。
 - `config/tools.yaml`：工具 schema、权限等级、timeout 和 policy refs。
-- `config/repositories.yaml`：仓库级触发策略、工具权限、质量门禁、截图 URL 和 PR draft 策略。
+- `config/repositories.yaml`：仓库级触发策略、并发队列上限、工具权限、质量门禁、截图 URL 和 PR draft 策略。
 - `repositories.yaml` 中的 `codebase_intelligence.navigation_graph`：是否构建 Repo Navigation Graph。
 
 Tool Gateway 会按这些配置记录 tool call、policy decision 和 navigation route；后续 trace replay 会复用同一批事件。

@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Check,
   Clock3,
+  GitBranch,
   GitPullRequestDraft,
   ListChecks,
   RotateCcw,
@@ -20,6 +21,27 @@ import { StatusPill } from "../../components/status-pill";
 
 type TasksResponse = {
   tasks: Task[];
+};
+
+type RepositoryQueueSummary = {
+  id: string;
+  owner: string;
+  repo: string;
+  fullName: string;
+  configured: boolean;
+  maxConcurrentIssues: number;
+  runningCount: number;
+  queuedCount: number;
+  reviewCount: number;
+  blockedCount: number;
+  completedCount: number;
+  totalCount: number;
+  availableSlots: number;
+  tasks: Task[];
+};
+
+type RepositoryQueuesResponse = {
+  repositories: RepositoryQueueSummary[];
 };
 
 type TraceResponse = {
@@ -70,6 +92,44 @@ const mockTasks: Task[] = [
     prUrl: "https://github.com/demo/commerce/pull/129",
     createdAt: demoTimestamp,
     updatedAt: demoTimestamp
+  },
+  {
+    id: "task-demo-129",
+    issue: {
+      provider: "github",
+      owner: "demo",
+      repo: "commerce",
+      number: 129,
+      url: "https://github.com/demo/commerce/issues/129",
+      title: "Add checkout rate limit copy",
+      body: "",
+      labels: ["backend"],
+      comments: [],
+      baseBranch: "main"
+    },
+    status: "QUEUED",
+    branchName: "agent/issue-129-add-checkout-rate-limit-copy",
+    createdAt: demoTimestamp,
+    updatedAt: demoTimestamp
+  },
+  {
+    id: "task-demo-42",
+    issue: {
+      provider: "github",
+      owner: "demo",
+      repo: "billing",
+      number: 42,
+      url: "https://github.com/demo/billing/issues/42",
+      title: "Tighten invoice export validation",
+      body: "",
+      labels: ["fullstack"],
+      comments: [],
+      baseBranch: "main"
+    },
+    status: "PRD_REVIEW_REQUIRED",
+    branchName: "agent/issue-42-tighten-invoice-export-validation",
+    createdAt: demoTimestamp,
+    updatedAt: demoTimestamp
   }
 ];
 
@@ -102,6 +162,17 @@ async function fetchTasks(): Promise<Task[]> {
 
   const data = (await response.json()) as TasksResponse;
   return data.tasks;
+}
+
+async function fetchRepositoryQueues(): Promise<RepositoryQueueSummary[]> {
+  const response = await fetch(`${apiBaseUrl()}/tasks/repositories`, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error("Failed to load repository queues");
+  }
+
+  const data = (await response.json()) as RepositoryQueuesResponse;
+  return data.repositories;
 }
 
 async function fetchTrace(taskId: string): Promise<TaskTrace> {
@@ -141,9 +212,14 @@ async function updateMemoryStatus(input: { id: string; status: Extract<MemorySta
 export function TaskBoard() {
   const queryClient = useQueryClient();
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | undefined>();
   const { data, isError } = useQuery({
     queryKey: ["tasks"],
     queryFn: fetchTasks
+  });
+  const repositoryQuery = useQuery({
+    queryKey: ["task-repositories"],
+    queryFn: fetchRepositoryQueues
   });
   const memoryQuery = useQuery({
     queryKey: ["memories", "proposed"],
@@ -158,8 +234,14 @@ export function TaskBoard() {
 
   const hasLiveTasks = Boolean(data?.length);
   const tasks: Task[] = data?.length ? data : mockTasks;
-  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0];
-  const fallbackTask = selectedTask ?? mockTasks[0]!;
+  const repositories = useMemo(() => (repositoryQuery.data?.length ? repositoryQuery.data : buildRepositorySummariesFromTasks(tasks)), [repositoryQuery.data, tasks]);
+  const selectedRepository = repositories.find((repository) => repository.id === selectedRepositoryId) ?? repositories[0];
+  const visibleTasks = useMemo(
+    () => (selectedRepository ? tasks.filter((task) => task.issue.owner === selectedRepository.owner && task.issue.repo === selectedRepository.repo) : tasks),
+    [selectedRepository, tasks]
+  );
+  const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0];
+  const fallbackTask = selectedTask ?? tasks[0] ?? mockTasks[0]!;
   const hasLiveMemories = Boolean(memoryQuery.data?.length);
   const memories: MemoryRecord[] = memoryQuery.data?.length ? memoryQuery.data : mockMemories;
   const traceQuery = useQuery({
@@ -170,19 +252,26 @@ export function TaskBoard() {
   const trace = traceQuery.data ?? mockTrace(fallbackTask);
   const stats = useMemo(
     () => ({
-      active: tasks.filter((task) => !["DONE", "BLOCKED", "FAILED", "CANCELLED"].includes(task.status)).length,
-      review: tasks.filter((task) => ["PRD_REVIEW_REQUIRED", "SUBAGENT_REVIEWING", "HUMAN_REVIEW"].includes(task.status)).length,
-      blocked: tasks.filter((task) => ["BLOCKED", "FAILED"].includes(task.status)).length,
+      active: repositories.reduce((sum, repository) => sum + repository.runningCount, 0),
+      queued: repositories.reduce((sum, repository) => sum + repository.queuedCount, 0),
+      review: repositories.reduce((sum, repository) => sum + repository.reviewCount, 0),
+      blocked: repositories.reduce((sum, repository) => sum + repository.blockedCount, 0),
       proposedMemory: memories.length
     }),
-    [memories.length, tasks]
+    [memories.length, repositories]
   );
 
   useEffect(() => {
-    if (!selectedTaskId && tasks[0]) {
-      setSelectedTaskId(tasks[0].id);
+    if (!selectedRepositoryId && repositories[0]) {
+      setSelectedRepositoryId(repositories[0].id);
     }
-  }, [selectedTaskId, tasks]);
+  }, [repositories, selectedRepositoryId]);
+
+  useEffect(() => {
+    if (visibleTasks.length > 0 && !visibleTasks.some((task) => task.id === selectedTaskId)) {
+      setSelectedTaskId(visibleTasks[0]?.id);
+    }
+  }, [selectedTaskId, visibleTasks]);
 
   return (
     <main className="shell">
@@ -199,42 +288,74 @@ export function TaskBoard() {
 
       <section className="metrics" aria-label="Task metrics">
         <Metric icon={<Search size={18} />} label="Active" value={stats.active} />
+        <Metric icon={<Clock3 size={18} />} label="Queued" value={stats.queued} />
         <Metric icon={<ShieldCheck size={18} />} label="Review" value={stats.review} />
         <Metric icon={<AlertTriangle size={18} />} label="Blocked" value={stats.blocked} />
         <Metric icon={<Sparkles size={18} />} label="Memory Inbox" value={stats.proposedMemory} />
+      </section>
+
+      <section className="repositoryBoard" aria-label="Repository queues">
+        <div className="sectionHeader">
+          <div>
+            <h2>Repositories</h2>
+            <span>{repositoryQuery.isError ? "API offline, showing demo" : `${repositories.length} configured queues`}</span>
+          </div>
+          <GitBranch size={18} aria-hidden />
+        </div>
+        <div className="repositoryCards">
+          {repositories.map((repository) => (
+            <RepositoryCard
+              key={repository.id}
+              onSelect={() => {
+                setSelectedRepositoryId(repository.id);
+                setSelectedTaskId(repository.tasks[0]?.id);
+              }}
+              repository={repository}
+              selected={repository.id === selectedRepository?.id}
+            />
+          ))}
+        </div>
       </section>
 
       <section className="workspaceGrid" aria-label="Agent workspace">
         <section className="taskGrid" aria-label="Tasks">
           <div className="sectionHeader">
             <div>
-              <h2>Tasks</h2>
-              <span>{tasks.length} tracked issue workflows</span>
+              <h2>{selectedRepository?.fullName ?? "Tasks"}</h2>
+              <span>
+                {selectedRepository
+                  ? `${selectedRepository.queuedCount} queued · ${selectedRepository.runningCount}/${selectedRepository.maxConcurrentIssues} running`
+                  : `${visibleTasks.length} tracked issue workflows`}
+              </span>
             </div>
             <RotateCcw size={18} aria-hidden />
           </div>
-          {tasks.map((task) => (
-            <button
-              className={`taskRow ${task.id === selectedTask?.id ? "taskRowSelected" : ""}`}
-              key={task.id}
-              onClick={() => setSelectedTaskId(task.id)}
-              type="button"
-            >
-              <div className="issueCell">
-                <span className="issueTitle">
-                  #{task.issue.number} {task.issue.title}
-                </span>
-                <span>
-                  {task.issue.owner}/{task.issue.repo} · base {task.issue.baseBranch}
-                </span>
-              </div>
-              <StatusPill status={task.status} />
-              <div className="branchCell">
-                <GitPullRequestDraft size={16} aria-hidden />
-                <span>{task.branchName ?? "branch pending"}</span>
-              </div>
-            </button>
-          ))}
+          {visibleTasks.length > 0 ? (
+            visibleTasks.map((task) => (
+              <button
+                className={`taskRow ${task.id === selectedTask?.id ? "taskRowSelected" : ""}`}
+                key={task.id}
+                onClick={() => setSelectedTaskId(task.id)}
+                type="button"
+              >
+                <div className="issueCell">
+                  <span className="issueTitle">
+                    #{task.issue.number} {task.issue.title}
+                  </span>
+                  <span>
+                    {task.issue.owner}/{task.issue.repo} · base {task.issue.baseBranch}
+                  </span>
+                </div>
+                <StatusPill status={task.status} />
+                <div className="branchCell">
+                  <GitPullRequestDraft size={16} aria-hidden />
+                  <span>{task.branchName ?? "branch pending"}</span>
+                </div>
+              </button>
+            ))
+          ) : (
+            <EmptyState label="No queued issues" />
+          )}
         </section>
 
         <section className="detailPanel" aria-label="Selected task details">
@@ -305,6 +426,50 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
         <strong>{value}</strong>
       </div>
     </div>
+  );
+}
+
+function RepositoryCard({
+  onSelect,
+  repository,
+  selected
+}: {
+  onSelect: () => void;
+  repository: RepositoryQueueSummary;
+  selected: boolean;
+}) {
+  const utilization = repository.maxConcurrentIssues > 0 ? Math.min(100, Math.round((repository.runningCount / repository.maxConcurrentIssues) * 100)) : 0;
+
+  return (
+    <button className={`repositoryCard ${selected ? "repositoryCardSelected" : ""}`} onClick={onSelect} type="button">
+      <div className="repositoryCardTopline">
+        <strong>{repository.fullName}</strong>
+        <span>{repository.configured ? "Configured" : "Unconfigured"}</span>
+      </div>
+      <div className="queueBar" aria-hidden>
+        <span style={{ width: `${utilization}%` }} />
+      </div>
+      <div className="repositoryStats">
+        <span>
+          <strong>{repository.queuedCount}</strong>
+          Queued
+        </span>
+        <span>
+          <strong>
+            {repository.runningCount}/{repository.maxConcurrentIssues}
+          </strong>
+          Running
+        </span>
+        <span>
+          <strong>{repository.reviewCount}</strong>
+          Review
+        </span>
+        <span>
+          <strong>{repository.blockedCount}</strong>
+          Blocked
+        </span>
+      </div>
+    </button>
   );
 }
 
@@ -387,6 +552,73 @@ function TraceRow({ span }: { span: TraceSpan }) {
 
 function EmptyState({ label }: { label: string }) {
   return <div className="emptyState">{label}</div>;
+}
+
+function buildRepositorySummariesFromTasks(tasks: Task[]): RepositoryQueueSummary[] {
+  const summaries = new Map<string, RepositoryQueueSummary>();
+
+  for (const task of tasks) {
+    const key = `${task.issue.owner}/${task.issue.repo}`;
+    const summary =
+      summaries.get(key) ??
+      ({
+        id: key,
+        owner: task.issue.owner,
+        repo: task.issue.repo,
+        fullName: key,
+        configured: true,
+        maxConcurrentIssues: task.issue.repo === "commerce" ? 2 : 1,
+        runningCount: 0,
+        queuedCount: 0,
+        reviewCount: 0,
+        blockedCount: 0,
+        completedCount: 0,
+        totalCount: 0,
+        availableSlots: 0,
+        tasks: []
+      } satisfies RepositoryQueueSummary);
+
+    summary.tasks.push(task);
+    summary.totalCount += 1;
+
+    if (isRunningStatus(task.status)) {
+      summary.runningCount += 1;
+    } else if (isQueuedStatus(task.status)) {
+      summary.queuedCount += 1;
+    } else if (["PRD_REVIEW_REQUIRED", "HUMAN_REVIEW"].includes(task.status)) {
+      summary.reviewCount += 1;
+    } else if (["BLOCKED", "FAILED"].includes(task.status)) {
+      summary.blockedCount += 1;
+    } else if (["DONE", "CANCELLED"].includes(task.status)) {
+      summary.completedCount += 1;
+    }
+
+    summary.availableSlots = Math.max(0, summary.maxConcurrentIssues - summary.runningCount);
+    summaries.set(key, summary);
+  }
+
+  return [...summaries.values()];
+}
+
+function isQueuedStatus(status: Task["status"]): boolean {
+  return ["QUEUED", "ISSUE_RECEIVED", "PRD_APPROVED"].includes(status);
+}
+
+function isRunningStatus(status: Task["status"]): boolean {
+  return [
+    "CONTEXT_COLLECTING",
+    "BRAINSTORMING",
+    "PRD_DRAFTED",
+    "SANDBOX_PREPARING",
+    "ISSUE_BRANCH_CREATED",
+    "CODEBASE_INDEXING",
+    "AGENTIC_SEARCHING",
+    "CONTEXT_PACK_CREATED",
+    "IMPLEMENTING",
+    "QUALITY_GATES_RUNNING",
+    "SUBAGENT_REVIEWING",
+    "PR_CREATING"
+  ].includes(status);
 }
 
 function formatTime(value: string): string {

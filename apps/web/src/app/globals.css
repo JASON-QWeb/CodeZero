@@ -9,6 +9,7 @@
   --accent: #186b64;
   --accent-strong: #0f514c;
   --active: #155eef;
+  --queued: #5d6470;
   --review: #8b5e00;
   --blocked: #b42318;
   --done: #0e7a3f;
@@ -97,7 +98,7 @@ p {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin: 22px 0;
 }
@@ -261,6 +262,10 @@ p {
   color: var(--active);
 }
 
+.statusQueued {
+  color: var(--queued);
+}
+
 .statusReview {
   color: var(--review);
 }
@@ -408,6 +413,102 @@ p {
 .status-running,
 .status-info {
   color: var(--active);
+}
+
+.repositoryBoard {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px;
+}
+
+.repositoryCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.repositoryCard {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  padding: 13px;
+  text-align: left;
+}
+
+.repositoryCard:hover,
+.repositoryCardSelected {
+  border-color: var(--accent);
+  background: #f8fbfa;
+}
+
+.repositoryCardTopline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.repositoryCardTopline strong {
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repositoryCardTopline span {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.queueBar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.queueBar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.repositoryStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.repositoryStats span {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.repositoryStats strong {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.1;
 }
 
 .memoryList {
