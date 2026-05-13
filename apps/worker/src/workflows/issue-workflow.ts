@@ -13,7 +13,7 @@ export type IssueWorkflowResult = {
 };
 
 export async function runIssueWorkflow(job: IssueWorkflowJob): Promise<IssueWorkflowResult> {
-  const config = await loadAppConfig(process.cwd());
+  const config = await loadAppConfig();
   const tasks = await createRepository(config.storage);
   const runner = new IssueWorkflowRunner(config, tasks);
   return runner.run(job.taskId);

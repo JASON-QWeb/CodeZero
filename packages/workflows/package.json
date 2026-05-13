@@ -20,12 +20,14 @@
     "@agent/codebase-intelligence": "workspace:*",
     "@agent/config": "workspace:*",
     "@agent/github": "workspace:*",
+    "@agent/memory": "workspace:*",
     "@agent/orchestrator": "workspace:*",
     "@agent/persistence": "workspace:*",
     "@agent/project-context": "workspace:*",
     "@agent/sandbox": "workspace:*",
     "@agent/shared": "workspace:*",
     "@agent/skills": "workspace:*",
+    "@agent/tool-gateway": "workspace:*",
     "@agent/verification": "workspace:*",
     "zod": "^4.1.13"
   },
@@ -34,4 +36,3 @@
     "typescript": "^5.9.3"
   }
 }
-

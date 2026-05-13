@@ -18,8 +18,11 @@
     "paths": {
       "@agent/shared": ["packages/shared/src/index.ts"],
       "@agent/config": ["packages/config/src/index.ts"],
+      "@agent/evals": ["packages/evals/src/index.ts"],
       "@agent/persistence": ["packages/persistence/src/index.ts"],
+      "@agent/memory": ["packages/memory/src/index.ts"],
       "@agent/orchestrator": ["packages/orchestrator/src/index.ts"],
+      "@agent/observability": ["packages/observability/src/index.ts"],
       "@agent/agent-runtime": ["packages/agent-runtime/src/index.ts"],
       "@agent/sandbox": ["packages/sandbox/src/index.ts"],
       "@agent/codebase-intelligence": ["packages/codebase-intelligence/src/index.ts"],
@@ -27,6 +30,7 @@
       "@agent/project-context": ["packages/project-context/src/index.ts"],
       "@agent/verification": ["packages/verification/src/index.ts"],
       "@agent/github": ["packages/github/src/index.ts"],
+      "@agent/tool-gateway": ["packages/tool-gateway/src/index.ts"],
       "@agent/workflows": ["packages/workflows/src/index.ts"]
     }
   }

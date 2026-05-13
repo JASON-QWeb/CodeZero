@@ -12,7 +12,6 @@ export type IssueWorkflowJob = {
 export type ApiServices = {
   config: AppConfig;
   tasks: TaskRepository;
-  queue: Queue<IssueWorkflowJob>;
 };
 
 let servicesPromise: Promise<ApiServices> | undefined;
@@ -39,7 +38,7 @@ export async function createAndEnqueueTask(issue: IssueContext): Promise<Task> {
   );
 
   try {
-    await services.queue.add("run-issue-workflow", { taskId: created.id }, { jobId: created.id });
+    await enqueueIssueWorkflow(created.id);
     await services.tasks.appendEvent(
       createTaskEvent({
         taskId: created.id,
@@ -62,15 +61,25 @@ export async function createAndEnqueueTask(issue: IssueContext): Promise<Task> {
 }
 
 async function createServices(): Promise<ApiServices> {
-  const rootDir = process.cwd();
-  const config = await loadAppConfig(rootDir);
+  const config = await loadAppConfig();
   const tasks = await createRepository(config.storage);
+
+  return { config, tasks };
+}
+
+export async function enqueueIssueWorkflow(taskId: string, jobId = taskId): Promise<void> {
   const connection = new IORedis(process.env.REDIS_URL ?? "redis://localhost:6379", {
     maxRetriesPerRequest: null,
     lazyConnect: true,
     enableOfflineQueue: false
   });
+  connection.on("error", () => undefined);
   const queue = new Queue<IssueWorkflowJob>("issue-workflows", { connection });
 
-  return { config, tasks, queue };
+  try {
+    await queue.add("run-issue-workflow", { taskId }, { jobId });
+  } finally {
+    await queue.close().catch(() => undefined);
+    connection.disconnect();
+  }
 }

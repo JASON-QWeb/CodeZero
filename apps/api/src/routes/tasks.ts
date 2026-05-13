@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { buildTaskTrace } from "@agent/observability";
 import { transitionTask } from "@agent/orchestrator";
 import { createTaskEvent } from "@agent/persistence";
-import { createAndEnqueueTask, getServices } from "../services/task-services.js";
+import { createAndEnqueueTask, enqueueIssueWorkflow, getServices } from "../services/task-services.js";
 
 const importIssueSchema = z.object({
   owner: z.string().min(1),
@@ -42,6 +43,18 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
     return { artifacts: await services.tasks.listArtifacts(request.params.id) };
   });
 
+  app.get<{ Params: { id: string } }>("/tasks/:id/trace", async (request, reply) => {
+    const services = await getServices();
+    const task = await services.tasks.getTask(request.params.id);
+
+    if (!task) {
+      return reply.code(404).send({ message: "Task not found" });
+    }
+
+    const [events, artifacts] = await Promise.all([services.tasks.listEvents(task.id), services.tasks.listArtifacts(task.id)]);
+    return { trace: buildTaskTrace({ task, events, artifacts }) };
+  });
+
   app.post("/tasks/import-issue", async (request, reply) => {
     const parsed = importIssueSchema.safeParse(request.body);
 
@@ -76,7 +89,7 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
     const approved = transitionTask(task, "PRD_APPROVED");
     const updated = await services.tasks.updateTask(task.id, { status: approved.status, updatedAt: approved.updatedAt });
     await services.tasks.appendEvent(createTaskEvent({ taskId: task.id, type: "PRD_APPROVED", message: "PRD approved by human" }));
-    await services.queue.add("run-issue-workflow", { taskId: task.id }, { jobId: `${task.id}-approved-${Date.now()}` });
+    await enqueueIssueWorkflow(task.id, `${task.id}-approved-${Date.now()}`);
     return { task: updated };
   });
 }

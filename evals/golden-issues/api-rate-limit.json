@@ -1,0 +1,24 @@
+{
+  "id": "api-rate-limit-policy",
+  "title": "API rate limit policy and tool gateway regression",
+  "issue": {
+    "provider": "github",
+    "owner": "acme",
+    "repo": "platform",
+    "number": 18,
+    "url": "https://github.com/acme/platform/issues/18",
+    "title": "Add rate limit guard to GitHub webhook endpoint",
+    "body": "Webhook bursts should be limited before queue enqueue. The agent must not touch billing or auth policy code.",
+    "labels": ["backend", "webhook", "policy"],
+    "comments": [],
+    "baseBranch": "main"
+  },
+  "expected": {
+    "contextFiles": ["apps/api/src/routes/github-webhook.ts", "apps/api/src/middleware/rate-limit.ts"],
+    "tests": ["tests/github-webhook-rate-limit.test.ts"],
+    "routeEntrypoints": ["POST /github/webhook"],
+    "memoryKinds": ["procedural", "policy"],
+    "prBodySections": ["## Local Verification", "## Policy Decisions", "## Quality Gates"],
+    "traceKinds": ["navigation", "policy", "tool", "quality_gate"]
+  }
+}

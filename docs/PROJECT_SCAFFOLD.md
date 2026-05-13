@@ -56,10 +56,37 @@ agent-prd-automation/
       src/indexer/file-indexer.ts
       src/indexer/symbol-indexer.ts
       src/indexer/embedding-indexer.ts
+      src/navigation-graph/repo-graph-builder.ts
+      src/navigation-graph/navigation-route.ts
       src/search/agentic-search.ts
       src/search/hybrid-search.ts
       src/evidence/evidence-scorer.ts
       src/project-map/project-map-updater.ts
+    memory/
+      src/memory-store.ts
+      src/memory-retriever.ts
+      src/memory-proposal.ts
+    tool-gateway/
+      src/tool-registry.ts
+      src/tool-permissions.ts
+      src/mcp-adapter.ts
+    policy-engine/
+      src/policy-loader.ts
+      src/policy-evaluator.ts
+    observability/
+      src/trace-recorder.ts
+      src/run-replay.ts
+      src/cost-metrics.ts
+    evals/
+      src/golden-issue-runner.ts
+      src/assertions.ts
+    repo-onboarding/
+      src/onboarding-agent.ts
+      src/project-map-generator.ts
+    security/
+      src/secret-scan.ts
+      src/dependency-audit.ts
+      src/prompt-injection-scan.ts
     verification/
       src/test-runner.ts
       src/playwright-screenshot.ts
@@ -75,6 +102,8 @@ agent-prd-automation/
     agents.example.yaml
     sandbox.example.yaml
     repositories.example.yaml
+    policies.example.yaml
+    tools.example.yaml
   infra/
     docker/
       sandbox.Dockerfile
@@ -126,6 +155,22 @@ repositories:
     github_repo: your-repo
     default_branch: main
     project_skill_path: ".agent"
+    trigger:
+      mode: mention
+      mention: "@agent-prd"
+      auto_events:
+        - issues.opened
+        - issues.reopened
+      label_allowlist:
+        - agent-ready
+      label_blocklist:
+        - no-agent
+    codebase_intelligence:
+      navigation_graph:
+        enabled: true
+        include_git_history: true
+        include_codeowners: true
+        max_depth: 4
     frontend:
       dev_command: "npm run dev"
       test_command: "npm test"
@@ -178,6 +223,18 @@ sandbox:
 - `codebase_indexes`
 - `context_packs`
 - `project_map_updates`
+- `memory_records`
+- `memory_links`
+- `memory_embeddings`
+- `repo_graph_nodes`
+- `repo_graph_edges`
+- `navigation_routes`
+- `tool_calls`
+- `policy_decisions`
+- `trace_spans`
+- `eval_runs`
+- `eval_results`
+- `security_findings`
 
 ## 4. API 草案
 
@@ -195,13 +252,24 @@ POST   /tasks/:id/cancel
 POST   /tasks/:id/retry
 POST   /tasks/:id/mark-dependency
 GET    /tasks/:id/artifacts/:artifactId
+POST   /tasks/:id/approve-memory-update
+POST   /tasks/:id/reject-memory-update
+GET    /tasks/:id/trace
+GET    /tasks/:id/navigation-route
+GET    /memories?status=proposed
+POST   /memories/:id/approve
+POST   /memories/:id/reject
+POST   /tasks/:id/tool-approvals/:approvalId/approve
+POST   /tasks/:id/tool-approvals/:approvalId/reject
+POST   /repositories/:id/onboard
+POST   /evals/golden-issues/run
 ```
 
 ## 5. 看板页面
 
-第一版页面：
+当前第一版页面：
 
-- `/`：任务列表。
+- `/`：Run Console，包含任务列表、选中 task 详情、Trace Replay timeline、质量/工具/policy 摘要、Memory Inbox approve/reject。
 - `/tasks/:id`：任务详情。
 - `/settings/agents`：Agent provider 和模型配置。
 - `/settings/repositories`：仓库配置。
@@ -217,12 +285,20 @@ GET    /tasks/:id/artifacts/:artifactId
 6. 实现人工审核门禁。
 7. 实现 Docker 沙箱 clone。
 8. 实现 codebase index：路径、符号、业务 skill、历史变更。
-9. 实现 agentic search 和 ContextPack。
-10. 实现上下文压缩。
-11. 实现主 Agent 最小修改计划和执行。
-12. 实现 Issue 独立分支和跨 Issue 污染检查。
-13. 实现 build/lint/test/typecheck 质量门禁。
-14. 实现前后端验证。
-15. 实现 Review subagent。
-16. 实现 draft PR 创建。
-17. 实现项目地图更新建议。
+9. 实现 Repo Navigation Graph 和 navigation route。
+10. 实现 agentic search 和 ContextPack。
+11. 实现上下文压缩。
+12. 实现主 Agent 最小修改计划和执行。
+13. 实现 Issue 独立分支和跨 Issue 污染检查。
+14. 实现 build/lint/test/typecheck 质量门禁。
+15. 实现前后端验证。
+16. 实现 Review subagent。
+17. 实现 draft PR 创建。
+18. 实现 PR 本地验证指令生成。
+19. 实现 trace replay 和基础 observability。
+20. 实现 policy-as-code 和 security scanning。
+21. 实现 golden issue eval harness。
+22. 实现 MCP tool gateway 和 tool permission UI。
+23. 实现 Repository Onboarding Agent。
+24. 实现项目地图更新建议。
+25. 实现 memory proposal 和 memory retrieval。

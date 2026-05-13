@@ -2,14 +2,16 @@
 
 ## 1. 总体架构
 
-系统建议分为六层：
+系统建议分为八层：
 
 1. 入口层：接收 Issue、评论、人工按钮操作和 webhook。
 2. 编排层：维护任务状态机、复杂度门禁、Agent 调度和重试策略。
 3. Agent 层：负责 PRD、实现、测试、截图、Review 等具体智能任务。
 4. 沙箱层：为每次任务创建隔离执行环境。
-5. 产物层：保存 PRD、日志、截图、测试报告、patch、PR 链接。
-6. Web 看板层：展示状态并提供人工控制。
+5. 记忆与知识层：维护项目地图、Repo Navigation Graph、历史 PR 经验、运行摘要、业务 skill 和 ContextPack 索引。
+6. 产物层：保存 PRD、日志、截图、测试报告、patch、PR 链接和 memory update proposal。
+7. 治理与观测层：trace replay、eval、policy、tool approval、cost metrics 和安全扫描。
+8. Web 看板层：展示状态并提供人工控制。
 
 大仓库场景下，沙箱会 clone 完整仓库，但 Agent 不阅读完整仓库。系统通过 codebase intelligence 层建立索引、执行 agentic search，并生成小型 ContextPack 供实现 Agent 使用。
 
@@ -103,6 +105,8 @@
 - 装载 prompt。
 - 装载 skill。
 - 调用模型。
+- 通过 provider profile 接入 DeepSeek / Qwen 等国产 OpenAI-compatible API。
+- 把模型输出解析为 structured artifact 或 JSON action。
 - 读写沙箱文件。
 - 运行测试命令。
 - 上报事件。
@@ -113,6 +117,7 @@
 
 - 建立文件路径、符号、语义和历史变更索引。
 - 加载并索引项目业务 skill。
+- 构建 Repo Navigation Graph。
 - 执行多轮 agentic search。
 - 生成 ContextPack。
 - 生成项目地图更新建议。
@@ -138,6 +143,105 @@
 - 推送远端。
 - 创建 draft PR。
 - 写入 PR 描述和附件链接。
+- 生成 `pr-local-verification.json`，并写入本地验证指令，包括 `gh pr checkout`、plain Git checkout、安装命令、质量门禁命令、启动命令、base commit 和 sandbox image。
+
+### 3.10 Memory Service
+
+职责：
+
+- 当前已落地基础 `@agent/memory`，提供 proposed/approved/rejected 记忆状态、本地 Memory Store 和 task memory proposal。
+- 保存 task/run 级短期摘要，支持中断后继续执行。
+- 索引历史 Issue、PR、测试失败、Review 结论，形成 episodic memory。
+- 维护项目地图、业务术语、模块关系、测试指南等 semantic project memory。
+- 把多次重复出现的成功流程提升为 procedural memory 或 skill 更新建议。
+- 为 ContextPack 检索相关 memory，并保留来源、置信度、时间和人工确认状态。
+- 生成 `memory-proposal`、`memory-update` 和 `project-map-update` artifact，交给 Review subagent 和人审。
+
+Memory 不能替代当前代码、PRD 或测试结果。它只能作为检索线索和经验建议，所有长期项目记忆默认需要人工审核。
+
+### 3.11 Repository Trigger Policy Service
+
+职责：
+
+- 按仓库决定 Issue 是否自动进入 Agent workflow。
+- 支持 `auto`、`mention`、`label`、`manual`、`disabled` 五种策略。
+- 支持每个仓库自定义 mention，例如 `@agent-prd`、`@repo-agent`。
+- 支持 label allowlist/blocklist 和 actor allowlist。
+- 在事件日志中记录触发原因，便于审计。
+
+目标配置示例：
+
+```yaml
+trigger:
+  mode: mention
+  mention: "@agent-prd"
+  auto_events:
+    - issues.opened
+    - issues.reopened
+  label_allowlist:
+    - agent-ready
+  label_blocklist:
+    - no-agent
+    - security-review
+```
+
+### 3.12 Repo Navigation Graph Service
+
+职责：
+
+- 构建文件、符号、import/export、调用链、路由、测试、ownership、历史变更和 memory 的多层导航图。
+- 根据 Issue/PRD 生成 `navigation-route.json`，指导 Agent 优先读哪些入口、哪些文件和哪些测试。
+- 为 ContextPack 提供 graph distance、test relationship、business concept、changed-with history 等证据。
+- 为 Review subagent 检查 diff 是否偏离导航路线。
+
+Repo Navigation Graph 是 Agent 读大仓库的核心加速器。它不替代检索，而是给检索一个路线图。
+
+### 3.13 Tool Gateway Service
+
+职责：
+
+- 当前已落地基础 `@agent/tool-gateway` 并接入 implementation workflow，提供 `ToolRegistry`、`ToolGateway`、policy decision、JSON action fallback、`repo.apply_patch` 和内置 repo/shell 工具。
+- 注册 shell、git、github、browser、verification、memory、indexer 等工具。
+- 使用 schema 校验 tool input/output。
+- 执行 timeout、retry、redaction、permission check 和 audit log。
+- 支持 MCP 风格 tools/resources/prompts/roots 映射。
+- 对高风险工具调用发起人工审批。
+
+### 3.14 Policy Engine
+
+职责：
+
+- 读取 `config/policies.yaml`。
+- 对 planned files、actual diff、tool call、command、memory update proposal 做策略判断。
+- 输出 `allow`、`allow_with_audit`、`require_approval` 或 `block`。
+- 把策略结果写入 trace 和 Review subagent 输入。
+
+### 3.15 Observability And Eval Service
+
+职责：
+
+- 当前已落地基础 `@agent/observability`，并通过 `GET /tasks/:id/trace` 暴露 task events + artifacts 生成的 replay timeline。
+- 为每个 task 生成 trace spans 和可回放 run timeline。
+- 记录模型、token、成本、耗时、tool call、memory hit、guardrail decision。
+- 运行 golden issue evals，评估 PRD、ContextPack、导航路线、Review 和 PR body。
+- 生成 portable incident artifact，方便调试失败的 Agent run。
+
+### 3.16 Repository Onboarding Service
+
+职责：
+
+- 对新仓库执行首次扫描。
+- 生成 `.agent/project.md`、`module-map.md`、`route-map.md`、`testing-guide.md`、`ownership.md`。
+- 生成默认质量门禁、触发策略、policy 建议和 Repo Navigation Graph。
+- 人审通过后启用自动 Issue workflow。
+
+### 3.17 Security Scan Service
+
+职责：
+
+- 对 Agent diff、artifacts、memory update proposal 和新增依赖执行安全检查。
+- 执行 secret scan、dangerous path scan、dependency audit、SAST、prompt injection scan。
+- 安全门禁失败时阻断 PR 或请求人工批准。
 
 ## 4. Agent 分工
 
@@ -257,6 +361,8 @@ Review Agent 还必须检查当前 PR 是否只包含当前 Issue 的改动，�
 - command list
 - environment image
 - test result
+- memory records used
+- PR local verification commands
 
 ## 7. Web 看板页面
 

@@ -1,0 +1,117 @@
+{
+  "fixtureId": "api-rate-limit-policy",
+  "contextPack": {
+    "id": "ctx-api-rate-limit",
+    "taskId": "task-api-rate-limit",
+    "taskSummary": "Add rate limit guard to GitHub webhook endpoint.",
+    "businessRules": ["Do not touch billing or auth policy code."],
+    "memories": [
+      {
+        "id": "memory-webhook-rate-limit",
+        "kind": "procedural",
+        "title": "Webhook guard recipe",
+        "content": "Keep webhook checks before queue enqueue and test burst behavior.",
+        "score": 0.88,
+        "confidence": 0.84,
+        "reasons": ["matched webhook", "matched rate"]
+      },
+      {
+        "id": "memory-policy-boundary",
+        "kind": "policy",
+        "title": "Sensitive modules",
+        "content": "Auth, billing and migration files require explicit approval.",
+        "score": 0.78,
+        "confidence": 0.91,
+        "reasons": ["matched policy"]
+      }
+    ],
+    "relevantFiles": [
+      {
+        "path": "apps/api/src/routes/github-webhook.ts",
+        "reason": "Webhook entrypoint.",
+        "evidence": [{ "kind": "graph", "score": 0.95, "summary": "Route entrypoint." }],
+        "readMode": "full"
+      },
+      {
+        "path": "apps/api/src/middleware/rate-limit.ts",
+        "reason": "Shared rate limit middleware.",
+        "evidence": [{ "kind": "path", "score": 0.89, "summary": "Path matches rate limit." }],
+        "readMode": "full"
+      }
+    ],
+    "symbols": ["registerGitHubWebhookRoutes", "createRateLimitGuard"],
+    "tests": ["tests/github-webhook-rate-limit.test.ts"],
+    "similarChanges": [],
+    "nonRelevantAreas": ["apps/api/src/routes/billing.ts", "apps/api/src/routes/auth.ts"],
+    "openQuestions": [],
+    "tokenBudget": 14000,
+    "createdAt": "2026-05-12T00:00:00.000Z"
+  },
+  "navigationRoute": {
+    "entrypoints": ["POST /github/webhook"],
+    "tests": ["tests/github-webhook-rate-limit.test.ts"]
+  },
+  "prBody": "## Local Verification\nRun pnpm test tests/github-webhook-rate-limit.test.ts.\n\n## Policy Decisions\nNo auth, billing or migration files were modified.\n\n## Quality Gates\nlint, typecheck and unit tests passed.",
+  "trace": {
+    "taskId": "task-api-rate-limit",
+    "status": "DONE",
+    "issueUrl": "https://github.com/acme/platform/issues/18",
+    "spans": [
+      {
+        "id": "span-navigation",
+        "taskId": "task-api-rate-limit",
+        "name": "Navigation route created",
+        "kind": "navigation",
+        "status": "success",
+        "level": "info",
+        "message": "Webhook route selected.",
+        "startedAt": "2026-05-12T00:00:00.000Z",
+        "endedAt": "2026-05-12T00:00:00.000Z",
+        "durationMs": 0
+      },
+      {
+        "id": "span-policy",
+        "taskId": "task-api-rate-limit",
+        "name": "Policy decision",
+        "kind": "policy",
+        "status": "success",
+        "level": "info",
+        "message": "Sensitive modules untouched.",
+        "startedAt": "2026-05-12T00:00:01.000Z",
+        "endedAt": "2026-05-12T00:00:01.000Z",
+        "durationMs": 0
+      },
+      {
+        "id": "span-tool",
+        "taskId": "task-api-rate-limit",
+        "name": "repo.apply_patch",
+        "kind": "tool",
+        "status": "success",
+        "level": "info",
+        "message": "Patch applied.",
+        "startedAt": "2026-05-12T00:00:02.000Z",
+        "endedAt": "2026-05-12T00:00:02.000Z",
+        "durationMs": 0
+      },
+      {
+        "id": "span-quality",
+        "taskId": "task-api-rate-limit",
+        "name": "Quality gates",
+        "kind": "quality_gate",
+        "status": "success",
+        "level": "info",
+        "message": "Tests passed.",
+        "startedAt": "2026-05-12T00:00:03.000Z",
+        "endedAt": "2026-05-12T00:00:03.000Z",
+        "durationMs": 0
+      }
+    ],
+    "artifacts": [],
+    "summary": {
+      "totalSpans": 4,
+      "toolCalls": 1,
+      "policyDecisions": 1,
+      "failedOrBlocked": 0
+    }
+  }
+}

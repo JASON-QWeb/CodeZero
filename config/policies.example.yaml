@@ -1,0 +1,34 @@
+policies:
+  - id: block-secret-files
+    description: Agent must not modify secrets or private keys.
+    match_paths:
+      - ".env*"
+      - "**/*.pem"
+      - "**/*.key"
+    action: block
+
+  - id: require-human-review-for-auth-and-billing
+    description: Auth, billing, permission, and ledger changes require human approval.
+    match_paths:
+      - "src/auth/**"
+      - "src/billing/**"
+      - "src/permissions/**"
+      - "src/ledger/**"
+    action: require_approval
+
+  - id: block-dangerous-shell
+    description: Dangerous shell commands are not allowed in automated runs.
+    match_commands:
+      - "rm -rf"
+      - "npm publish"
+      - "pnpm publish"
+      - "kubectl apply"
+      - "terraform apply"
+    action: block
+
+  - id: audit-database-migrations
+    description: Database migrations can be generated only with explicit review.
+    match_paths:
+      - "**/migrations/**"
+      - "**/schema.prisma"
+    action: require_approval

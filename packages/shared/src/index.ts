@@ -115,15 +115,23 @@ export type TaskEventType =
   | "ISSUE_BRANCH_CREATED"
   | "CODEBASE_INDEXED"
   | "AGENTIC_SEARCH_FINISHED"
+  | "REPO_NAVIGATION_GRAPH_CREATED"
+  | "NAVIGATION_ROUTE_CREATED"
+  | "MEMORY_RETRIEVED"
   | "CONTEXT_PACK_CREATED"
   | "PLAN_CREATED"
   | "COMMAND_STARTED"
   | "COMMAND_FINISHED"
+  | "TOOL_CALL_STARTED"
+  | "TOOL_CALL_FINISHED"
+  | "POLICY_DECISION"
   | "FILE_CHANGED"
   | "QUALITY_GATE_STARTED"
   | "QUALITY_GATE_FINISHED"
   | "SCREENSHOT_CAPTURED"
   | "SUBAGENT_REVIEW_FINISHED"
+  | "PR_VERIFICATION_CREATED"
+  | "MEMORY_PROPOSAL_CREATED"
   | "PR_CREATED"
   | "TASK_BLOCKED"
   | "TASK_FAILED";
@@ -139,7 +147,7 @@ export type TaskEvent = {
 };
 
 export type FileEvidence = {
-  kind: "keyword" | "path" | "symbol" | "semantic" | "history" | "business-skill";
+  kind: "keyword" | "path" | "symbol" | "semantic" | "history" | "business-skill" | "graph";
   score: number;
   summary: string;
 };
@@ -151,11 +159,23 @@ export type RelevantFile = {
   readMode: "full" | "excerpt" | "summary";
 };
 
+export type ContextMemory = {
+  id: string;
+  kind: "semantic" | "episodic" | "procedural" | "policy";
+  title: string;
+  content: string;
+  score: number;
+  confidence: number;
+  reasons: string[];
+  sourceTaskId?: string;
+};
+
 export type ContextPack = {
   id: string;
   taskId: string;
   taskSummary: string;
   businessRules: string[];
+  memories: ContextMemory[];
   relevantFiles: RelevantFile[];
   symbols: string[];
   tests: string[];
@@ -180,7 +200,21 @@ export type MinimalChangePlan = {
 export type Artifact = {
   id: string;
   taskId: string;
-  type: "prd" | "brainstorm" | "context-pack" | "screenshot" | "test-report" | "diff" | "review" | "project-map-update";
+  type:
+    | "prd"
+    | "brainstorm"
+    | "context-pack"
+    | "repo-graph"
+    | "navigation-route"
+    | "screenshot"
+    | "test-report"
+    | "diff"
+    | "review"
+    | "pr-verification"
+    | "tool-call"
+    | "memory-context"
+    | "memory-proposal"
+    | "project-map-update";
   path?: string;
   url?: string;
   metadata?: JsonObject;
@@ -211,4 +245,49 @@ export type ReviewResult = {
   scopeViolations: string[];
   riskLevel: RiskLevel;
   prDescriptionNotes: string[];
+};
+
+export type TraceSpanKind =
+  | "workflow"
+  | "model"
+  | "tool"
+  | "policy"
+  | "artifact"
+  | "quality_gate"
+  | "navigation"
+  | "memory"
+  | "github"
+  | "human"
+  | "error";
+
+export type TraceSpanStatus = "success" | "running" | "blocked" | "failed" | "info";
+
+export type TraceSpan = {
+  id: string;
+  taskId: string;
+  parentId?: string;
+  name: string;
+  kind: TraceSpanKind;
+  status: TraceSpanStatus;
+  level: TaskEvent["level"];
+  message: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  metadata?: JsonObject;
+};
+
+export type TaskTrace = {
+  taskId: string;
+  status: TaskStatus;
+  issueUrl: string;
+  prUrl?: string;
+  spans: TraceSpan[];
+  artifacts: Artifact[];
+  summary: {
+    totalSpans: number;
+    toolCalls: number;
+    policyDecisions: number;
+    failedOrBlocked: number;
+  };
 };

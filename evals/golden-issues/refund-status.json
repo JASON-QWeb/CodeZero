@@ -1,0 +1,24 @@
+{
+  "id": "refund-status-order-detail",
+  "title": "Refund status route and memory regression",
+  "issue": {
+    "provider": "github",
+    "owner": "acme",
+    "repo": "shop",
+    "number": 7,
+    "url": "https://github.com/acme/shop/issues/7",
+    "title": "Refund status wrong on order detail page",
+    "body": "The refund status copy on the order detail page should match the refund service state.",
+    "labels": ["frontend", "refund"],
+    "comments": [],
+    "baseBranch": "main"
+  },
+  "expected": {
+    "contextFiles": ["src/billing/refund-status.ts"],
+    "tests": ["src/billing/refund-status.test.ts"],
+    "routeEntrypoints": ["/orders/:id"],
+    "memoryKinds": ["episodic"],
+    "prBodySections": ["## Local Verification", "## Quality Gates"],
+    "traceKinds": ["navigation", "memory", "tool"]
+  }
+}

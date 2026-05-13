@@ -1,0 +1,91 @@
+{
+  "fixtureId": "refund-status-order-detail",
+  "contextPack": {
+    "id": "ctx-refund-status",
+    "taskId": "task-refund-status",
+    "taskSummary": "Fix refund status copy on order detail page.",
+    "businessRules": ["Refund copy must follow refund service state."],
+    "memories": [
+      {
+        "id": "memory-refund-previous",
+        "kind": "episodic",
+        "title": "Prior refund status copy fix",
+        "content": "Order detail status depends on src/billing/refund-status.ts.",
+        "score": 0.91,
+        "confidence": 0.86,
+        "reasons": ["matched refund", "matched status"],
+        "sourceTaskId": "task-previous-refund"
+      }
+    ],
+    "relevantFiles": [
+      {
+        "path": "src/billing/refund-status.ts",
+        "reason": "Contains refund status mapping.",
+        "evidence": [{ "kind": "graph", "score": 0.92, "summary": "Route and business concept match." }],
+        "readMode": "full"
+      }
+    ],
+    "symbols": ["formatRefundStatus"],
+    "tests": ["src/billing/refund-status.test.ts"],
+    "similarChanges": [],
+    "nonRelevantAreas": ["src/auth"],
+    "openQuestions": [],
+    "tokenBudget": 12000,
+    "createdAt": "2026-05-12T00:00:00.000Z"
+  },
+  "navigationRoute": {
+    "entrypoints": ["/orders/:id"],
+    "tests": ["src/billing/refund-status.test.ts"]
+  },
+  "prBody": "## Local Verification\nRun pnpm test src/billing/refund-status.test.ts.\n\n## Quality Gates\nlint, typecheck and unit tests passed.",
+  "trace": {
+    "taskId": "task-refund-status",
+    "status": "DONE",
+    "issueUrl": "https://github.com/acme/shop/issues/7",
+    "spans": [
+      {
+        "id": "span-navigation",
+        "taskId": "task-refund-status",
+        "name": "Navigation route created",
+        "kind": "navigation",
+        "status": "success",
+        "level": "info",
+        "message": "Route selected refund files.",
+        "startedAt": "2026-05-12T00:00:00.000Z",
+        "endedAt": "2026-05-12T00:00:00.000Z",
+        "durationMs": 0
+      },
+      {
+        "id": "span-memory",
+        "taskId": "task-refund-status",
+        "name": "Memory retrieved",
+        "kind": "memory",
+        "status": "success",
+        "level": "info",
+        "message": "Approved episodic memory injected.",
+        "startedAt": "2026-05-12T00:00:01.000Z",
+        "endedAt": "2026-05-12T00:00:01.000Z",
+        "durationMs": 0
+      },
+      {
+        "id": "span-tool",
+        "taskId": "task-refund-status",
+        "name": "repo.apply_patch",
+        "kind": "tool",
+        "status": "success",
+        "level": "info",
+        "message": "Patch applied.",
+        "startedAt": "2026-05-12T00:00:02.000Z",
+        "endedAt": "2026-05-12T00:00:02.000Z",
+        "durationMs": 0
+      }
+    ],
+    "artifacts": [],
+    "summary": {
+      "totalSpans": 3,
+      "toolCalls": 1,
+      "policyDecisions": 0,
+      "failedOrBlocked": 0
+    }
+  }
+}

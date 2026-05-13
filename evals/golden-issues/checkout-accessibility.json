@@ -1,0 +1,24 @@
+{
+  "id": "checkout-accessibility",
+  "title": "Checkout accessibility and screenshot regression",
+  "issue": {
+    "provider": "github",
+    "owner": "acme",
+    "repo": "shop",
+    "number": 22,
+    "url": "https://github.com/acme/shop/issues/22",
+    "title": "Checkout submit button lacks accessible loading state",
+    "body": "When checkout is submitting, screen readers should announce progress and the visual loading state must remain stable on mobile.",
+    "labels": ["frontend", "accessibility", "checkout"],
+    "comments": [],
+    "baseBranch": "main"
+  },
+  "expected": {
+    "contextFiles": ["src/checkout/checkout-form.tsx", "src/checkout/checkout-submit-button.tsx"],
+    "tests": ["src/checkout/checkout-form.test.tsx"],
+    "routeEntrypoints": ["/checkout"],
+    "memoryKinds": ["episodic", "procedural"],
+    "prBodySections": ["## Local Verification", "## Screenshots", "## Quality Gates"],
+    "traceKinds": ["navigation", "memory", "tool", "quality_gate"]
+  }
+}

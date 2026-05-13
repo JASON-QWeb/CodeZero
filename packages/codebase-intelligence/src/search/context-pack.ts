@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { ContextPack, IssueContext } from "@agent/shared";
+import type { ContextMemory, ContextPack, IssueContext } from "@agent/shared";
 import type { FileIndexEntry } from "../indexer/file-indexer.js";
 import type { SymbolIndexEntry } from "../indexer/symbol-indexer.js";
+import type { NavigationRoute } from "../navigation-graph/navigation-route.js";
 import { createSearchHypothesis, hybridSearch, toRelevantFiles } from "./hybrid-search.js";
 
 export type ContextPackInput = {
@@ -12,17 +13,22 @@ export type ContextPackInput = {
   files: FileIndexEntry[];
   symbols: SymbolIndexEntry[];
   businessRules: string[];
+  memories?: ContextMemory[];
+  navigationRoute?: NavigationRoute;
   tokenBudget?: number;
 };
 
 export async function buildContextPack(input: ContextPackInput): Promise<ContextPack> {
   const issueText = [input.issue.title, input.issue.body, input.issue.labels.join(" ")].join("\n");
-  const hypothesis = createSearchHypothesis(`${issueText}\n${input.businessRules.join("\n")}`);
+  const memoryHints = (input.memories ?? []).map((memory) => `${memory.title}\n${memory.content}`).join("\n");
+  const hypothesis = createSearchHypothesis(`${issueText}\n${input.businessRules.join("\n")}\n${memoryHints}`);
   const searchResults = hybridSearch(input.files, hypothesis, 18);
-  const relevantFiles = toRelevantFiles(searchResults);
+  const relevantFiles = mergeNavigationRouteFiles(toRelevantFiles(searchResults), input.navigationRoute, input.files);
   const tests = relevantFiles
     .map((file) => relatedTestCandidates(file.path, input.files))
     .flat()
+    .concat(input.navigationRoute?.tests ?? [])
+    .filter(unique)
     .slice(0, 12);
   const relevantSymbols = input.symbols
     .filter((symbol) => relevantFiles.some((file) => symbol.path === file.path))
@@ -34,15 +40,49 @@ export async function buildContextPack(input: ContextPackInput): Promise<Context
     taskId: input.taskId,
     taskSummary: `${input.issue.title}\n\n${input.issue.body}`.slice(0, 4000),
     businessRules: input.businessRules.slice(0, 40),
+    memories: (input.memories ?? []).slice(0, 8),
     relevantFiles,
     symbols: relevantSymbols,
     tests,
     similarChanges: [],
-    nonRelevantAreas: hypothesis.negativeFilters,
+    nonRelevantAreas: [...hypothesis.negativeFilters, ...(input.navigationRoute?.doNotModify ?? [])].filter(unique),
     openQuestions: relevantFiles.length === 0 ? ["No relevant files were found; human review or better project skills are required."] : [],
     tokenBudget: input.tokenBudget ?? 30_000,
     createdAt: new Date().toISOString()
   };
+}
+
+function mergeNavigationRouteFiles(relevantFiles: ContextPack["relevantFiles"], navigationRoute: NavigationRoute | undefined, files: FileIndexEntry[]): ContextPack["relevantFiles"] {
+  if (!navigationRoute) {
+    return relevantFiles;
+  }
+
+  const fileMap = new Map(files.map((file) => [file.path, file]));
+  const merged = new Map(relevantFiles.map((file) => [file.path, file]));
+
+  for (const routeFile of navigationRoute.mustRead) {
+    const existing = merged.get(routeFile);
+    const graphEvidence = {
+      kind: "graph" as const,
+      score: 10,
+      summary: "Selected by Repo Navigation Graph route"
+    };
+
+    if (existing) {
+      existing.evidence.push(graphEvidence);
+      existing.reason = `${existing.reason}; Selected by navigation route`;
+      continue;
+    }
+
+    merged.set(routeFile, {
+      path: routeFile,
+      reason: "Selected by Repo Navigation Graph route",
+      evidence: [graphEvidence],
+      readMode: (fileMap.get(routeFile)?.sizeBytes ?? 0) < 40_000 ? "full" : "excerpt"
+    });
+  }
+
+  return Array.from(merged.values()).slice(0, 20);
 }
 
 export async function readContextFileSnippets(repoDir: string, contextPack: ContextPack, maxCharsPerFile = 12_000): Promise<Record<string, string>> {
@@ -64,3 +104,6 @@ function relatedTestCandidates(filePath: string, files: FileIndexEntry[]): strin
     .map((file) => file.path);
 }
 
+function unique<T>(value: T, index: number, array: T[]): boolean {
+  return array.indexOf(value) === index;
+}

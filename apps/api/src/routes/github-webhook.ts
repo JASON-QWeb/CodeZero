@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { evaluateRepositoryTrigger, findRepository } from "@agent/config";
 import { z } from "zod";
 import { createAndEnqueueTask, getServices } from "../services/task-services.js";
 
@@ -22,7 +23,8 @@ const repositorySchema = z.object({
 const issueWebhookSchema = z.object({
   action: z.string(),
   issue: issueSchema,
-  repository: repositorySchema
+  repository: repositorySchema,
+  sender: z.object({ login: z.string().optional() }).nullable().optional()
 });
 
 const issueCommentWebhookSchema = z.object({
@@ -34,7 +36,8 @@ const issueCommentWebhookSchema = z.object({
     html_url: z.string().url().optional(),
     created_at: z.string().optional()
   }),
-  repository: repositorySchema
+  repository: repositorySchema,
+  sender: z.object({ login: z.string().optional() }).nullable().optional()
 });
 
 export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise<void> {
@@ -59,6 +62,20 @@ export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise
         return { ignored: true, reason: `Unsupported issue action ${parsed.data.action}` };
       }
 
+      const labels = parsed.data.issue.labels.map((label) => label.name ?? "").filter(Boolean);
+      const repository = findRepository(services.config, parsed.data.repository.owner.login, parsed.data.repository.name);
+      const decision = evaluateRepositoryTrigger({
+        repository,
+        eventName: "issues",
+        action: parsed.data.action,
+        labels,
+        actor: parsed.data.sender?.login
+      });
+
+      if (!decision.shouldTrigger) {
+        return { ignored: true, reason: decision.reason, trigger: decision.trigger };
+      }
+
       const task = await createAndEnqueueTask({
         provider: "github",
         owner: parsed.data.repository.owner.login,
@@ -67,12 +84,12 @@ export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise
         url: parsed.data.issue.html_url,
         title: parsed.data.issue.title,
         body: parsed.data.issue.body ?? "",
-        labels: parsed.data.issue.labels.map((label) => label.name ?? "").filter(Boolean),
+        labels,
         comments: [],
         baseBranch: parsed.data.repository.default_branch
       });
 
-      return reply.code(202).send({ task, trigger: "issue" });
+      return reply.code(202).send({ task, trigger: decision.trigger, reason: decision.reason });
     }
 
     if (event === "issue_comment") {
@@ -86,11 +103,21 @@ export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise
         return { ignored: true, reason: `Unsupported issue_comment action ${parsed.data.action}` };
       }
 
-      const mention = process.env.AGENT_TRIGGER_MENTION ?? "@agent-prd";
       const commentBody = parsed.data.comment.body ?? "";
+      const labels = parsed.data.issue.labels.map((label) => label.name ?? "").filter(Boolean);
+      const repository = findRepository(services.config, parsed.data.repository.owner.login, parsed.data.repository.name);
+      const decision = evaluateRepositoryTrigger({
+        repository,
+        eventName: "issue_comment",
+        action: parsed.data.action,
+        labels,
+        commentBody,
+        actor: parsed.data.comment.user?.login ?? parsed.data.sender?.login,
+        fallbackMention: process.env.AGENT_TRIGGER_MENTION ?? "@agent-prd"
+      });
 
-      if (!commentBody.toLowerCase().includes(mention.toLowerCase())) {
-        return { ignored: true, reason: `Comment does not contain trigger mention ${mention}` };
+      if (!decision.shouldTrigger) {
+        return { ignored: true, reason: decision.reason, trigger: decision.trigger, mention: decision.mention };
       }
 
       const task = await createAndEnqueueTask({
@@ -101,7 +128,7 @@ export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise
         url: parsed.data.issue.html_url,
         title: parsed.data.issue.title,
         body: parsed.data.issue.body ?? "",
-        labels: parsed.data.issue.labels.map((label) => label.name ?? "").filter(Boolean),
+        labels,
         comments: [
           {
             author: parsed.data.comment.user?.login ?? "unknown",
@@ -112,7 +139,7 @@ export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise
         baseBranch: parsed.data.repository.default_branch
       });
 
-      return reply.code(202).send({ task, trigger: "mention", mention });
+      return reply.code(202).send({ task, trigger: decision.trigger, reason: decision.reason, mention: decision.mention });
     }
 
     return { ignored: true, reason: `Unsupported event ${String(event)}` };

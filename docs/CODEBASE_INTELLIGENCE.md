@@ -7,9 +7,11 @@
 对于大仓库，系统必须采用：
 
 - 全仓库索引。
+- Repo Navigation Graph。
 - 小上下文推理。
 - 多轮 agentic search。
 - 项目业务 skill 持续维护。
+- 受控记忆检索：只把与当前任务相关、带来源和置信度的 memory 注入 ContextPack。
 - 证据驱动的文件选择。
 - 最小修改计划。
 
@@ -25,6 +27,7 @@ packages/
     src/
       indexer/
       search/
+      navigation-graph/
       symbol-graph/
       business-map/
       memory/
@@ -86,8 +89,9 @@ Agentic search 不是一次检索，而是一个循环：
 
 ```mermaid
 flowchart TD
-  A["Issue + PRD"] --> B["Generate search hypotheses"]
-  B --> C["Run hybrid search"]
+  A["Issue + PRD"] --> N["Create navigation route"]
+  N --> B["Generate search hypotheses"]
+  B --> C["Run hybrid search along graph route"]
   C --> D["Read top evidence snippets"]
   D --> E{"Enough evidence?"}
   E -->|No| F["Rewrite query or follow symbols"]
@@ -101,6 +105,7 @@ flowchart TD
 - keyword search：`rg`。
 - path search：文件路径和模块名。
 - symbol search：定义和引用。
+- graph search：从入口沿 route、import、call、test、ownership 边导航。
 - semantic search：embedding。
 - history search：相似 PR / Issue。
 - business skill search：项目业务文档。
@@ -143,6 +148,27 @@ flowchart TD
 ```
 
 `ContextPack` 必须比原始仓库小几个数量级，只包含当前任务证据链。
+
+如果命中长期记忆，ContextPack 还应包含经过筛选的 memory 摘要：
+
+```json
+{
+  "memories": [
+    {
+      "id": "mem_123",
+      "kind": "episodic",
+      "title": "Similar refund status PR",
+      "content": "Prior run touched order detail and refund tests.",
+      "score": 0.91,
+      "confidence": 0.82,
+      "reasons": ["matched refund"],
+      "sourceTaskId": "task-acme-shop-128"
+    }
+  ]
+}
+```
+
+Memory 只作为证据链的一部分，不能覆盖当前代码、PRD、测试结果和人工审批。完整策略见 [MEMORY_ARCHITECTURE.md](MEMORY_ARCHITECTURE.md)。
 
 ## 7. 自进化项目地图
 
@@ -224,3 +250,22 @@ Review subagent 必须检查：
 - 是否修改了检索阶段标记为非相关区域的文件。
 - 是否遗漏了 ContextPack 中指出的测试。
 
+## 13. Repo Navigation Graph
+
+Repo Navigation Graph 是 codebase intelligence 的核心索引之一。
+
+它把仓库变成一张可导航的图：
+
+- 文件和目录。
+- 符号、组件、函数、hook、route、API handler。
+- import/export、调用链、组件渲染关系。
+- 源文件到测试文件。
+- 页面 URL、API endpoint、worker、migration。
+- 业务术语到模块。
+- CODEOWNERS 和高风险目录。
+- 历史 PR changed-with 关系。
+- memory 到模块或符号的链接。
+
+Agentic search 应先生成 `navigation-route.json`，再按路线读取上下文。这样能减少无关读取，提升目标文件命中率，并让 Review subagent 能解释 diff 是否越界。
+
+详细设计见 [REPO_NAVIGATION_GRAPH.md](REPO_NAVIGATION_GRAPH.md)。

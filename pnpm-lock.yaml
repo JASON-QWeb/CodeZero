@@ -50,6 +50,12 @@ importers:
       '@agent/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@agent/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
+      '@agent/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@agent/orchestrator':
         specifier: workspace:*
         version: link:../../packages/orchestrator
@@ -192,6 +198,19 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/evals:
+    dependencies:
+      '@agent/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.14)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/github:
     dependencies:
       '@agent/shared':
@@ -200,6 +219,32 @@ importers:
       '@octokit/rest':
         specifier: ^22.0.1
         version: 22.0.1
+    devDependencies:
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.14)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/memory:
+    dependencies:
+      '@agent/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.14)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/observability:
+    dependencies:
+      '@agent/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       tsup:
         specifier: ^8.5.0
@@ -284,6 +329,19 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/tool-gateway:
+    dependencies:
+      '@agent/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(postcss@8.5.14)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/verification:
     dependencies:
       '@agent/shared':
@@ -314,6 +372,9 @@ importers:
       '@agent/github':
         specifier: workspace:*
         version: link:../github
+      '@agent/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@agent/orchestrator':
         specifier: workspace:*
         version: link:../orchestrator
@@ -332,6 +393,9 @@ importers:
       '@agent/skills':
         specifier: workspace:*
         version: link:../skills
+      '@agent/tool-gateway':
+        specifier: workspace:*
+        version: link:../tool-gateway
       '@agent/verification':
         specifier: workspace:*
         version: link:../verification

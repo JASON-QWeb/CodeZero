@@ -9,6 +9,7 @@
 - Agent runtime 支持 tools、handoff、guardrails、tracing。
 - 每个任务在隔离沙箱中运行。
 - 上下文通过检索、摘要、分层压缩进入模型。
+- 记忆分为 session state、project memory、episodic run memory 和 procedural playbook，不能只靠聊天记录。
 - 大仓库使用 agentic search 和可演进项目地图，避免全仓库阅读。
 - 由 subagent 执行独立探索、验证和审核。
 
@@ -118,15 +119,119 @@ type AgentDefinition = {
 Runtime 必须支持：
 
 - OpenAI-compatible chat/completions 或 responses-like 请求。
+- 国产 API provider profile，例如 DeepSeek / Qwen。
 - tool call 分发。
+- MCP-style tool registry 和 tool permission check。
 - structured output 校验。
 - token 预算管理。
 - 上下文裁剪。
+- session memory 和 history compaction。
+- memory retrieval 注入，并标注来源和置信度。
 - trace event 上报。
+- cost / latency metrics 上报。
 - handoff 给 subagent。
 - guardrail 阻断。
 
-## 5. Subagent 审核流程
+## 5. Memory Contract
+
+Agent runtime 不直接“相信”长期记忆。它只负责按编排层给出的 memory contract 注入上下文，并把运行结果交给 Memory Service 生成候选更新。
+
+### 5.1 记忆类型
+
+- `workflow_state`：任务状态、事件、artifact、审批记录，是事实来源。
+- `session_memory`：当前 run 或修复循环中的短期上下文。
+- `semantic_project_memory`：项目地图、业务术语、模块关系、测试指南。
+- `episodic_memory`：历史 Issue/PR 的执行摘要、失败和人工反馈。
+- `procedural_memory`：可复用的项目流程、验证 playbook、skill 更新建议。
+
+### 5.2 Runtime 输入
+
+```ts
+type MemoryContextItem = {
+  id: string;
+  kind: "semantic" | "episodic" | "procedural" | "policy";
+  summary: string;
+  sourceRef: string;
+  confidence: number;
+  reviewedByHuman: boolean;
+  createdAt: string;
+};
+```
+
+所有 memory item 必须带来源，且在 prompt 中明确说明：memory 是线索，不是事实；当前 base branch、PRD、测试结果和人工审批优先级更高。
+
+### 5.3 Runtime 输出
+
+Agent run 结束后输出：
+
+- run summary。
+- tools used。
+- files changed。
+- commands run。
+- failed attempts。
+- human feedback。
+- memory update candidates。
+
+Memory update candidates 默认只是 artifact，不能静默写入项目长期记忆。
+
+## 6. Tool Gateway Contract
+
+Runtime 不应让模型直接执行任意命令。所有工具都进入 Tool Gateway：
+
+```ts
+type ToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: JsonObject;
+  outputSchema?: JsonObject;
+  permission: "read" | "safe_write" | "repo_write" | "external_write" | "dangerous";
+  timeoutMs: number;
+  requiresApproval?: boolean;
+};
+```
+
+每次 tool call 必须记录：
+
+- tool name。
+- validated input summary。
+- permission decision。
+- execution duration。
+- redacted output summary。
+- linked trace span。
+
+高风险工具调用进入 `require_approval`，由看板或 GitHub 评论确认后继续。
+
+### 6.1 JSON Action 模式
+
+为兼容 DeepSeek / Qwen 等不同 provider，Tool Gateway 必须支持 JSON action fallback。
+
+模型输出：
+
+```json
+{
+  "summary": "Apply the minimal refund status copy fix.",
+  "actions": [
+    {
+      "tool": "repo.apply_patch",
+      "input": {
+        "unifiedDiff": "diff --git ..."
+      }
+    }
+  ]
+}
+```
+
+Orchestrator 负责：
+
+- 校验 action 是否存在。
+- 校验 input schema。
+- 运行 policy。
+- 执行 tool。
+- 把 tool result 写回 task event、`tool-call` artifact 和 trace。
+
+如果 provider 支持稳定 native tool calling，可以由 adapter 转成同一套 `ToolCallRequest`。
+
+## 7. Subagent 审核流程
 
 PR 前强制执行 `review` subagent。
 
@@ -164,7 +269,7 @@ PR 前强制执行 `review` subagent。
 - 无法解释关键 diff。
 - diff 超出 ContextPack 支持范围且无明确理由。
 
-## 6. 事件流
+## 8. 事件流
 
 所有 Agent 行为写入事件：
 
@@ -179,6 +284,15 @@ PR 前强制执行 `review` subagent。
 - `AGENTIC_SEARCH_FINISHED`
 - `CONTEXT_PACK_CREATED`
 - `CONTEXT_COMPRESSED`
+- `MEMORY_RETRIEVED`
+- `MEMORY_UPDATE_PROPOSED`
+- `REPO_NAVIGATION_GRAPH_CREATED`
+- `NAVIGATION_ROUTE_CREATED`
+- `TOOL_CALL_REQUESTED`
+- `TOOL_CALL_APPROVAL_REQUIRED`
+- `POLICY_DECISION_RECORDED`
+- `SECURITY_SCAN_FINISHED`
+- `EVAL_RUN_FINISHED`
 - `PLAN_CREATED`
 - `FILE_CHANGED`
 - `TEST_STARTED`
@@ -193,7 +307,7 @@ PR 前强制执行 `review` subagent。
 
 看板通过 SSE 或 WebSocket 订阅事件。
 
-## 7. Guardrails
+## 9. Guardrails
 
 实现类 Agent 必须经过以下 guardrails：
 
@@ -206,3 +320,8 @@ PR 前强制执行 `review` subagent。
 - PR 审核门禁。
 - 最大 diff 门禁。
 - 最大费用和最大运行时门禁。
+- memory 来源和敏感信息门禁。
+- 未审核 memory 不得升级为项目规则门禁。
+- tool permission 门禁。
+- policy-as-code 门禁。
+- security scanning 门禁。

@@ -161,6 +161,10 @@ Agent 可以进入修复循环，但必须有上限：
 - 前端截图链接，如果适用。
 - Review subagent 结论。
 - 是否依赖其他 PR。
+- GitHub CLI 本地验证指令。
+- plain Git 本地验证指令。
+- install、build、lint、typecheck、test 命令。
+- sandbox image 和 Agent 已运行命令摘要。
 
 ## 7. Review Subagent 额外检查
 
@@ -171,6 +175,6 @@ Review subagent 必须额外检查：
 - diff 是否包含其他 Issue 的遗留改动。
 - build/lint/test/typecheck 是否通过。
 - 如果有失败，是否被明确标记为阻断。
+- PR 描述是否包含可执行的本地验证步骤。
 
 未通过则不得创建 PR。
-

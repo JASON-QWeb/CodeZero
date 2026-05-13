@@ -136,7 +136,25 @@ PRD 必须包含背景、目标、非目标、用户故事、验收标准、影�
 - 维护业务术语、模块映射、测试指南和变更惯例。
 - 所有更新必须进入 PR，由人审核。
 
-### 3.7 `minimal-change-planner`
+### 3.7 `memory-curator`
+
+职责：
+
+- 从 run summary、diff、测试结果和 Review 结论中提取候选记忆。
+- 区分 semantic、episodic、procedural、policy memory。
+- 检查候选记忆是否过度泛化、是否缺少来源、是否包含敏感信息。
+- 输出 `memory-update` 或 `project-map-update` artifact，默认交给人审核。
+
+核心提示词骨架：
+
+```text
+你是 memory curator。请只从已完成任务的事实产物中提取可复用经验。
+不要把单次偶然现象升级为项目规则。
+每条 memory 必须包含来源、适用范围、置信度和过期风险。
+如果包含密钥、隐私、生产数据或无法确认的推断，必须拒绝写入长期记忆。
+```
+
+### 3.8 `minimal-change-planner`
 
 职责：
 
@@ -145,7 +163,7 @@ PRD 必须包含背景、目标、非目标、用户故事、验收标准、影�
 - 声明测试计划。
 - 声明明确不做的事情。
 
-### 3.8 `sandbox-runner`
+### 3.9 `sandbox-runner`
 
 职责：
 
@@ -154,7 +172,7 @@ PRD 必须包含背景、目标、非目标、用户故事、验收标准、影�
 - 运行命令。
 - 收集日志。
 
-### 3.9 `frontend-qa`
+### 3.10 `frontend-qa`
 
 职责：
 
@@ -163,7 +181,7 @@ PRD 必须包含背景、目标、非目标、用户故事、验收标准、影�
 - 检查控制台错误。
 - 运行前端测试。
 
-### 3.10 `backend-test`
+### 3.11 `backend-test`
 
 职责：
 
@@ -171,7 +189,7 @@ PRD 必须包含背景、目标、非目标、用户故事、验收标准、影�
 - 判断失败是否和当前改动相关。
 - 生成测试摘要。
 
-### 3.11 `pr-compliance-review`
+### 3.12 `pr-compliance-review`
 
 职责：
 
@@ -179,6 +197,8 @@ PRD 必须包含背景、目标、非目标、用户故事、验收标准、影�
 - 审核是否符合最小修改原则。
 - 审核测试、截图、PR 描述是否完整。
 - 给出阻断或非阻断结论。
+- 检查 PR 描述是否包含本地验证指令。
+- 检查 memory/project-map update proposal 是否安全且有来源。
 
 核心提示词骨架：
 
@@ -189,15 +209,17 @@ PRD 必须包含背景、目标、非目标、用户故事、验收标准、影�
 输出必须包含 approved、blocking_findings、missing_tests、scope_violations、risk_level。
 ```
 
-### 3.12 `pr-writer`
+### 3.13 `pr-writer`
 
 职责：
 
 - 生成 PR 标题和描述。
 - 附带 PRD、测试结果和截图。
 - 标记重点 review 区域。
+- 生成 GitHub CLI 和 plain Git 两套本地验证指令。
+- 写入 base branch、base commit、agent branch、sandbox image 和质量门禁命令。
 
-### 3.13 `risk-reviewer`
+### 3.14 `risk-reviewer`
 
 职责：
 

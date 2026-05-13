@@ -14,16 +14,21 @@ flowchart TD
   G -->|Yes| I["Prepare sandbox"]
   E -->|No| I
   I --> Q["Create isolated issue branch"]
-  Q --> J["Implement with agent + subagents"]
+  Q --> U["Build repo navigation graph"]
+  U --> V["Create navigation route + ContextPack"]
+  V --> J["Implement with agent + subagents"]
   J --> K["Run build, lint, test, screenshots"]
-  K --> L{"Verification passed?"}
+  K --> W["Run policy and security scans"]
+  W --> L{"Verification passed?"}
   L -->|No| M["Debug or request human help"]
   M --> J
   L -->|Yes| R["Review subagent checks diff"]
   R --> S{"Review approved?"}
   S -->|No| M
-  S -->|Yes| N["Create draft PR"]
+  S -->|Yes| T["Generate local verification instructions"]
+  T --> N["Create draft PR"]
   N --> O["Human code review"]
+  O --> P["Propose memory / project map update"]
 ```
 
 ## 2. PRD 阶段
@@ -67,6 +72,8 @@ flowchart TD
 - 沙箱 clone 完整仓库。
 - 项目业务 skill 加载。
 - codebase index。
+- Repo Navigation Graph 构建。
+- navigation route 生成。
 - agentic search。
 - ContextPack 生成。
 - 最小修改计划生成。
@@ -76,10 +83,11 @@ flowchart TD
 主 Agent 输出：
 
 - 实现计划
-- 代码改动
-- 测试改动
+- JSON action，优先通过 `repo.apply_patch` 写入代码改动和测试改动
 - 运行日志
 - 风险说明
+
+编排层负责把 JSON action 交给 Tool Gateway，记录 `TOOL_CALL_*`、`POLICY_DECISION` 事件和 `tool-call` artifact。旧版 `unifiedDiff` 输出会被自动包装成 `repo.apply_patch` action。
 
 ## 4. Subagent 策略
 
@@ -112,6 +120,8 @@ flowchart TD
 - lint。
 - 单元测试。
 - 类型检查，如果项目存在对应命令。
+- policy-as-code。
+- secret scan 和危险路径扫描。
 
 ### 5.1 前端任务
 
@@ -152,10 +162,41 @@ PR 应包含：
 - 人工重点 Review 建议
 - Agent 运行信息
 - Review subagent 结论
+- `pr-local-verification.json` artifact
+- GitHub CLI 本地验证指令
+- plain Git 本地验证指令
+- base commit、agent branch、sandbox image、质量门禁命令
 
 默认创建 draft PR。
 
-## 7. 人工操作
+## 7. 记忆更新阶段
+
+PR 创建后，系统可以生成记忆更新建议：
+
+- 历史 Issue/PR 摘要。
+- 新发现的模块关系。
+- 新增或修正的测试命令。
+- 常见失败和修复流程。
+- 项目地图更新建议。
+
+这些建议默认作为 artifact 或 PR 附件出现，不静默写入长期记忆。Review subagent 需要检查是否过度泛化、是否包含敏感信息、是否有明确来源。
+
+## 8. Trace 与评估
+
+每个 workflow run 都应生成 trace：
+
+- 状态转移。
+- LLM call 摘要。
+- tool call 摘要。
+- Repo Navigation Graph 命中路径。
+- memory hit。
+- policy decision。
+- quality gate result。
+- Review finding。
+
+Golden issue evals 应复用同一套 workflow 组件，评估 PRD、navigation route、ContextPack、最小修改计划、Review 和 PR body。
+
+## 9. 人工操作
 
 Web 看板应支持：
 
@@ -167,3 +208,6 @@ Web 看板应支持：
 - 重试失败步骤
 - 下载日志和产物
 - 手动接管沙箱分支
+- 审批高风险 tool call
+- 查看 trace replay
+- 查看 Repo Navigation Graph 路线

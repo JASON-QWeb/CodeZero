@@ -1,17 +1,18 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AgentRunner, OpenAICompatibleProvider, runJsonAgent, type AgentDefinition } from "@agent/agent-runtime";
-import { buildContextPack, indexFiles, indexSymbols, readContextFileSnippets } from "@agent/codebase-intelligence";
+import { buildContextPack, buildNavigationRoute, buildRepoNavigationGraph, indexFiles, indexSymbols, readContextFileSnippets } from "@agent/codebase-intelligence";
 import { findRepository, type AppConfig, type RepositoryConfig } from "@agent/config";
 import { createGitHubRemoteUrl, GitHubClient, redactRemoteUrl } from "@agent/github";
+import { createTaskMemoryProposal, FileMemoryStore, toContextMemories } from "@agent/memory";
 import { allQualityGatesPassed, reviewAllowsPr, shouldRequirePrdReview, transitionTask } from "@agent/orchestrator";
 import { createTaskEvent, type TaskRepository } from "@agent/persistence";
 import { loadProjectContext, summarizeProjectContext } from "@agent/project-context";
 import {
-  applyUnifiedDiff,
   cloneRepository,
   commitAll,
   DockerSandboxManager,
+  getCurrentCommitSha,
   getGitDiff,
   listChangedFiles,
   pushBranch,
@@ -19,8 +20,19 @@ import {
 } from "@agent/sandbox";
 import type { Artifact, JsonObject, MinimalChangePlan, PrdDocument, QualityGateResult, ReviewResult, Task } from "@agent/shared";
 import { loadPlatformSkills } from "@agent/skills";
+import { createBuiltInToolRegistry, ToolGateway, type JsonToolAction, type PolicyDefinition, type ToolCallResult } from "@agent/tool-gateway";
 import { createQualityGateCommands, runFrontendScreenshotGate, runQualityGates } from "@agent/verification";
 import { z } from "zod";
+import { createAgentPrBody, createPrLocalVerificationPlan, detectInstallCommand } from "./pr-local-verification.js";
+
+export {
+  createAgentPrBody,
+  createPrLocalVerificationPlan,
+  detectInstallCommand,
+  formatPrLocalVerificationMarkdown,
+  type PrLocalVerificationInput,
+  type PrLocalVerificationPlan
+} from "./pr-local-verification.js";
 
 const prdSchema = z.object({
   title: z.string(),
@@ -50,10 +62,24 @@ const planSchema = z.object({
   riskNotes: z.array(z.string()).default([])
 });
 
-const implementationSchema = z.object({
-  summary: z.string(),
-  unifiedDiff: z.string().min(1)
-});
+const jsonToolActionSchema = z
+  .object({
+    id: z.string().optional(),
+    toolName: z.string().optional(),
+    tool: z.string().optional(),
+    input: z.record(z.string(), z.unknown()).default({})
+  })
+  .refine((action) => action.toolName || action.tool, "toolName or tool is required");
+
+const implementationSchema = z
+  .object({
+    summary: z.string().default("Implementation applied"),
+    unifiedDiff: z.string().optional(),
+    actions: z.array(jsonToolActionSchema).optional()
+  })
+  .refine((implementation) => Boolean(implementation.unifiedDiff && implementation.unifiedDiff.length > 0) || Boolean(implementation.actions?.length), {
+    message: "Implementation must include unifiedDiff or actions"
+  });
 
 const reviewSchema = z.object({
   approved: z.boolean(),
@@ -97,7 +123,7 @@ export class IssueWorkflowRunner {
       const sandbox = await this.prepareSandbox(updated, repositoryConfig);
       updated = await this.updateStatus(updated.id, "ISSUE_BRANCH_CREATED", { sandbox });
 
-      const contextPack = await this.createContextPack(updated, sandbox);
+      const contextPack = await this.createContextPack(updated, sandbox, repositoryConfig);
       updated = await this.updateStatus(updated.id, "CONTEXT_PACK_CREATED", { contextPack });
 
       const plan = await this.createMinimalChangePlan(updated, runner, agents.implementation);
@@ -185,12 +211,19 @@ export class IssueWorkflowRunner {
     return sandbox;
   }
 
-  private async createContextPack(task: Task, sandbox: Sandbox) {
+  private async createContextPack(task: Task, sandbox: Sandbox, repositoryConfig: RepositoryConfig) {
     await this.updateStatus(task.id, "CODEBASE_INDEXING");
     const files = await indexFiles(sandbox.repoDir);
     const symbols = await indexSymbols(sandbox.repoDir, files);
     const projectContext = await loadProjectContext(sandbox.repoDir);
+    const businessRules = [summarizeProjectContext(projectContext)];
+    const memoryStore = new FileMemoryStore(this.config.memory.filePath);
+    const memoryResults = await memoryStore.search(task.issue, 8);
+    const memories = toContextMemories(memoryResults);
     await this.event(task.id, "CODEBASE_INDEXED", `Indexed ${files.length} files and ${symbols.length} symbols`);
+    const navigationRoute = repositoryConfig.codebase_intelligence.navigation_graph.enabled
+      ? await this.createNavigationRoute(task, sandbox, repositoryConfig, files, symbols, businessRules)
+      : undefined;
     await this.updateStatus(task.id, "AGENTIC_SEARCHING");
     const contextPack = await buildContextPack({
       taskId: task.id,
@@ -198,11 +231,46 @@ export class IssueWorkflowRunner {
       repoDir: sandbox.repoDir,
       files,
       symbols,
-      businessRules: [summarizeProjectContext(projectContext)]
+      businessRules,
+      memories,
+      navigationRoute
+    });
+    await this.writeArtifact(task.id, "memory-context", "memory-context.json", JSON.stringify(memories, null, 2));
+    await this.event(task.id, "MEMORY_RETRIEVED", `Retrieved ${memories.length} approved memory records`, "info", {
+      memoryIds: memories.map((memory) => memory.id)
     });
     await this.writeArtifact(task.id, "context-pack", "context-pack.json", JSON.stringify(contextPack, null, 2));
     await this.event(task.id, "CONTEXT_PACK_CREATED", `ContextPack created with ${contextPack.relevantFiles.length} files`);
     return contextPack;
+  }
+
+  private async createNavigationRoute(
+    task: Task,
+    sandbox: Sandbox,
+    repositoryConfig: RepositoryConfig,
+    files: Awaited<ReturnType<typeof indexFiles>>,
+    symbols: Awaited<ReturnType<typeof indexSymbols>>,
+    businessRules: string[]
+  ) {
+    const repoGraph = await buildRepoNavigationGraph({
+      repoDir: sandbox.repoDir,
+      files,
+      symbols,
+      businessRules,
+      includeGitHistory: repositoryConfig.codebase_intelligence.navigation_graph.include_git_history
+    });
+    await this.writeArtifact(task.id, "repo-graph", "repo-navigation-graph.json", JSON.stringify(repoGraph, null, 2));
+    await this.event(task.id, "REPO_NAVIGATION_GRAPH_CREATED", `Repo navigation graph created with ${repoGraph.nodes.length} nodes and ${repoGraph.edges.length} edges`);
+    const navigationRoute = buildNavigationRoute({
+      taskId: task.id,
+      issue: task.issue,
+      graph: repoGraph,
+      files,
+      symbols
+    });
+    await this.writeArtifact(task.id, "navigation-route", "navigation-route.json", JSON.stringify(navigationRoute, null, 2));
+    await this.event(task.id, "NAVIGATION_ROUTE_CREATED", `Navigation route created with ${navigationRoute.mustRead.length} read targets and ${navigationRoute.tests.length} tests`);
+    return navigationRoute;
   }
 
   private async createMinimalChangePlan(task: Task, runner: AgentRunner, agent: AgentDefinition): Promise<MinimalChangePlan> {
@@ -231,33 +299,115 @@ export class IssueWorkflowRunner {
         agent,
         userPrompt:
           attempt === 1
-            ? "Implement the minimal change plan. Return JSON with summary and unifiedDiff. Do not include unrelated changes."
-            : `Repair the unified diff so it applies cleanly. Previous git apply error:\n${previousApplyError}\nReturn only JSON with summary and unifiedDiff.`,
+            ? [
+                "Implement the minimal change plan. Return only JSON.",
+                "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
+                "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
+                "Use only the provided tool names and do not include unrelated changes."
+              ].join("\n")
+            : [
+                "Repair the implementation so it applies cleanly. Return only JSON.",
+                `Previous tool/apply error:\n${previousApplyError}`,
+                "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
+                "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}."
+              ].join("\n"),
         context: {
           prd: task.prd as unknown as JsonObject,
           contextPack: task.contextPack as unknown as JsonObject,
           minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
-          fileSnippets: snippets as JsonObject
+          fileSnippets: snippets as JsonObject,
+          availableTools: createBuiltInToolRegistry().list() as unknown as JsonObject,
+          policies: this.config.policies as unknown as JsonObject
         }
       });
       const implementation = implementationSchema.parse(result);
-      const applyResult = await applyUnifiedDiff(sandbox.repoDir, implementation.unifiedDiff);
-      await this.event(task.id, "COMMAND_FINISHED", `git apply attempt ${attempt} exited ${applyResult.exitCode}`, applyResult.exitCode === 0 ? "info" : "error");
+      const actions = this.implementationToToolActions(implementation);
+      const toolResults = await this.executeToolActions(task, sandbox, actions, attempt);
+      const failedToolCall = toolResults.find((toolResult) => toolResult.status !== "success");
 
-      if (applyResult.exitCode === 0) {
+      if (!failedToolCall) {
         const diff = await getGitDiff(sandbox.repoDir);
         if (!diff) {
-          throw new Error("Implementation produced no diff");
+          previousApplyError = "Implementation tool actions succeeded but produced no diff";
+          await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
+          continue;
         }
         await this.writeArtifact(task.id, "diff", "implementation.diff", diff);
         await this.event(task.id, "FILE_CHANGED", implementation.summary);
         return;
       }
 
-      previousApplyError = applyResult.stderr || applyResult.stdout;
+      previousApplyError = summarizeToolFailure(failedToolCall);
     }
 
     throw new Error(`Implementation diff did not apply after 3 attempts: ${previousApplyError}`);
+  }
+
+  private implementationToToolActions(implementation: z.infer<typeof implementationSchema>): JsonToolAction[] {
+    if (implementation.actions?.length) {
+      return implementation.actions.map((action) => ({
+        id: action.id,
+        toolName: action.toolName ?? action.tool ?? this.missing("Tool name"),
+        input: action.input as JsonObject
+      }));
+    }
+
+    if (!implementation.unifiedDiff) {
+      throw new Error("Implementation must include actions or unifiedDiff");
+    }
+
+    return [
+      {
+        toolName: "repo.apply_patch",
+        input: { unifiedDiff: implementation.unifiedDiff }
+      }
+    ];
+  }
+
+  private async executeToolActions(task: Task, sandbox: Sandbox, actions: JsonToolAction[], attempt: number): Promise<ToolCallResult[]> {
+    const gateway = this.createToolGateway();
+    const results: ToolCallResult[] = [];
+
+    for (const action of actions) {
+      await this.event(task.id, "TOOL_CALL_STARTED", `Tool ${action.toolName} started`, "info", {
+        toolName: action.toolName,
+        attempt
+      });
+      const result = await gateway.execute(
+        {
+          id: action.id,
+          taskId: task.id,
+          toolName: action.toolName,
+          input: action.input
+        },
+        { taskId: task.id, repoDir: sandbox.repoDir }
+      );
+      results.push(result);
+
+      for (const decision of result.policyDecisions) {
+        await this.event(task.id, "POLICY_DECISION", `Policy ${decision.policyId} returned ${decision.action}`, decision.action === "block" ? "error" : "warn", {
+          toolCallId: result.id,
+          policyId: decision.policyId,
+          action: decision.action,
+          reasons: decision.reasons
+        });
+      }
+
+      await this.event(task.id, "TOOL_CALL_FINISHED", `Tool ${action.toolName} finished with ${result.status}`, result.status === "success" ? "info" : "error", {
+        toolCallId: result.id,
+        toolName: result.toolName,
+        status: result.status,
+        durationMs: result.durationMs,
+        error: result.error ?? null
+      });
+
+      if (result.status !== "success") {
+        break;
+      }
+    }
+
+    await this.writeArtifact(task.id, "tool-call", `tool-calls-attempt-${attempt}.json`, JSON.stringify(results, null, 2));
+    return results;
   }
 
   private async runQualityGates(task: Task, sandbox: Sandbox, repositoryConfig: RepositoryConfig): Promise<QualityGateResult[]> {
@@ -326,13 +476,38 @@ export class IssueWorkflowRunner {
     }
 
     await this.updateStatus(task.id, "PR_CREATING");
+    const agentBranch = task.branchName ?? `agent/issue-${task.issue.number}`;
+    const baseSha = await getCurrentCommitSha(sandbox.repoDir);
+    const installCommand = await detectInstallCommand(sandbox.repoDir);
+    const artifacts = await this.tasks.listArtifacts(task.id);
+    const verification = createPrLocalVerificationPlan({
+      owner: repositoryConfig.github_owner,
+      repo: repositoryConfig.github_repo,
+      baseBranch: repositoryConfig.default_branch,
+      baseSha,
+      agentBranch,
+      cloneUrl: createGitHubRemoteUrl(repositoryConfig.github_owner, repositoryConfig.github_repo),
+      installCommand,
+      qualityGateResults: task.qualityGateResults ?? [],
+      devCommand: repositoryConfig.frontend.dev_command,
+      screenshotArtifacts: artifacts.filter((artifact) => artifact.type === "screenshot"),
+      sandbox: {
+        mode: sandbox.mode,
+        image: this.config.sandbox.image,
+        repoDir: sandbox.repoDir,
+        artifactDir: sandbox.artifactDir
+      }
+    });
+    await this.writeArtifact(task.id, "pr-verification", "pr-local-verification.json", JSON.stringify(verification, null, 2));
+    await this.event(task.id, "PR_VERIFICATION_CREATED", "PR local verification handoff created");
+
     const commitResults = await commitAll(sandbox.repoDir, `Agent: ${task.issue.title}`);
 
     if (commitResults.some((result) => result.exitCode !== 0)) {
       throw new Error("Commit failed");
     }
 
-    const pushResult = await pushBranch(sandbox.repoDir, task.branchName ?? `agent/issue-${task.issue.number}`);
+    const pushResult = await pushBranch(sandbox.repoDir, agentBranch);
 
     if (pushResult.exitCode !== 0) {
       throw new Error(`Push failed: ${pushResult.stderr || pushResult.stdout}`);
@@ -343,10 +518,17 @@ export class IssueWorkflowRunner {
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
       title: `Agent: ${task.issue.title}`,
-      body: this.createPrBody(task),
-      head: task.branchName ?? `agent/issue-${task.issue.number}`,
+      body: createAgentPrBody({ task, verification }),
+      head: agentBranch,
       base: repositoryConfig.default_branch
     });
+    const memoryProposal = createTaskMemoryProposal({
+      task: { ...task, prUrl },
+      artifacts: await this.tasks.listArtifacts(task.id)
+    });
+    await new FileMemoryStore(this.config.memory.filePath).propose(memoryProposal.records);
+    await this.writeArtifact(task.id, "memory-proposal", "memory-proposal.json", JSON.stringify(memoryProposal, null, 2));
+    await this.event(task.id, "MEMORY_PROPOSAL_CREATED", `Memory proposal created with ${memoryProposal.records.length} records`);
     await this.event(task.id, "PR_CREATED", `Draft PR created: ${prUrl}`);
     return prUrl;
   }
@@ -407,9 +589,26 @@ export class IssueWorkflowRunner {
       providerId: config.provider,
       systemPrompt,
       skillRefs: config.skills,
-      tools: [],
-      guardrails: []
+      tools: this.config.tools.map((tool) => tool.name),
+      guardrails: this.config.policies.map((policy) => policy.id)
     };
+  }
+
+  private createToolGateway(): ToolGateway {
+    return new ToolGateway({
+      registry: createBuiltInToolRegistry(),
+      policies: this.config.policies.map(
+        (policy): PolicyDefinition => ({
+          id: policy.id,
+          description: policy.description,
+          toolNames: policy.tool_names.length > 0 ? policy.tool_names : undefined,
+          permissions: policy.permissions.length > 0 ? policy.permissions : undefined,
+          matchPaths: policy.match_paths.length > 0 ? policy.match_paths : undefined,
+          matchCommands: policy.match_commands.length > 0 ? policy.match_commands : undefined,
+          action: policy.action
+        })
+      )
+    });
   }
 
   private requiredRepository(task: Task): RepositoryConfig {
@@ -438,8 +637,14 @@ export class IssueWorkflowRunner {
     return this.tasks.updateTask(taskId, { ...patch, status: next.status, updatedAt: next.updatedAt });
   }
 
-  private async event(taskId: string, type: Parameters<typeof createTaskEvent>[0]["type"], message: string, level: Parameters<typeof createTaskEvent>[0]["level"] = "info"): Promise<void> {
-    await this.tasks.appendEvent(createTaskEvent({ taskId, type, message, level }));
+  private async event(
+    taskId: string,
+    type: Parameters<typeof createTaskEvent>[0]["type"],
+    message: string,
+    level: Parameters<typeof createTaskEvent>[0]["level"] = "info",
+    metadata?: JsonObject
+  ): Promise<void> {
+    await this.tasks.appendEvent(createTaskEvent({ taskId, type, message, level, metadata }));
   }
 
   private async writeArtifact(taskId: string, type: Artifact["type"], fileName: string, content: string): Promise<void> {
@@ -456,24 +661,14 @@ export class IssueWorkflowRunner {
     });
   }
 
-  private createPrBody(task: Task): string {
-    return [
-      `Closes ${task.issue.url}`,
-      "",
-      "## Summary",
-      task.prd?.goals.map((goal) => `- ${goal}`).join("\n") || "- See PRD artifact.",
-      "",
-      "## Quality Gates",
-      ...(task.qualityGateResults ?? []).map((result) => `- ${result.kind}: ${result.passed ? "passed" : "failed"} (${result.command})`),
-      "",
-      "## Review Subagent",
-      `- approved: ${task.reviewResult?.approved ?? false}`,
-      `- risk: ${task.reviewResult?.riskLevel ?? "unknown"}`,
-      ...(task.reviewResult?.prDescriptionNotes ?? []).map((note) => `- ${note}`)
-    ].join("\n");
-  }
-
   private missing<T>(name: string): T {
     throw new Error(`${name} is required`);
   }
+}
+
+function summarizeToolFailure(result: ToolCallResult): string {
+  const output = result.output && typeof result.output === "object" && !Array.isArray(result.output) ? result.output : undefined;
+  const stdout = typeof output?.stdout === "string" ? output.stdout : "";
+  const stderr = typeof output?.stderr === "string" ? output.stderr : "";
+  return [`Tool ${result.toolName} finished with ${result.status}`, result.error, stderr, stdout].filter(Boolean).join("\n");
 }

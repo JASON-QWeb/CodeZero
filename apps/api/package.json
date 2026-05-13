@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@agent/config": "workspace:*",
+    "@agent/memory": "workspace:*",
+    "@agent/observability": "workspace:*",
     "@agent/orchestrator": "workspace:*",
     "@agent/persistence": "workspace:*",
     "@agent/shared": "workspace:*",

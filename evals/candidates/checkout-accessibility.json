@@ -1,0 +1,117 @@
+{
+  "fixtureId": "checkout-accessibility",
+  "contextPack": {
+    "id": "ctx-checkout-accessibility",
+    "taskId": "task-checkout-accessibility",
+    "taskSummary": "Add accessible loading state to checkout submit button.",
+    "businessRules": ["Checkout submission must announce progress and preserve stable mobile layout."],
+    "memories": [
+      {
+        "id": "memory-checkout-mobile",
+        "kind": "episodic",
+        "title": "Prior checkout mobile stability fix",
+        "content": "Keep submit button dimensions stable while loading.",
+        "score": 0.9,
+        "confidence": 0.85,
+        "reasons": ["matched checkout", "matched loading"]
+      },
+      {
+        "id": "memory-a11y-verification",
+        "kind": "procedural",
+        "title": "Accessibility verification recipe",
+        "content": "Run component tests and capture desktop/mobile screenshots for loading controls.",
+        "score": 0.82,
+        "confidence": 0.83,
+        "reasons": ["matched accessibility", "matched mobile"]
+      }
+    ],
+    "relevantFiles": [
+      {
+        "path": "src/checkout/checkout-form.tsx",
+        "reason": "Checkout form owns submit flow.",
+        "evidence": [{ "kind": "graph", "score": 0.93, "summary": "Route and symbol match." }],
+        "readMode": "full"
+      },
+      {
+        "path": "src/checkout/checkout-submit-button.tsx",
+        "reason": "Button renders loading state.",
+        "evidence": [{ "kind": "symbol", "score": 0.9, "summary": "Component matched submit button." }],
+        "readMode": "full"
+      }
+    ],
+    "symbols": ["CheckoutForm", "CheckoutSubmitButton"],
+    "tests": ["src/checkout/checkout-form.test.tsx"],
+    "similarChanges": [],
+    "nonRelevantAreas": ["src/billing"],
+    "openQuestions": [],
+    "tokenBudget": 14000,
+    "createdAt": "2026-05-12T00:00:00.000Z"
+  },
+  "navigationRoute": {
+    "entrypoints": ["/checkout"],
+    "tests": ["src/checkout/checkout-form.test.tsx"]
+  },
+  "prBody": "## Local Verification\nRun pnpm test src/checkout/checkout-form.test.tsx and pnpm dev.\n\n## Screenshots\nDesktop and mobile checkout loading screenshots attached.\n\n## Quality Gates\nlint, typecheck and unit tests passed.",
+  "trace": {
+    "taskId": "task-checkout-accessibility",
+    "status": "DONE",
+    "issueUrl": "https://github.com/acme/shop/issues/22",
+    "spans": [
+      {
+        "id": "span-navigation",
+        "taskId": "task-checkout-accessibility",
+        "name": "Navigation route created",
+        "kind": "navigation",
+        "status": "success",
+        "level": "info",
+        "message": "Checkout route selected.",
+        "startedAt": "2026-05-12T00:00:00.000Z",
+        "endedAt": "2026-05-12T00:00:00.000Z",
+        "durationMs": 0
+      },
+      {
+        "id": "span-memory",
+        "taskId": "task-checkout-accessibility",
+        "name": "Memory retrieved",
+        "kind": "memory",
+        "status": "success",
+        "level": "info",
+        "message": "A11y verification recipe injected.",
+        "startedAt": "2026-05-12T00:00:01.000Z",
+        "endedAt": "2026-05-12T00:00:01.000Z",
+        "durationMs": 0
+      },
+      {
+        "id": "span-tool",
+        "taskId": "task-checkout-accessibility",
+        "name": "repo.apply_patch",
+        "kind": "tool",
+        "status": "success",
+        "level": "info",
+        "message": "Patch applied.",
+        "startedAt": "2026-05-12T00:00:02.000Z",
+        "endedAt": "2026-05-12T00:00:02.000Z",
+        "durationMs": 0
+      },
+      {
+        "id": "span-quality",
+        "taskId": "task-checkout-accessibility",
+        "name": "Quality gates",
+        "kind": "quality_gate",
+        "status": "success",
+        "level": "info",
+        "message": "Tests and screenshot checks passed.",
+        "startedAt": "2026-05-12T00:00:03.000Z",
+        "endedAt": "2026-05-12T00:00:03.000Z",
+        "durationMs": 0
+      }
+    ],
+    "artifacts": [],
+    "summary": {
+      "totalSpans": 4,
+      "toolCalls": 1,
+      "policyDecisions": 0,
+      "failedOrBlocked": 0
+    }
+  }
+}

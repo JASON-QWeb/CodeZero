@@ -4,6 +4,25 @@ repositories:
     github_repo: your-repo
     default_branch: main
     project_skill_path: ".agent"
+    # Repository-level trigger policy. Use mention for conservative rollout,
+    # auto for low-risk internal repos, label for triaged team workflows.
+    trigger:
+      mode: mention # auto | mention | label | manual | disabled
+      mention: "@agent-prd"
+      auto_events:
+        - issues.opened
+        - issues.reopened
+      label_allowlist:
+        - agent-ready
+      label_blocklist:
+        - no-agent
+        - security-review
+    codebase_intelligence:
+      navigation_graph:
+        enabled: true
+        include_git_history: true
+        include_codeowners: true
+        max_depth: 4
     quality_gates:
       build: "npm run build"
       lint: "npm run lint"
@@ -15,4 +34,3 @@ repositories:
         - "http://localhost:3000/"
     pr:
       default_draft: true
-

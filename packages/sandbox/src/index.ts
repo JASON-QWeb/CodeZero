@@ -174,6 +174,16 @@ export async function listChangedFiles(repoDir: string): Promise<string[]> {
     .filter(Boolean);
 }
 
+export async function getCurrentCommitSha(repoDir: string, ref = "HEAD"): Promise<string> {
+  const result = await runCommand({ cwd: repoDir, command: `git rev-parse ${shellQuote(ref)}`, timeoutMs: 60_000 });
+
+  if (result.exitCode !== 0) {
+    throw new Error(`Failed to resolve git ref ${ref}: ${result.stderr || result.stdout}`);
+  }
+
+  return result.stdout.trim();
+}
+
 export async function commitAll(repoDir: string, message: string): Promise<CommandResult[]> {
   const add = await runCommand({ cwd: repoDir, command: "git add -A", timeoutMs: 60_000 });
 

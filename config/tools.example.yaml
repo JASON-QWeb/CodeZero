@@ -1,0 +1,37 @@
+tools:
+  - name: repo.search
+    description: Search files and symbols inside the task sandbox.
+    permission: read
+    timeout_ms: 10000
+
+  - name: repo.read_file
+    description: Read a file from the task sandbox.
+    permission: read
+    timeout_ms: 10000
+
+  - name: repo.apply_patch
+    description: Apply a patch to the task branch.
+    permission: repo_write
+    timeout_ms: 30000
+
+  - name: shell.run
+    description: Run an allowlisted shell command in the sandbox.
+    permission: repo_write
+    timeout_ms: 120000
+    policy_refs:
+      - block-dangerous-shell
+
+  - name: github.create_draft_pr
+    description: Create a draft pull request for the task branch.
+    permission: external_write
+    timeout_ms: 30000
+
+  - name: browser.screenshot
+    description: Capture desktop and mobile screenshots for configured URLs.
+    permission: read
+    timeout_ms: 120000
+
+  - name: memory.propose_update
+    description: Propose a memory or project-map update artifact.
+    permission: safe_write
+    timeout_ms: 30000
