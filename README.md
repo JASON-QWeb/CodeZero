@@ -1,20 +1,27 @@
-# Agent PRD Automation
+<div align="center">
 
-Agent PRD Automation is a GitHub-native engineering agent platform. It turns an Issue or `@agent` comment into an auditable product-to-code workflow: draft a PRD, build repository context, implement the smallest safe change in an isolated sandbox, run quality gates, review the diff, and open a draft PR with local verification instructions.
+# CodeZero
 
-The project is designed as a production-grade agent system rather than a one-shot code generation demo. It focuses on durable workflows, multi-agent orchestration, repository intelligence, memory governance, sandbox execution, traceable artifacts, and human-in-the-loop controls.
+### From zero hand-written code to a verified pull request, powered by AI agents.
 
-## What It Does
+**English** · [中文](README.zh-CN.md)
 
-- Ingests GitHub Issues, labels, comments, and manual imports.
-- Applies repository-level trigger policy: `auto`, `mention`, `label`, `manual`, or `disabled`.
-- Drafts structured PRDs with complexity scoring and human approval gates.
-- Creates an isolated sandbox and issue branch for each task.
-- Builds a Repo Navigation Graph and evidence-backed ContextPack before editing code.
-- Routes work through implementation, verification, review, and PR-writing agents.
-- Runs build, lint, test, typecheck, policy checks, and frontend screenshot verification hooks.
-- Creates draft PRs with PRD summary, risk notes, test evidence, and local checkout commands.
-- Provides a Run Console, Settings Console, Memory Inbox, Trace Replay API, and Golden Issue Eval CLI.
+</div>
+
+CodeZero is a GitHub-native engineering agent platform for turning product intent into production-ready pull requests. Open an Issue, mention the agent, or trigger a repository workflow; CodeZero drafts the PRD, understands the codebase, plans the smallest safe change, writes the code in an isolated sandbox, verifies the result, reviews the diff, and opens a draft PR with local validation steps.
+
+The idea is simple: humans write the intent, AI handles the code path. Not as a fragile one-shot prompt, but as a traceable engineering system with durable workflows, multi-agent orchestration, repository intelligence, sandbox execution, quality gates, memory governance, and human approval where it matters.
+
+## Highlights
+
+- **Issue to PRD to PR**: convert GitHub Issues into structured PRDs, implementation plans, verified diffs, and draft PRs.
+- **Zero-code operator flow**: product or engineering leads describe what should change; agents handle the coding loop.
+- **Repository intelligence**: build a Repo Navigation Graph and evidence-backed ContextPack before editing.
+- **Isolated execution**: each Issue runs in its own sandbox, branch, artifact set, and quality gate trail.
+- **Human control**: PRD approval, policy gates, review subagents, and memory update proposals keep the system inspectable.
+- **Local verification built in**: generated PRs include checkout, install, test, and run instructions.
+- **OpenAI-compatible providers**: designed for OpenAI, DeepSeek, Qwen, or any compatible model gateway.
+- **Operator console**: Run Console, Settings Console, Memory Inbox, Trace Replay API, and Golden Issue Eval CLI.
 
 ## Architecture
 
@@ -41,6 +48,15 @@ flowchart TD
   PRW --> PR["Draft PR + Local Verification"]
   PR --> LEARN["Memory / Project Map Proposal"]
 ```
+
+## How It Works
+
+1. **Trigger**: GitHub webhook, `@agent` mention, label, or manual import creates a task.
+2. **Understand**: the PRD agent extracts goals, risks, acceptance criteria, and complexity.
+3. **Plan**: repository indexing, navigation graph, approved memory, and ContextPack narrow the work area.
+4. **Implement**: the implementation agent makes the smallest safe code change in an isolated sandbox.
+5. **Verify**: build, lint, test, typecheck, screenshot hooks, policy checks, and review subagents run before PR creation.
+6. **Publish**: CodeZero pushes a branch and opens a draft PR with evidence, risks, and local verification commands.
 
 ## Monorepo Layout
 
@@ -135,8 +151,8 @@ The Web Settings Console can edit and validate these files during local operatio
 
 Historical planning notes are kept in [docs/archive](docs/archive/).
 
-## Current Status
+## Status
 
 The MVP runs locally and includes GitHub Issue ingestion, repository trigger policy, repository queue and concurrency limits, PRD generation, human PRD approval, Repo Navigation Graph MVP, ContextPack generation, Tool Gateway JSON action fallback, Trace Replay API, Run Console, Settings Console, Memory Inbox, Golden Issue Eval CLI/CI, Repository Onboarding, sandbox execution, quality gates, Review subagent, and draft PR creation.
 
-The next product hardening areas are approval recovery, stricter tool input schemas, security scanning, richer eval assertions, and deeper graph adapters for larger repositories.
+Next hardening areas include approval recovery, stricter tool input schemas, security scanning, richer eval assertions, and deeper graph adapters for larger repositories.
