@@ -38,15 +38,15 @@
 
 ## 3. 主要缺口
 
-| 缺口 | 为什么影响简历表现 | 建议 |
-| --- | --- | --- |
-| 记忆管理只零散出现 | 高级 Agent 项目需要解释短期记忆、长期记忆、项目知识和历史经验如何协作 | 新增独立记忆架构文档，并把 memory 接入 ContextPack、项目地图和 Review |
-| GitHub Bot 产品形态还不够明确 | 用户希望它是一个可安装、可配置、可被 `@` 触发的机器人 | 把触发策略提升为仓库级配置：`auto`、`mention`、`label`、`manual`、`disabled` |
-| PR 本地验证体验还没成为核心卖点 | PR 是否能被开发者快速验证，是 Agent 写代码是否可信的关键 | PR body 强制输出 `gh pr checkout` 和 `git clone/fetch/checkout` 两套验证指令 |
-| Agent runtime 文档偏抽象 | 简历项目需要讲清 tools、handoff、guardrails、tracing、structured output 的接口边界 | 补 runtime contract：模型、工具、trace、memory、guardrail、artifact 都是可插拔能力 |
-| 评估体系不足 | 展示高级水平不能只靠“能跑”，还要能证明质量稳定 | 增加 golden issues、prompt regression、tool-call assertions、quality gate pass rate |
-| 安全与权限模型还可以更强 | GitHub App、沙箱、密钥、网络白名单是生产级 Agent 的重点 | 文档化最小权限、secret redaction、network allowlist、dangerous path denylist |
-| 代码导航图缺位 | 大仓库里只靠关键词检索容易读错入口和测试 | 增加 Repo Navigation Graph，把入口、符号、调用链、测试、ownership、历史变更连成导航路线 |
+| 缺口                            | 为什么影响简历表现                                                                 | 建议                                                                                    |
+| ------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 记忆管理只零散出现              | 高级 Agent 项目需要解释短期记忆、长期记忆、项目知识和历史经验如何协作              | 新增独立记忆架构文档，并把 memory 接入 ContextPack、项目地图和 Review                   |
+| GitHub Bot 产品形态还不够明确   | 用户希望它是一个可安装、可配置、可被 `@` 触发的机器人                              | 把触发策略提升为仓库级配置：`auto`、`mention`、`label`、`manual`、`disabled`            |
+| PR 本地验证体验还没成为核心卖点 | PR 是否能被开发者快速验证，是 Agent 写代码是否可信的关键                           | PR body 强制输出 `gh pr checkout` 和 `git clone/fetch/checkout` 两套验证指令            |
+| Agent runtime 文档偏抽象        | 简历项目需要讲清 tools、handoff、guardrails、tracing、structured output 的接口边界 | 补 runtime contract：模型、工具、trace、memory、guardrail、artifact 都是可插拔能力      |
+| 评估体系不足                    | 展示高级水平不能只靠“能跑”，还要能证明质量稳定                                     | 增加 golden issues、prompt regression、tool-call assertions、quality gate pass rate     |
+| 安全与权限模型还可以更强        | GitHub App、沙箱、密钥、网络白名单是生产级 Agent 的重点                            | 文档化最小权限、secret redaction、network allowlist、dangerous path denylist            |
+| 代码导航图缺位                  | 大仓库里只靠关键词检索容易读错入口和测试                                           | 增加 Repo Navigation Graph，把入口、符号、调用链、测试、ownership、历史变更连成导航路线 |
 
 ## 4. 目标架构图
 
@@ -247,7 +247,7 @@ git checkout <agent-branch>
 - 记录 token、耗时、质量门禁通过率、人工修改率。
 - 已完成基础实现：看板展示 Agent 决策链和 memory 审核入口。
 
-完整能力清单见 [ADVANCED_AGENT_CAPABILITIES.md](ADVANCED_AGENT_CAPABILITIES.md)，代码导航图设计见 [REPO_NAVIGATION_GRAPH.md](REPO_NAVIGATION_GRAPH.md)。
+完整能力清单见 [ADVANCED_AGENT_CAPABILITIES.md](ADVANCED_AGENT_CAPABILITIES.md)，代码导航图设计见 [REPO_NAVIGATION_GRAPH.md](../REPO_NAVIGATION_GRAPH.md)。
 
 ## 9. 简历展示建议
 

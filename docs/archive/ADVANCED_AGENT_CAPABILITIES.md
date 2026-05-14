@@ -24,23 +24,23 @@
 
 ## 2. 能力总览
 
-| 能力 | 一句话说明 | 主要产物 |
-| --- | --- | --- |
-| Trace Replay / Run Debugger | 回放每次 Agent 的状态转移、模型调用、tool call、memory hit、guardrail 结果和文件 diff | trace spans、run timeline、portable incident artifact |
-| Golden Issue Eval Harness | 用固定 Issue fixtures 回归评估 PRD、ContextPack、计划、Review 和 PR body | `evals/golden-issues`、score report、CI gate |
-| MCP Tool Gateway | 用统一 schema、权限、审计和 timeout 管理工具调用 | tool registry、tool call audit、approval policy |
-| Policy-as-Code Guardrails | 用配置声明风险目录、危险命令、高风险领域和审批策略 | `config/policies.yaml`、policy decision events |
-| Repository Onboarding Agent | 自动扫描新仓库并生成 `.agent/*` 项目知识和默认配置 | project map、testing guide、route map、trigger suggestion |
-| PR Local Verification Plus | 让 PR 可以一键本地验证或在 Codespaces/Dev Container 中验证 | `agent-verify.sh`、Codespaces URL、devcontainer suggestion |
-| Memory Feedback Loop | 从已完成任务提取经验，生成可审核 memory proposal | run summary、memory update、project-map update |
-| Tool Permission UI | 在看板展示和审批高风险工具调用 | pending tool approvals、permission timeline |
-| WebUI Config Center | 在 WebUI 中编辑、校验、保存运行配置 | settings API、YAML editor、schema validation、repo permission summary |
-| Multi-Agent Conflict Manager | 管理多个 worker 的文件所有权和 patch 合并 | ownership plan、conflict report、merge decision |
-| Cost / Latency / Model Router | 根据任务复杂度、预算和质量要求选择模型 | routing policy、cost report、latency metrics |
-| Prompt / Skill Registry | prompt、skill、模型配置版本化，可回放和回归 | registry、version lock、prompt diff |
-| Security Scanning Pipeline | 对 Agent diff 和 artifacts 做 secret、依赖、SAST、prompt-injection 检查 | security report、blocking findings |
-| Repo Navigation Graph | 给 Agent 提供仓库入口、调用链、依赖、测试、ownership 的导航图 | repo graph、code landmarks、search routes |
-| Domestic API Provider Profiles | 面向 DeepSeek / Qwen 等国产 OpenAI-compatible API，支持 native tool 或 JSON action fallback | provider profiles、JSON repair、capability matrix |
+| 能力                           | 一句话说明                                                                                  | 主要产物                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Trace Replay / Run Debugger    | 回放每次 Agent 的状态转移、模型调用、tool call、memory hit、guardrail 结果和文件 diff       | trace spans、run timeline、portable incident artifact                 |
+| Golden Issue Eval Harness      | 用固定 Issue fixtures 回归评估 PRD、ContextPack、计划、Review 和 PR body                    | `evals/golden-issues`、score report、CI gate                          |
+| MCP Tool Gateway               | 用统一 schema、权限、审计和 timeout 管理工具调用                                            | tool registry、tool call audit、approval policy                       |
+| Policy-as-Code Guardrails      | 用配置声明风险目录、危险命令、高风险领域和审批策略                                          | `config/policies.yaml`、policy decision events                        |
+| Repository Onboarding Agent    | 自动扫描新仓库并生成 `.agent/*` 项目知识和默认配置                                          | project map、testing guide、route map、trigger suggestion             |
+| PR Local Verification Plus     | 让 PR 可以一键本地验证或在 Codespaces/Dev Container 中验证                                  | `agent-verify.sh`、Codespaces URL、devcontainer suggestion            |
+| Memory Feedback Loop           | 从已完成任务提取经验，生成可审核 memory proposal                                            | run summary、memory update、project-map update                        |
+| Tool Permission UI             | 在看板展示和审批高风险工具调用                                                              | pending tool approvals、permission timeline                           |
+| WebUI Config Center            | 在 WebUI 中编辑、校验、保存运行配置                                                         | settings API、YAML editor、schema validation、repo permission summary |
+| Multi-Agent Conflict Manager   | 管理多个 worker 的文件所有权和 patch 合并                                                   | ownership plan、conflict report、merge decision                       |
+| Cost / Latency / Model Router  | 根据任务复杂度、预算和质量要求选择模型                                                      | routing policy、cost report、latency metrics                          |
+| Prompt / Skill Registry        | prompt、skill、模型配置版本化，可回放和回归                                                 | registry、version lock、prompt diff                                   |
+| Security Scanning Pipeline     | 对 Agent diff 和 artifacts 做 secret、依赖、SAST、prompt-injection 检查                     | security report、blocking findings                                    |
+| Repo Navigation Graph          | 给 Agent 提供仓库入口、调用链、依赖、测试、ownership 的导航图                               | repo graph、code landmarks、search routes                             |
+| Domestic API Provider Profiles | 面向 DeepSeek / Qwen 等国产 OpenAI-compatible API，支持 native tool 或 JSON action fallback | provider profiles、JSON repair、capability matrix                     |
 
 ## 3. 推荐实现顺序
 
@@ -166,13 +166,13 @@ MCP Tool Gateway 负责把工具调用标准化：
 
 建议工具分级：
 
-| 等级 | 示例 | 默认策略 |
-| --- | --- | --- |
-| read | list files、read file、search、read issue | 自动允许 |
-| safe write | write artifact、create draft note | 自动允许并记录 |
-| repo write | apply patch、commit、push branch | 需要满足 workflow guardrails |
-| external write | create PR、comment issue、update label | 需要任务权限 |
-| dangerous | delete files、run migration、publish package | 默认人工审批 |
+| 等级           | 示例                                         | 默认策略                     |
+| -------------- | -------------------------------------------- | ---------------------------- |
+| read           | list files、read file、search、read issue    | 自动允许                     |
+| safe write     | write artifact、create draft note            | 自动允许并记录               |
+| repo write     | apply patch、commit、push branch             | 需要满足 workflow guardrails |
+| external write | create PR、comment issue、update label       | 需要任务权限                 |
+| dangerous      | delete files、run migration、publish package | 默认人工审批                 |
 
 MCP 的 tools/resources/prompts/roots 概念也可以映射到本项目：
 
@@ -365,4 +365,4 @@ Repo Navigation Graph 是这些能力的底座之一：
 - Eval harness 用它衡量目标文件命中率。
 - Memory system 用它把历史经验挂到模块和符号上。
 
-详细设计见 [REPO_NAVIGATION_GRAPH.md](REPO_NAVIGATION_GRAPH.md)。
+详细设计见 [REPO_NAVIGATION_GRAPH.md](../REPO_NAVIGATION_GRAPH.md)。

@@ -221,7 +221,7 @@ Repo Navigation Graph 确认为大仓库能力的核心模块。
 - Prompt / Skill Registry。
 - Security Scanning Pipeline。
 
-这些能力的优先级和产物见 [ADVANCED_AGENT_CAPABILITIES.md](ADVANCED_AGENT_CAPABILITIES.md)。
+这些能力的优先级和产物见 [ADVANCED_AGENT_CAPABILITIES.md](archive/ADVANCED_AGENT_CAPABILITIES.md)。
 
 ## 13. 模型与国产 API 策略
 
@@ -255,4 +255,4 @@ Repo Navigation Graph 确认为大仓库能力的核心模块。
 
 ## 14. 施工路线
 
-后续代码施工按 [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) 推进。
+后续代码施工按 [IMPLEMENTATION_ROADMAP.md](archive/IMPLEMENTATION_ROADMAP.md) 推进。
