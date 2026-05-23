@@ -10,6 +10,7 @@ export const defaultCodeGraphSyncArgs = ["--quiet"];
 
 export type CodeGraphIndexStatus = "success" | "failed";
 export type CodeGraphIndexOperation = "initialized" | "synced";
+export type CodeGraphChangeDetection = "initial-index" | "restored-cache-hash-scan" | "working-tree-sync";
 
 export type CodeGraphIndexCommand = {
   command: "npx";
@@ -51,6 +52,7 @@ export type CodeGraphIndexResult = {
   cacheDatabaseFile?: string;
   restoredFromCache: boolean;
   operation: CodeGraphIndexOperation;
+  changeDetection: CodeGraphChangeDetection;
   createdAt: string;
 };
 
@@ -127,6 +129,8 @@ export async function indexRepositoryWithCodeGraph(input: CodeGraphIndexInput): 
   );
   const restoredFromCache = hasLocalDatabase ? false : await restoreCachedDatabase(input.cacheDatabaseFile, databaseFile);
   const operation: CodeGraphIndexOperation = hasLocalDatabase || restoredFromCache ? "synced" : "initialized";
+  const changeDetection: CodeGraphChangeDetection =
+    operation === "initialized" ? "initial-index" : restoredFromCache ? "restored-cache-hash-scan" : "working-tree-sync";
   const command = operation === "synced" ? createCodeGraphSyncCommand(input) : createCodeGraphIndexCommand(input);
   const scratchDir = await mkdtemp(path.join(os.tmpdir(), "agent-codegraph-run-"));
 
@@ -140,6 +144,8 @@ export async function indexRepositoryWithCodeGraph(input: CodeGraphIndexInput): 
       timeoutMs: input.timeoutMs ?? 10 * 60_000,
       env: {
         ...input.env,
+        // A restored DB can predate clean checked-out commits, which `git status` cannot report.
+        ...(restoredFromCache ? { GIT_DIR: path.join(scratchDir, "no-git-directory") } : {}),
         CODEGRAPH_FORCE_WATCH: "1"
       }
     });
@@ -163,6 +169,7 @@ export async function indexRepositoryWithCodeGraph(input: CodeGraphIndexInput): 
       cacheDatabaseFile: input.cacheDatabaseFile,
       restoredFromCache,
       operation,
+      changeDetection,
       createdAt: new Date().toISOString()
     };
   } finally {

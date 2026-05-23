@@ -18,8 +18,9 @@ repositories:
         - no-agent
         - security-review
     codebase_intelligence:
-      # CodeGraph initializes a local SQLite knowledge graph on the first issue,
-      # then restores the platform-side cache and incrementally syncs it for later issues.
+      # CodeGraph initializes a local SQLite knowledge graph on the first issue.
+      # Later issues restore the platform cache and hash-sync it against their current base checkout.
+      # Sandbox-only edits are synced locally and are not promoted before merge.
       # The database is ignored locally and never enters an agent pull request.
       codegraph:
         enabled: true

@@ -86,6 +86,7 @@ export class IssueWorkflowRunner {
       updated = await this.updateStatus(updated.id, "IMPLEMENTING", { minimalChangePlan: plan });
 
       await this.applyImplementation(updated, sandbox, repositoryConfig, runner, agents.implementation);
+      await this.syncCodeGraphAfterImplementation(updated, sandbox, repositoryConfig);
 
       const qualityGateResults = await this.runQualityGates(updated, sandbox, repositoryConfig);
       updated = await this.updateStatus(updated.id, "QUALITY_GATES_RUNNING", { qualityGateResults });
@@ -230,7 +231,8 @@ export class IssueWorkflowRunner {
         indexDir: result.indexDir,
         databaseFile: result.databaseFile,
         cacheDatabaseFile: result.cacheDatabaseFile ?? null,
-        restoredFromCache: result.restoredFromCache
+        restoredFromCache: result.restoredFromCache,
+        changeDetection: result.changeDetection
       });
       return result;
     }
@@ -284,6 +286,44 @@ export class IssueWorkflowRunner {
     }
 
     return result;
+  }
+
+  private async syncCodeGraphAfterImplementation(task: Task, sandbox: Sandbox, repositoryConfig: RepositoryConfig): Promise<void> {
+    const config = repositoryConfig.codebase_intelligence.codegraph;
+
+    if (!config.enabled) {
+      return;
+    }
+
+    const result = await indexRepositoryWithCodeGraph({
+      repoDir: sandbox.repoDir,
+      packageName: config.package,
+      initArgs: config.init_args,
+      timeoutMs: config.timeout_ms
+    });
+
+    await this.writeArtifact(task.id, "repo-graph", "codegraph-working-tree-sync.json", JSON.stringify(result, null, 2));
+
+    if (result.status === "success") {
+      await this.event(task.id, "CODEBASE_INDEXED", "CodeGraph synced after implementation changes", "info", {
+        command: result.displayCommand,
+        durationMs: result.durationMs,
+        databaseFile: result.databaseFile,
+        changeDetection: result.changeDetection
+      });
+      return;
+    }
+
+    await this.event(task.id, "CODEBASE_INDEXED", "CodeGraph post-implementation sync failed", "error", {
+      command: result.displayCommand,
+      exitCode: result.exitCode,
+      stderr: result.stderr.slice(-4000),
+      stdout: result.stdout.slice(-4000)
+    });
+
+    if (config.fail_on_error) {
+      throw new Error(`CodeGraph post-implementation sync failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`);
+    }
   }
 
   private codeGraphCacheDatabaseFile(repositoryConfig: RepositoryConfig): string {
