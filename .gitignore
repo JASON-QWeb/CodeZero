@@ -2,11 +2,14 @@ node_modules
 dist
 .next
 .turbo
+.codegraph/
+.DS_Store
 .env
 .env.local
 coverage
 artifacts
 sandboxes
 data/*.json
+data/codegraph/
 *.log
 *.tsbuildinfo

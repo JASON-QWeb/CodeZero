@@ -54,6 +54,10 @@ describe("repo navigation graph", () => {
       files,
       symbols,
       businessRules: ["Refund status belongs to billing refund service."],
+      codeGraphContext: {
+        relatedFiles: ["src/billing/refund-status.ts"],
+        summary: "CodeGraph selected refund status implementation."
+      },
       navigationRoute: route
     });
 
@@ -63,5 +67,9 @@ describe("repo navigation graph", () => {
     expect(route.mustRead).toContain("src/billing/refund-status.ts");
     expect(route.tests).toContain("src/billing/refund-status.test.ts");
     expect(contextPack.relevantFiles.map((file) => file.path)).toContain("src/billing/refund-status.ts");
+    expect(contextPack.codeGraphContext?.summary).toBe("CodeGraph selected refund status implementation.");
+    expect(contextPack.relevantFiles.find((file) => file.path === "src/billing/refund-status.ts")?.evidence).toContainEqual(
+      expect.objectContaining({ kind: "graph", summary: "Selected by CodeGraph task context" })
+    );
   });
 });

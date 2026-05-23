@@ -19,13 +19,15 @@
 
 ## 2. Codebase Intelligence 架构
 
-建议新增 `codebase-intelligence` 模块，负责把大仓库转成可搜索、可压缩、可演进的项目知识层。
+`codebase-intelligence` 模块负责把大仓库转成可搜索、可压缩、可演进的项目知识层。
+工程实现上优先使用成熟开源工具：每个 issue workflow 会先运行 [CodeGraph](https://github.com/colbymchenry/codegraph) 的 CLI 建立本地知识图，再执行上游 `context` 查询并将其结果纳入当前任务的 ContextPack；平台内置的轻量索引继续补充路由和测试证据。
 
 ```text
 packages/
   codebase-intelligence/
     src/
       indexer/
+        codegraph-indexer.ts
       search/
       navigation-graph/
       symbol-graph/
@@ -36,6 +38,16 @@ packages/
 ```
 
 ## 3. 分层索引
+
+### 3.0 CodeGraph 本地代码图
+
+默认前置步骤：
+
+```bash
+CODEGRAPH_FORCE_WATCH=1 npx -y @colbymchenry/codegraph@0.9.3 init /path/to/repository --index
+```
+
+CodeGraph 建图本身不调用大模型：它使用 AST / Tree-sitter 提取代码结构与关系，并将 SQLite / FTS5 索引写入 `.codegraph/codegraph.db`。首个 Issue 完成初始化后，workflow 将干净基线的数据库复制到平台侧被忽略的 `data/codegraph/<owner>--<repo>/codegraph.db` 缓存；后续同仓库 Issue 的新沙箱会先恢复该数据库，再调用上游 `sync --quiet`，并让上游走内容哈希扫描来识别基线分支中已经提交的文件增删改。Agent 在任务沙箱写入代码后，workflow 还会再执行一次基于工作树改动的 `sync --quiet`，使本任务后续阶段的本地图与代码一致；未合并分支的图不会覆盖共享基线缓存。建图或基线同步成功后立即运行 `codegraph context ... --format json`，把上游返回的子图、代码块和关联文件放入 ContextPack，关联文件会优先进入 Agent 的精读范围。大模型消费这份上下文进行规划和修改。workflow 从一次性临时工作目录运行上游初始化 CLI，因此 `init` 的可选 agent surface 写入不会落到任务分支；`.codegraph/` 和平台缓存都被排除在 Git 提交外。平台自己的 file / symbol / navigation route 保留为任务级裁剪和补充证据层，避免重复实现大型代码图引擎。
 
 ### 3.1 文件路径索引
 

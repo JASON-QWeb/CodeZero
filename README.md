@@ -16,7 +16,7 @@ The idea is simple: humans write the intent, AI handles the code path. Not as a 
 
 - **Issue to PRD to PR**: convert GitHub Issues into structured PRDs, implementation plans, verified diffs, and draft PRs.
 - **Zero-code operator flow**: product or engineering leads describe what should change; agents handle the coding loop.
-- **Repository intelligence**: build a Repo Navigation Graph and evidence-backed ContextPack before editing.
+- **Repository intelligence**: initialize or refresh the upstream CodeGraph index, then build an evidence-backed ContextPack before editing.
 - **Isolated execution**: each Issue runs in its own sandbox, branch, artifact set, and quality gate trail.
 - **Human control**: PRD approval, policy gates, review subagents, and memory update proposals keep the system inspectable.
 - **Local verification built in**: generated PRs include checkout, install, test, and run instructions.

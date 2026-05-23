@@ -178,6 +178,7 @@ export type ContextPack = {
   taskSummary: string;
   businessRules: string[];
   memories: ContextMemory[];
+  codeGraphContext?: JsonObject;
   relevantFiles: RelevantFile[];
   symbols: string[];
   tests: string[];

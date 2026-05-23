@@ -2,37 +2,55 @@ import { Queue, Worker } from "bullmq";
 import IORedis from "ioredis";
 import { runIssueWorkflow, type IssueWorkflowJob } from "./workflows/issue-workflow.js";
 
-const queueName = "issue-workflows";
-const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
-const workerConcurrency = Math.max(1, Number(process.env.WORKER_CONCURRENCY ?? 4));
+export const queueName = "issue-workflows";
 
-export const connection = new IORedis(redisUrl, {
-  maxRetriesPerRequest: null
-});
+export type IssueWorkflowQueue = Pick<Queue<IssueWorkflowJob>, "add">;
+export type IssueWorkflowProcessor = (job: IssueWorkflowJob) => Promise<Awaited<ReturnType<typeof runIssueWorkflow>>>;
 
-export const issueWorkflowQueue = new Queue<IssueWorkflowJob>(queueName, { connection });
+export function getWorkerConcurrency(value = process.env.WORKER_CONCURRENCY ?? "4"): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(1, parsed) : 1;
+}
 
-export function startWorker(): Worker<IssueWorkflowJob> {
+export function createRedisConnection(redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379"): IORedis {
+  return new IORedis(redisUrl, {
+    maxRetriesPerRequest: null
+  });
+}
+
+export function createIssueWorkflowQueue(connection: IORedis): Queue<IssueWorkflowJob> {
+  return new Queue<IssueWorkflowJob>(queueName, { connection });
+}
+
+export async function processIssueWorkflowJob(
+  job: IssueWorkflowJob,
+  queue: IssueWorkflowQueue,
+  processor: IssueWorkflowProcessor = runIssueWorkflow
+): Promise<Awaited<ReturnType<IssueWorkflowProcessor>>> {
+  const result = await processor(job);
+  if (result.deferred) {
+    await queue.add(
+      "run-issue-workflow",
+      { taskId: job.taskId },
+      {
+        delay: result.retryDelayMs ?? 15_000,
+        jobId: `${job.taskId}-queued-${Date.now()}`
+      }
+    );
+    console.log(`Workflow deferred for ${result.taskId}; repository concurrency limit reached`);
+    return result;
+  }
+  console.log(`Workflow completed for ${result.taskId}: ${result.status}${result.prUrl ? ` ${result.prUrl}` : ""}`);
+  return result;
+}
+
+export function startWorker(input: { connection?: IORedis; queue?: IssueWorkflowQueue; concurrency?: number } = {}): Worker<IssueWorkflowJob> {
+  const connection = input.connection ?? createRedisConnection();
+  const queue = input.queue ?? createIssueWorkflowQueue(connection);
   return new Worker<IssueWorkflowJob>(
     queueName,
-    async (job) => {
-      const result = await runIssueWorkflow(job.data);
-      if (result.deferred) {
-        await issueWorkflowQueue.add(
-          "run-issue-workflow",
-          { taskId: job.data.taskId },
-          {
-            delay: result.retryDelayMs ?? 15_000,
-            jobId: `${job.data.taskId}-queued-${Date.now()}`
-          }
-        );
-        console.log(`Workflow deferred for ${result.taskId}; repository concurrency limit reached`);
-        return result;
-      }
-      console.log(`Workflow completed for ${result.taskId}: ${result.status}${result.prUrl ? ` ${result.prUrl}` : ""}`);
-      return result;
-    },
-    { connection, concurrency: workerConcurrency }
+    async (job) => processIssueWorkflowJob(job.data, queue),
+    { connection, concurrency: input.concurrency ?? getWorkerConcurrency() }
   );
 }
 

@@ -329,9 +329,37 @@ worker 会按顺序执行：
 - `config/policies.yaml`：危险路径、危险命令、高风险领域和审批策略。
 - `config/tools.yaml`：工具 schema、权限等级、timeout 和 policy refs。
 - `config/repositories.yaml`：仓库级触发策略、并发队列上限、工具权限、质量门禁、截图 URL 和 PR draft 策略。
-- `repositories.yaml` 中的 `codebase_intelligence.navigation_graph`：是否构建 Repo Navigation Graph。
+- `repositories.yaml` 中的 `codebase_intelligence.codegraph`：是否在每个 issue 处理前运行 CodeGraph 建立本地代码图。
+- `repositories.yaml` 中的 `codebase_intelligence.navigation_graph`：是否在 CodeGraph 外继续生成平台内置的轻量 Repo Navigation Graph / navigation route。
 
 Tool Gateway 会按这些配置记录 tool call、policy decision 和 navigation route；后续 trace replay 会复用同一批事件。
+
+### 6.2 CodeGraph 前置建图
+
+每个仓库默认会在 clone 和 issue branch 创建后运行：
+
+```bash
+CODEGRAPH_FORCE_WATCH=1 npx -y @colbymchenry/codegraph@0.9.3 init /path/to/repository --index
+```
+
+这是开源项目 `colbymchenry/codegraph` 发布版的实际 CLI。建图阶段不调用大模型，而是以 Tree-sitter 解析代码关系，将 SQLite / FTS5 索引写入任务沙箱的 `.codegraph/codegraph.db`。首次成功初始化后，workflow 会把干净基线的数据库持久化到平台侧 `data/codegraph/<owner>--<repo>/codegraph.db`；后续同仓库 Issue 创建新沙箱时先复制该缓存，再执行上游 `codegraph sync ... --quiet`。由于上游在 Git 仓库中默认只看工作树变更，workflow 对恢复出的基线缓存禁用该快速路径，让上游使用内容哈希扫描以发现已经合入基线的新提交。Agent 修改任务沙箱后还会执行一次普通 `sync ... --quiet` 更新本地任务图，但不会把未合并分支写回共享缓存。上游 `init` 可能为已配置的代理写入项目 surface，所以 workflow 以一次性临时目录作为当前目录执行命令，并设置 `CODEGRAPH_FORCE_WATCH=1` 避免 fallback git hook 写入；`.codegraph/` 与 `data/codegraph/` 均被 Git 忽略，索引数据库不会进入 Agent PR diff 或被推送到目标仓库。部署时应将平台 `data/` 目录放在持久卷上，才能跨进程重启复用索引缓存。
+
+可在 `config/repositories.yaml` 为单仓库调整：
+
+```yaml
+codebase_intelligence:
+  codegraph:
+    enabled: true
+    package: "@colbymchenry/codegraph@0.9.3"
+    init_args:
+      - "--index"
+    timeout_ms: 600000
+    fail_on_error: true
+```
+
+`fail_on_error: true` 表示 CodeGraph 建图失败时阻断本次 issue workflow，避免 agent 在缺少代码图的情况下继续盲改。需要渐进迁移时可以临时设为 `false`，系统会记录失败事件并降级到内置轻量索引。
+
+建图成功后，workflow 会先调用上游 `codegraph context ... --format json` 生成任务子图和关联代码，将结果写入 `codegraph-context.json` artifact 并注入 ContextPack，供 planning 与 implementation agent 直接使用。implementation agent 仍可以通过只读 Tool Gateway 工具 `codegraph.query` 和 `codegraph.context` 做后续定向检索；它们分别委托给上游 CLI 的 `codegraph query ... --json` 与 `codegraph context ... --format json` 命令。
 
 ## 7. PR 本地验证模板
 

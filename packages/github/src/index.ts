@@ -5,11 +5,13 @@ export type GitHubClientConfig = {
   token: string;
 };
 
-export class GitHubClient {
-  private readonly octokit: Octokit;
+export type GitHubApiClient = Pick<Octokit, "issues" | "pulls">;
 
-  constructor(config: GitHubClientConfig) {
-    this.octokit = new Octokit({ auth: config.token });
+export class GitHubClient {
+  private readonly octokit: GitHubApiClient;
+
+  constructor(config: GitHubClientConfig, octokit: GitHubApiClient = new Octokit({ auth: config.token })) {
+    this.octokit = octokit;
   }
 
   async getIssue(owner: string, repo: string, issueNumber: number, baseBranch = "main"): Promise<IssueContext> {

@@ -16,7 +16,7 @@ Code零 是一个面向 GitHub 的工程 Agent 平台，用来把产品意图自
 
 - **Issue 到 PRD 到 PR**：把 GitHub Issue 转成结构化 PRD、实现计划、验证后的 diff 和 draft PR。
 - **零代码操作流**：产品或工程负责人描述“要改什么”，Agent 处理代码实现闭环。
-- **仓库智能理解**：修改前构建 Repo Navigation Graph 和带证据链的 ContextPack。
+- **仓库智能理解**：修改前初始化或刷新上游 CodeGraph 索引，并构建带证据链的 ContextPack。
 - **隔离执行**：每个 Issue 拥有独立沙箱、独立分支、独立产物和独立质量门禁记录。
 - **人可控**：PRD 审批、Policy 门禁、Review subagent 和 memory update proposal 让每一步可检查。
 - **PR 可本地验证**：生成的 PR 自动包含 checkout、安装、测试和启动验证指令。

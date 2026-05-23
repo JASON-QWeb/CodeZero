@@ -18,6 +18,17 @@ repositories:
         - no-agent
         - security-review
     codebase_intelligence:
+      # CodeGraph initializes a local SQLite knowledge graph on the first issue.
+      # Later issues restore the platform cache and hash-sync it against their current base checkout.
+      # Sandbox-only edits are synced locally and are not promoted before merge.
+      # The database is ignored locally and never enters an agent pull request.
+      codegraph:
+        enabled: true
+        package: "@colbymchenry/codegraph@0.9.3"
+        init_args:
+          - "--index"
+        timeout_ms: 600000
+        fail_on_error: true
       navigation_graph:
         enabled: true
         include_git_history: true
@@ -33,6 +44,8 @@ repositories:
       allowed_tools:
         - repo.search
         - repo.read_file
+        - codegraph.query
+        - codegraph.context
         - repo.apply_patch
         - shell.run
       blocked_tools: []
