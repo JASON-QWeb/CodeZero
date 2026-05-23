@@ -18,6 +18,13 @@ function repositoryWithTrigger(trigger: Partial<RepositoryConfig["trigger"]>): R
       ...trigger
     },
     codebase_intelligence: {
+      codegraph: {
+        enabled: true,
+        package: "@colbymchenry/codegraph@0.9.3",
+        init_args: ["--index"],
+        timeout_ms: 600_000,
+        fail_on_error: true
+      },
       navigation_graph: {
         enabled: true,
         include_git_history: true,

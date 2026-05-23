@@ -24,6 +24,18 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["tests/**/*.test.ts", "packages/**/*.test.ts"]
+    include: ["tests/**/*.test.ts", "packages/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "html"],
+      include: ["apps/api/src/**/*.ts", "apps/worker/src/**/*.ts", "apps/web/src/features/**/*.ts", "packages/**/src/**/*.ts"],
+      exclude: ["**/dist/**", "**/*.d.ts", "packages/codebase-intelligence/src/onboarding/cli.ts", "packages/evals/src/cli.ts"],
+      thresholds: {
+        statements: 60,
+        branches: 50,
+        functions: 70,
+        lines: 60
+      }
+    }
   }
 });

@@ -1,6 +1,6 @@
-import { findRepository, loadAppConfig } from "@agent/config";
+import { findRepository, loadAppConfig, type AppConfig } from "@agent/config";
 import { shouldDeferForRepositoryConcurrency } from "@agent/orchestrator";
-import { createRepository, createTaskEvent } from "@agent/persistence";
+import { createRepository, createTaskEvent, type TaskRepository } from "@agent/persistence";
 import { IssueWorkflowRunner } from "@agent/workflows";
 
 export type IssueWorkflowJob = {
@@ -15,9 +15,16 @@ export type IssueWorkflowResult = {
   retryDelayMs?: number;
 };
 
-export async function runIssueWorkflow(job: IssueWorkflowJob): Promise<IssueWorkflowResult> {
-  const config = await loadAppConfig();
-  const tasks = await createRepository(config.storage);
+export type IssueWorkflowDependencies = {
+  loadConfig?: () => Promise<AppConfig>;
+  createTaskRepository?: (storage: AppConfig["storage"]) => Promise<TaskRepository>;
+  createRunner?: (config: AppConfig, tasks: TaskRepository) => Pick<IssueWorkflowRunner, "run">;
+  repositoryQueueRetryMs?: string;
+};
+
+export async function runIssueWorkflow(job: IssueWorkflowJob, dependencies: IssueWorkflowDependencies = {}): Promise<IssueWorkflowResult> {
+  const config = await (dependencies.loadConfig ?? loadAppConfig)();
+  const tasks = await (dependencies.createTaskRepository ?? createRepository)(config.storage);
   const task = await tasks.getTask(job.taskId);
 
   if (!task) {
@@ -27,7 +34,7 @@ export async function runIssueWorkflow(job: IssueWorkflowJob): Promise<IssueWork
   const repository = findRepository(config, task.issue.owner, task.issue.repo);
 
   if (!repository) {
-    const runner = new IssueWorkflowRunner(config, tasks);
+    const runner = createRunner(config, tasks, dependencies);
     return runner.run(job.taskId);
   }
 
@@ -51,10 +58,14 @@ export async function runIssueWorkflow(job: IssueWorkflowJob): Promise<IssueWork
       taskId: task.id,
       status: task.status,
       deferred: true,
-      retryDelayMs: Number(process.env.REPOSITORY_QUEUE_RETRY_MS ?? 15_000)
+      retryDelayMs: Number(dependencies.repositoryQueueRetryMs ?? process.env.REPOSITORY_QUEUE_RETRY_MS ?? 15_000)
     };
   }
 
-  const runner = new IssueWorkflowRunner(config, tasks);
+  const runner = createRunner(config, tasks, dependencies);
   return runner.run(job.taskId);
+}
+
+function createRunner(config: AppConfig, tasks: TaskRepository, dependencies: IssueWorkflowDependencies): Pick<IssueWorkflowRunner, "run"> {
+  return dependencies.createRunner?.(config, tasks) ?? new IssueWorkflowRunner(config, tasks);
 }

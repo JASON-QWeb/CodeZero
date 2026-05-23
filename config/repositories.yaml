@@ -1,0 +1,62 @@
+repositories:
+  - id: codezero
+    github_owner: JASON-QWeb
+    github_repo: CodeZero
+    default_branch: main
+    project_skill_path: ".agent"
+    trigger:
+      mode: mention
+      mention: "@agent-prd"
+      auto_events:
+        - issues.opened
+        - issues.reopened
+      label_allowlist:
+        - agent-ready
+      label_blocklist:
+        - no-agent
+        - security-review
+    codebase_intelligence:
+      codegraph:
+        enabled: true
+        package: "@colbymchenry/codegraph@0.9.3"
+        init_args:
+          - "--index"
+        timeout_ms: 600000
+        fail_on_error: true
+      navigation_graph:
+        enabled: true
+        include_git_history: true
+        include_codeowners: true
+        max_depth: 4
+    queue:
+      max_concurrent_issues: 2
+    permissions:
+      allowed_tools:
+        - repo.search
+        - repo.read_file
+        - codegraph.query
+        - codegraph.context
+        - repo.apply_patch
+        - shell.run
+        - github.create_draft_pr
+        - browser.screenshot
+        - memory.propose_update
+      blocked_tools: []
+      allowed_permissions:
+        - read
+        - safe_write
+        - repo_write
+        - external_write
+      blocked_permissions:
+        - dangerous
+    quality_gates:
+      build: "pnpm build"
+      lint: "pnpm lint"
+      typecheck: "pnpm typecheck"
+      unit_test: "pnpm test"
+    frontend:
+      dev_command: "pnpm dev:web"
+      screenshot_urls:
+        - "http://localhost:3000/"
+    pr:
+      default_draft: true

@@ -1,10 +1,56 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { getGitDiff, runCommand } from "@agent/sandbox";
+import {
+  DockerSandboxManager,
+  WorktreeSandboxManager,
+  applyUnifiedDiff,
+  commitAll,
+  getCurrentCommitSha,
+  getGitDiff,
+  listChangedFiles,
+  runCommand
+} from "@agent/sandbox";
+import type { IssueContext } from "@agent/shared";
+
+const issue: IssueContext = {
+  provider: "github",
+  owner: "acme",
+  repo: "shop",
+  number: 1,
+  url: "https://github.com/acme/shop/issues/1",
+  title: "Fix checkout",
+  body: "",
+  labels: [],
+  comments: [],
+  baseBranch: "main"
+};
 
 describe("sandbox command runner", () => {
+  it("creates docker and worktree sandbox directory layouts", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "agent-sandbox-root-"));
+    const manager = new DockerSandboxManager({
+      mode: "docker",
+      rootDir,
+      dockerImage: "agent-sandbox-node:test",
+      networkAllowlist: [],
+      maxRuntimeMinutes: 10
+    });
+    const sandbox = await manager.create({ taskId: "task-1", issue });
+    const worktree = await new WorktreeSandboxManager({
+      mode: "worktree",
+      rootDir,
+      networkAllowlist: [],
+      maxRuntimeMinutes: 10
+    }).create({ taskId: "task-2", issue });
+
+    expect(sandbox.repoDir).toBe(path.join(rootDir, "task-1", "repo"));
+    expect(manager.cloneCommands(sandbox, "https://example.test/repo.git", "agent/issue-1")).toContain("git fetch origin");
+    expect(manager.dockerRunCommand(sandbox)).toContain("agent-sandbox-node:test");
+    expect(worktree.mode).toBe("worktree");
+  });
+
   it("runs commands and captures output", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-sandbox-"));
     const result = await runCommand({ cwd: dir, command: "printf hello" });
@@ -12,14 +58,44 @@ describe("sandbox command runner", () => {
     expect(result.stdout).toBe("hello");
   });
 
-  it("can inspect git diff", async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-git-"));
-    await runCommand({ cwd: dir, command: "git init" });
-    await runCommand({ cwd: dir, command: "git config user.email test@example.com && git config user.name Test" });
-    await writeFile(path.join(dir, "a.txt"), "a\n");
-    await runCommand({ cwd: dir, command: "git add a.txt && git commit -m init" });
+  it("supports git diff, changed-files, patch, commit, and ref helpers", async () => {
+    const dir = await createGitRepo();
+    const initialSha = await getCurrentCommitSha(dir);
+
     await writeFile(path.join(dir, "a.txt"), "b\n");
     expect(await getGitDiff(dir)).toContain("-a");
+    expect(await listChangedFiles(dir)).toEqual(["a.txt"]);
+
+    await writeFile(path.join(dir, "patch-target.txt"), "before\n");
+    await runCommand({ cwd: dir, command: "git add patch-target.txt && git commit -m patch-target" });
+    const patchResult = await applyUnifiedDiff(
+      dir,
+      [
+        "diff --git a/patch-target.txt b/patch-target.txt",
+        "index 96d80cd..cb5a311 100644",
+        "--- a/patch-target.txt",
+        "+++ b/patch-target.txt",
+        "@@ -1 +1 @@",
+        "-before",
+        "+after",
+        ""
+      ].join("\n")
+    );
+    expect(patchResult.exitCode).toBe(0);
+    expect(await readFile(path.join(dir, "patch-target.txt"), "utf8")).toBe("after\n");
+
+    const commitResults = await commitAll(dir, "update files");
+    expect(commitResults.every((result) => result.exitCode === 0)).toBe(true);
+    await expect(getCurrentCommitSha(dir)).resolves.not.toBe(initialSha);
+    await expect(getCurrentCommitSha(dir, "missing-ref")).rejects.toThrow("Failed to resolve git ref missing-ref");
   });
 });
 
+async function createGitRepo(): Promise<string> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "agent-git-"));
+  await runCommand({ cwd: dir, command: "git init" });
+  await runCommand({ cwd: dir, command: "git config user.email test@example.com && git config user.name Test" });
+  await writeFile(path.join(dir, "a.txt"), "a\n");
+  await runCommand({ cwd: dir, command: "git add a.txt && git commit -m init" });
+  return dir;
+}

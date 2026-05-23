@@ -23,6 +23,16 @@ describe("tool gateway", () => {
     expect(JSON.stringify(result.output)).toContain("refundStatus");
   });
 
+  it("registers CodeGraph read-only code graph tools", () => {
+    const tools = createBuiltInToolRegistry().list();
+    const queryTool = tools.find((item) => item.name === "codegraph.query");
+    const contextTool = tools.find((item) => item.name === "codegraph.context");
+
+    expect(queryTool?.permission).toBe("read");
+    expect(queryTool?.description).toContain("CodeGraph");
+    expect(contextTool?.permission).toBe("read");
+  });
+
   it("blocks dangerous shell commands before execution", async () => {
     const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
     const policies: PolicyDefinition[] = [

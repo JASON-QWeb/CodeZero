@@ -1,4 +1,5 @@
 export * from "./indexer/file-indexer.js";
+export * from "./indexer/codegraph-indexer.js";
 export * from "./indexer/symbol-indexer.js";
 export * from "./navigation-graph/repo-graph-builder.js";
 export * from "./navigation-graph/navigation-route.js";

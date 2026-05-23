@@ -18,6 +18,15 @@ repositories:
         - no-agent
         - security-review
     codebase_intelligence:
+      # CodeGraph builds a local SQLite knowledge graph before every issue run.
+      # The workflow runs the upstream CLI from an isolated cwd so only .codegraph/ is written in the target repo.
+      codegraph:
+        enabled: true
+        package: "@colbymchenry/codegraph@0.9.3"
+        init_args:
+          - "--index"
+        timeout_ms: 600000
+        fail_on_error: true
       navigation_graph:
         enabled: true
         include_git_history: true
@@ -33,6 +42,8 @@ repositories:
       allowed_tools:
         - repo.search
         - repo.read_file
+        - codegraph.query
+        - codegraph.context
         - repo.apply_patch
         - shell.run
       blocked_tools: []

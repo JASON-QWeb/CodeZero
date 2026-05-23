@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import type { IssueContext, Task } from "@agent/shared";
 
 describe("repository issue queue", () => {
   afterEach(() => {
+    delete process.env.PROJECT_ROOT;
     delete process.env.TASK_STORE_FILE;
     resetServicesForTests();
   });
@@ -38,6 +39,8 @@ describe("repository issue queue", () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-repo-queue-"));
     const storePath = path.join(dir, "tasks.json");
     const repository = new FileTaskRepository(storePath);
+    await writeConfigFixture(dir);
+    process.env.PROJECT_ROOT = dir;
     process.env.TASK_STORE_FILE = storePath;
 
     await repository.createTask(task(1, "IMPLEMENTING", "your-org", "your-repo"));
@@ -67,6 +70,16 @@ function task(number: number, status: Task["status"], owner: string, repo: strin
     ...createTask(issue(number, owner, repo), new Date(`2026-05-12T00:0${number}:00.000Z`)),
     status
   };
+}
+
+async function writeConfigFixture(rootDir: string): Promise<void> {
+  const configDir = path.join(rootDir, "config");
+  await mkdir(configDir, { recursive: true });
+  await Promise.all(
+    ["agents", "repositories", "sandbox", "policies", "tools"].map((section) =>
+      copyFile(path.join(process.cwd(), "config", `${section}.example.yaml`), path.join(configDir, `${section}.example.yaml`))
+    )
+  );
 }
 
 function issue(number: number, owner: string, repo: string): IssueContext {

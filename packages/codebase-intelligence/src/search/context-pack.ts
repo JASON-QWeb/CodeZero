@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { ContextMemory, ContextPack, IssueContext } from "@agent/shared";
+import type { ContextMemory, ContextPack, IssueContext, JsonObject, JsonValue } from "@agent/shared";
 import type { FileIndexEntry } from "../indexer/file-indexer.js";
 import type { SymbolIndexEntry } from "../indexer/symbol-indexer.js";
 import type { NavigationRoute } from "../navigation-graph/navigation-route.js";
@@ -14,6 +14,7 @@ export type ContextPackInput = {
   symbols: SymbolIndexEntry[];
   businessRules: string[];
   memories?: ContextMemory[];
+  codeGraphContext?: JsonObject;
   navigationRoute?: NavigationRoute;
   tokenBudget?: number;
 };
@@ -23,7 +24,11 @@ export async function buildContextPack(input: ContextPackInput): Promise<Context
   const memoryHints = (input.memories ?? []).map((memory) => `${memory.title}\n${memory.content}`).join("\n");
   const hypothesis = createSearchHypothesis(`${issueText}\n${input.businessRules.join("\n")}\n${memoryHints}`);
   const searchResults = hybridSearch(input.files, hypothesis, 18);
-  const relevantFiles = mergeNavigationRouteFiles(toRelevantFiles(searchResults), input.navigationRoute, input.files);
+  const relevantFiles = mergeCodeGraphFiles(
+    mergeNavigationRouteFiles(toRelevantFiles(searchResults), input.navigationRoute, input.files),
+    input.codeGraphContext,
+    input.files
+  );
   const tests = relevantFiles
     .map((file) => relatedTestCandidates(file.path, input.files))
     .flat()
@@ -41,6 +46,7 @@ export async function buildContextPack(input: ContextPackInput): Promise<Context
     taskSummary: `${input.issue.title}\n\n${input.issue.body}`.slice(0, 4000),
     businessRules: input.businessRules.slice(0, 40),
     memories: (input.memories ?? []).slice(0, 8),
+    codeGraphContext: input.codeGraphContext,
     relevantFiles,
     symbols: relevantSymbols,
     tests,
@@ -50,6 +56,46 @@ export async function buildContextPack(input: ContextPackInput): Promise<Context
     tokenBudget: input.tokenBudget ?? 30_000,
     createdAt: new Date().toISOString()
   };
+}
+
+function mergeCodeGraphFiles(relevantFiles: ContextPack["relevantFiles"], context: JsonObject | undefined, files: FileIndexEntry[]): ContextPack["relevantFiles"] {
+  const filePaths = asStringArray(context?.relatedFiles);
+
+  if (filePaths.length === 0) {
+    return relevantFiles;
+  }
+
+  const fileMap = new Map(files.map((file) => [file.path, file]));
+  const merged = new Map<string, ContextPack["relevantFiles"][number]>();
+
+  for (const filePath of filePaths) {
+    const normalizedPath = filePath.replaceAll("\\", "/").replace(/^\.\//, "");
+    const file = fileMap.get(normalizedPath);
+
+    if (!file) {
+      continue;
+    }
+
+    merged.set(normalizedPath, {
+      path: normalizedPath,
+      reason: "Selected by CodeGraph task context",
+      evidence: [{ kind: "graph", score: 12, summary: "Selected by CodeGraph task context" }],
+      readMode: file.sizeBytes < 40_000 ? "full" : "excerpt"
+    });
+  }
+
+  for (const file of relevantFiles) {
+    const graphFile = merged.get(file.path);
+
+    if (graphFile) {
+      graphFile.reason = `${graphFile.reason}; ${file.reason}`;
+      graphFile.evidence.push(...file.evidence);
+    } else {
+      merged.set(file.path, file);
+    }
+  }
+
+  return Array.from(merged.values()).slice(0, 20);
 }
 
 function mergeNavigationRouteFiles(relevantFiles: ContextPack["relevantFiles"], navigationRoute: NavigationRoute | undefined, files: FileIndexEntry[]): ContextPack["relevantFiles"] {
@@ -83,6 +129,10 @@ function mergeNavigationRouteFiles(relevantFiles: ContextPack["relevantFiles"], 
   }
 
   return Array.from(merged.values()).slice(0, 20);
+}
+
+function asStringArray(value: JsonValue | undefined): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 export async function readContextFileSnippets(repoDir: string, contextPack: ContextPack, maxCharsPerFile = 12_000): Promise<Record<string, string>> {

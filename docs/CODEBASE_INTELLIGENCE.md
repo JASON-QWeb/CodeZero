@@ -19,13 +19,15 @@
 
 ## 2. Codebase Intelligence 架构
 
-建议新增 `codebase-intelligence` 模块，负责把大仓库转成可搜索、可压缩、可演进的项目知识层。
+`codebase-intelligence` 模块负责把大仓库转成可搜索、可压缩、可演进的项目知识层。
+工程实现上优先使用成熟开源工具：每个 issue workflow 会先运行 [CodeGraph](https://github.com/colbymchenry/codegraph) 的 CLI 建立本地知识图，再执行上游 `context` 查询并将其结果纳入当前任务的 ContextPack；平台内置的轻量索引继续补充路由和测试证据。
 
 ```text
 packages/
   codebase-intelligence/
     src/
       indexer/
+        codegraph-indexer.ts
       search/
       navigation-graph/
       symbol-graph/
@@ -36,6 +38,16 @@ packages/
 ```
 
 ## 3. 分层索引
+
+### 3.0 CodeGraph 本地代码图
+
+默认前置步骤：
+
+```bash
+CODEGRAPH_FORCE_WATCH=1 npx -y @colbymchenry/codegraph@0.9.3 init /path/to/repository --index
+```
+
+CodeGraph 负责 AST / Tree-sitter 级别的仓库建图，并将本地 SQLite / FTS5 索引写入 `.codegraph/codegraph.db`。已有数据库时 workflow 改用上游 `index --quiet` 刷新索引；建图成功后立即运行 `codegraph context ... --format json`，把上游返回的子图、代码块和关联文件放入 ContextPack，关联文件会优先进入 Agent 的精读范围。workflow 从一次性临时工作目录运行上游初始化 CLI，因此 `init` 的可选 agent surface 写入不会落到任务分支；同时它把 `.codegraph/` 写入目标仓库的本地 `.git/info/exclude`。平台自己的 file / symbol / navigation route 保留为任务级裁剪和补充证据层，避免重复实现大型代码图引擎。
 
 ### 3.1 文件路径索引
 
