@@ -1,14 +1,15 @@
 import { spawn } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { JsonObject, JsonValue } from "@agent/shared";
 
 export const defaultCodeGraphPackage = "@colbymchenry/codegraph@0.9.3";
 export const defaultCodeGraphInitArgs = ["--index"];
-export const defaultCodeGraphRefreshArgs = ["--quiet"];
+export const defaultCodeGraphSyncArgs = ["--quiet"];
 
 export type CodeGraphIndexStatus = "success" | "failed";
+export type CodeGraphIndexOperation = "initialized" | "synced";
 
 export type CodeGraphIndexCommand = {
   command: "npx";
@@ -22,6 +23,7 @@ export type CodeGraphIndexInput = {
   initArgs?: string[];
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  cacheDatabaseFile?: string;
 };
 
 export type CodeGraphContextInput = {
@@ -46,6 +48,9 @@ export type CodeGraphIndexResult = {
   durationMs: number;
   indexDir: string;
   databaseFile: string;
+  cacheDatabaseFile?: string;
+  restoredFromCache: boolean;
+  operation: CodeGraphIndexOperation;
   createdAt: string;
 };
 
@@ -83,9 +88,9 @@ export function createCodeGraphIndexCommand(
   };
 }
 
-export function createCodeGraphRefreshCommand(input: Pick<CodeGraphIndexInput, "repoDir" | "packageName">): CodeGraphIndexCommand {
+export function createCodeGraphSyncCommand(input: Pick<CodeGraphIndexInput, "repoDir" | "packageName">): CodeGraphIndexCommand {
   const packageName = input.packageName ?? defaultCodeGraphPackage;
-  const args = ["-y", packageName, "index", input.repoDir, ...defaultCodeGraphRefreshArgs];
+  const args = ["-y", packageName, "sync", input.repoDir, ...defaultCodeGraphSyncArgs];
 
   return {
     command: "npx",
@@ -116,11 +121,13 @@ export function createCodeGraphContextCommand(input: Pick<CodeGraphContextInput,
 export async function indexRepositoryWithCodeGraph(input: CodeGraphIndexInput): Promise<CodeGraphIndexResult> {
   const startedAt = Date.now();
   const databaseFile = path.join(input.repoDir, ".codegraph", "codegraph.db");
-  const alreadyInitialized = await access(databaseFile).then(
+  const hasLocalDatabase = await access(databaseFile).then(
     () => true,
     () => false
   );
-  const command = alreadyInitialized ? createCodeGraphRefreshCommand(input) : createCodeGraphIndexCommand(input);
+  const restoredFromCache = hasLocalDatabase ? false : await restoreCachedDatabase(input.cacheDatabaseFile, databaseFile);
+  const operation: CodeGraphIndexOperation = hasLocalDatabase || restoredFromCache ? "synced" : "initialized";
+  const command = operation === "synced" ? createCodeGraphSyncCommand(input) : createCodeGraphIndexCommand(input);
   const scratchDir = await mkdtemp(path.join(os.tmpdir(), "agent-codegraph-run-"));
 
   await ensureCodeGraphExcluded(input.repoDir);
@@ -137,6 +144,10 @@ export async function indexRepositoryWithCodeGraph(input: CodeGraphIndexInput): 
       }
     });
 
+    if (result.exitCode === 0) {
+      await publishCachedDatabase(databaseFile, input.cacheDatabaseFile);
+    }
+
     return {
       tool: "codegraph",
       status: result.exitCode === 0 ? "success" : "failed",
@@ -149,6 +160,9 @@ export async function indexRepositoryWithCodeGraph(input: CodeGraphIndexInput): 
       durationMs: Date.now() - startedAt,
       indexDir: path.join(input.repoDir, ".codegraph"),
       databaseFile,
+      cacheDatabaseFile: input.cacheDatabaseFile,
+      restoredFromCache,
+      operation,
       createdAt: new Date().toISOString()
     };
   } finally {
@@ -196,6 +210,41 @@ export async function buildCodeGraphTaskContext(input: CodeGraphContextInput): P
     context,
     createdAt: new Date().toISOString()
   };
+}
+
+async function restoreCachedDatabase(cacheDatabaseFile: string | undefined, databaseFile: string): Promise<boolean> {
+  if (!cacheDatabaseFile) {
+    return false;
+  }
+
+  const cacheExists = await access(cacheDatabaseFile).then(
+    () => true,
+    () => false
+  );
+
+  if (!cacheExists) {
+    return false;
+  }
+
+  await mkdir(path.dirname(databaseFile), { recursive: true });
+  await copyFile(cacheDatabaseFile, databaseFile);
+  return true;
+}
+
+async function publishCachedDatabase(databaseFile: string, cacheDatabaseFile: string | undefined): Promise<void> {
+  if (!cacheDatabaseFile) {
+    return;
+  }
+
+  await mkdir(path.dirname(cacheDatabaseFile), { recursive: true });
+  const temporaryFile = `${cacheDatabaseFile}.${process.pid}-${Date.now()}.tmp`;
+
+  try {
+    await copyFile(databaseFile, temporaryFile);
+    await rename(temporaryFile, cacheDatabaseFile);
+  } finally {
+    await rm(temporaryFile, { force: true });
+  }
 }
 
 async function ensureCodeGraphExcluded(repoDir: string): Promise<void> {

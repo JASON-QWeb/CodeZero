@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCodeGraphContextCommand, createCodeGraphIndexCommand, createCodeGraphRefreshCommand } from "@agent/codebase-intelligence";
+import { createCodeGraphContextCommand, createCodeGraphIndexCommand, createCodeGraphSyncCommand } from "@agent/codebase-intelligence";
 
 describe("codegraph indexer", () => {
   it("builds a pinned upstream init-and-index command", () => {
@@ -21,10 +21,10 @@ describe("codegraph indexer", () => {
     expect(command.args).toContain("--verbose");
   });
 
-  it("uses the upstream index command to refresh an existing database", () => {
-    const command = createCodeGraphRefreshCommand({ repoDir: "/tmp/example-repo" });
+  it("uses the upstream incremental sync command for an existing database", () => {
+    const command = createCodeGraphSyncCommand({ repoDir: "/tmp/example-repo" });
 
-    expect(command.args).toEqual(["-y", "@colbymchenry/codegraph@0.9.3", "index", "/tmp/example-repo", "--quiet"]);
+    expect(command.args).toEqual(["-y", "@colbymchenry/codegraph@0.9.3", "sync", "/tmp/example-repo", "--quiet"]);
   });
 
   it("uses the upstream context command to prepare task context for the agent", () => {

@@ -342,7 +342,7 @@ Tool Gateway 会按这些配置记录 tool call、policy decision 和 navigation
 CODEGRAPH_FORCE_WATCH=1 npx -y @colbymchenry/codegraph@0.9.3 init /path/to/repository --index
 ```
 
-这是开源项目 `colbymchenry/codegraph` 发布版的实际 CLI。索引写入 `.codegraph/codegraph.db`，并由 SQLite FTS5 支持符号检索；若目标目录已经有该数据库，workflow 会执行上游 `codegraph index ... --quiet` 刷新它。上游 `init` 可能为已配置的代理写入项目 surface，所以 workflow 以一次性临时目录作为当前目录执行命令，并设置 `CODEGRAPH_FORCE_WATCH=1` 避免 fallback git hook 写入；目标仓库只接收 `.codegraph/` 索引目录。workflow 还会把 `.codegraph/` 写入本地 `.git/info/exclude`，避免索引产物进入 PR diff。
+这是开源项目 `colbymchenry/codegraph` 发布版的实际 CLI。建图阶段不调用大模型，而是以 Tree-sitter 解析代码关系，将 SQLite / FTS5 索引写入任务沙箱的 `.codegraph/codegraph.db`。首次成功初始化后，workflow 会把数据库持久化到平台侧 `data/codegraph/<owner>--<repo>/codegraph.db`；后续同仓库 Issue 创建新沙箱时先复制该缓存，再执行上游 `codegraph sync ... --quiet` 增量同步。上游 `init` 可能为已配置的代理写入项目 surface，所以 workflow 以一次性临时目录作为当前目录执行命令，并设置 `CODEGRAPH_FORCE_WATCH=1` 避免 fallback git hook 写入；`.codegraph/` 与 `data/codegraph/` 均被 Git 忽略，索引数据库不会进入 Agent PR diff 或被推送到目标仓库。部署时应将平台 `data/` 目录放在持久卷上，才能跨进程重启复用索引缓存。
 
 可在 `config/repositories.yaml` 为单仓库调整：
 

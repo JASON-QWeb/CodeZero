@@ -18,8 +18,9 @@ repositories:
         - no-agent
         - security-review
     codebase_intelligence:
-      # CodeGraph builds a local SQLite knowledge graph before every issue run.
-      # The workflow runs the upstream CLI from an isolated cwd so only .codegraph/ is written in the target repo.
+      # CodeGraph initializes a local SQLite knowledge graph on the first issue,
+      # then restores the platform-side cache and incrementally syncs it for later issues.
+      # The database is ignored locally and never enters an agent pull request.
       codegraph:
         enabled: true
         package: "@colbymchenry/codegraph@0.9.3"

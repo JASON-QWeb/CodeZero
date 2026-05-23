@@ -10,5 +10,6 @@ coverage
 artifacts
 sandboxes
 data/*.json
+data/codegraph/
 *.log
 *.tsbuildinfo

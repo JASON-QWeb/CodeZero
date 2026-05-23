@@ -16,6 +16,7 @@ repositories:
         - no-agent
         - security-review
     codebase_intelligence:
+      # Initialize once, then restore and incrementally sync the ignored platform cache for later issues.
       codegraph:
         enabled: true
         package: "@colbymchenry/codegraph@0.9.3"

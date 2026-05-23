@@ -216,22 +216,26 @@ export class IssueWorkflowRunner {
       repoDir: sandbox.repoDir,
       packageName: config.package,
       initArgs: config.init_args,
-      timeoutMs: config.timeout_ms
+      timeoutMs: config.timeout_ms,
+      cacheDatabaseFile: this.codeGraphCacheDatabaseFile(repositoryConfig)
     });
 
     await this.writeArtifact(task.id, "repo-graph", "codegraph-index.json", JSON.stringify(result, null, 2));
 
     if (result.status === "success") {
-      await this.event(task.id, "CODEBASE_INDEXED", "CodeGraph code graph created", "info", {
+      const action = result.operation === "initialized" ? "initialized" : "synced";
+      await this.event(task.id, "CODEBASE_INDEXED", `CodeGraph index ${action}`, "info", {
         command: result.displayCommand,
         durationMs: result.durationMs,
         indexDir: result.indexDir,
-        databaseFile: result.databaseFile
+        databaseFile: result.databaseFile,
+        cacheDatabaseFile: result.cacheDatabaseFile ?? null,
+        restoredFromCache: result.restoredFromCache
       });
       return result;
     }
 
-    await this.event(task.id, "CODEBASE_INDEXED", "CodeGraph code graph creation failed", "error", {
+    await this.event(task.id, "CODEBASE_INDEXED", "CodeGraph index initialization or sync failed", "error", {
       command: result.displayCommand,
       exitCode: result.exitCode,
       stderr: result.stderr.slice(-4000),
@@ -239,7 +243,7 @@ export class IssueWorkflowRunner {
     });
 
     if (config.fail_on_error) {
-      throw new Error(`CodeGraph indexing failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`);
+      throw new Error(`CodeGraph initialization or sync failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`);
     }
 
     return result;
@@ -280,6 +284,11 @@ export class IssueWorkflowRunner {
     }
 
     return result;
+  }
+
+  private codeGraphCacheDatabaseFile(repositoryConfig: RepositoryConfig): string {
+    const repositoryKey = `${repositoryConfig.github_owner}--${repositoryConfig.github_repo}`.replace(/[^A-Za-z0-9._-]+/g, "-");
+    return path.join(this.config.rootDir, "data", "codegraph", repositoryKey, "codegraph.db");
   }
 
   private async createNavigationRoute(
