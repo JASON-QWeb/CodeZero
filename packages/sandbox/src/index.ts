@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { IssueContext } from "@agent/shared";
 
@@ -125,6 +125,7 @@ export async function cloneRepository(input: {
   issueBranch: string;
   timeoutMs?: number;
 }): Promise<CommandResult[]> {
+  await resetCloneTarget(input.sandbox.repoDir);
   const commands = [
     `git clone --depth 1 --branch ${shellQuote(input.baseBranch)} ${shellQuote(input.remoteUrl)} ${shellQuote(input.sandbox.repoDir)}`,
     `git checkout -b ${shellQuote(input.issueBranch)}`
@@ -159,6 +160,7 @@ export async function cloneRepositoryBranch(input: {
   branch: string;
   timeoutMs?: number;
 }): Promise<CommandResult[]> {
+  await resetCloneTarget(input.sandbox.repoDir);
   const result = await runCommand({
     cwd: path.dirname(input.sandbox.repoDir),
     command: `git clone --depth 1 --branch ${shellQuote(input.branch)} ${shellQuote(input.remoteUrl)} ${shellQuote(input.sandbox.repoDir)}`,
@@ -212,6 +214,11 @@ export async function commitAll(repoDir: string, message: string): Promise<Comma
 
 export async function pushBranch(repoDir: string, branchName: string): Promise<CommandResult> {
   return runCommand({ cwd: repoDir, command: `git push -u origin ${shellQuote(branchName)}`, timeoutMs: 10 * 60_000 });
+}
+
+async function resetCloneTarget(repoDir: string): Promise<void> {
+  await rm(repoDir, { recursive: true, force: true });
+  await mkdir(path.dirname(repoDir), { recursive: true });
 }
 
 function shellQuote(value: string): string {
