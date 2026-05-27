@@ -22,6 +22,18 @@ describe("agent runtime", () => {
     expect(() => parseJsonObject("[1,2,3]")).toThrow("Agent response was not a JSON object");
   });
 
+  it("repairs raw control characters inside JSON strings", () => {
+    const response = `{"summary":"repair","unifiedDiff":"diff --git a/a b/a
+@@ -1 +1 @@
+-old
++new"}`;
+
+    expect(parseJsonObject(response)).toEqual({
+      summary: "repair",
+      unifiedDiff: "diff --git a/a b/a\n@@ -1 +1 @@\n-old\n+new"
+    });
+  });
+
   it("calls OpenAI-compatible chat completions and extracts assistant content", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

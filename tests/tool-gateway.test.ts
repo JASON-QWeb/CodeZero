@@ -130,6 +130,32 @@ describe("tool gateway", () => {
     expect(result.status).toBe("success");
   });
 
+  it("recounts hunk lengths when applying model-generated patches", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
+    await writeFile(path.join(repoDir, "note.txt"), "before\n");
+    const gateway = new ToolGateway({ registry: createBuiltInToolRegistry() });
+    const result = await gateway.execute(
+      {
+        toolName: "repo.apply_patch",
+        input: {
+          unifiedDiff: [
+            "diff --git a/note.txt b/note.txt",
+            "--- a/note.txt",
+            "+++ b/note.txt",
+            "@@ -1,99 +1,99 @@",
+            "-before",
+            "+after",
+            ""
+          ].join("\n")
+        }
+      },
+      { repoDir }
+    );
+
+    await expect(readFile(path.join(repoDir, "note.txt"), "utf8")).resolves.toBe("after\n");
+    expect(result.status).toBe("success");
+  });
+
   it("marks non-zero process tool results as failed", async () => {
     const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
     await writeFile(path.join(repoDir, "note.txt"), "before\n");

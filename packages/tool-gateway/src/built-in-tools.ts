@@ -43,7 +43,7 @@ export function createBuiltInToolRegistry(): ToolRegistry {
       try {
         return await runProcess({
           command: "git",
-          args: ["apply", "--whitespace=nowarn", patchPath],
+          args: ["apply", "--recount", "--whitespace=nowarn", patchPath],
           cwd: context.repoDir,
           timeoutMs: 30_000,
           env: context.env
