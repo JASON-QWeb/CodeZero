@@ -37,15 +37,16 @@ export const jsonToolActionSchema = z
   })
   .refine((action) => action.toolName || action.tool, "toolName or tool is required");
 
-export const implementationSchema = z
-  .object({
+export const implementationSchema = z.preprocess(
+  normalizeImplementationResponse,
+  z.object({
     summary: z.string().default("Implementation applied"),
     unifiedDiff: z.string().optional(),
     actions: z.array(jsonToolActionSchema).optional()
   })
-  .refine((implementation) => Boolean(implementation.unifiedDiff && implementation.unifiedDiff.length > 0) || Boolean(implementation.actions?.length), {
-    message: "Implementation must include unifiedDiff or actions"
-  });
+).refine((implementation) => Boolean(implementation.unifiedDiff && implementation.unifiedDiff.length > 0) || Boolean(implementation.actions?.length), {
+  message: "Implementation must include unifiedDiff or actions"
+});
 
 const reviewFindingSchema = z.object({
   title: z.string(),
@@ -65,3 +66,14 @@ export const reviewSchema = z.object({
 });
 
 export type ImplementationResponse = z.infer<typeof implementationSchema>;
+
+function normalizeImplementationResponse(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+
+  const input = { ...(value as Record<string, unknown>) };
+  input.unifiedDiff ??= input.unified_diff ?? input.diff ?? input.patch;
+  input.actions ??= input.toolCalls ?? input.tool_calls ?? input.edits ?? input.changes;
+  return input;
+}

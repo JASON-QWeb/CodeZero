@@ -62,6 +62,8 @@ import { createRepositoryPermissionPolicies, repositoryAllowsTool } from "./repo
 import { implementationSchema, planSchema, prdSchema, reviewSchema } from "./schemas.js";
 import { implementationToToolActions, summarizeToolFailure } from "./tool-actions.js";
 
+const MAX_IMPLEMENTATION_ATTEMPTS = 8;
+
 export type IssueWorkflowResult = {
   taskId: string;
   status: Task["status"];
@@ -637,7 +639,10 @@ export class IssueWorkflowRunner {
     let previousEditActions: JsonToolAction[] = [];
     const locale = detectIssueLocale(task.issue);
 
-    for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const implementationToolNames = new Set(this.getImplementationTools(repositoryConfig).map((tool) => tool.name));
+    const supportedToolList = [...implementationToolNames].join(", ");
+
+    for (let attempt = 1; attempt <= MAX_IMPLEMENTATION_ATTEMPTS; attempt += 1) {
       const repairContext =
         attempt === 1
           ? undefined
@@ -647,7 +652,7 @@ export class IssueWorkflowRunner {
             "Implement the latest PR reviewer feedback on the existing PR branch. Return only JSON.",
             `Latest reviewer feedback:\n${reviewerFeedback}`,
             "Return one or more repository edit actions. Prefer repo.replace_text for existing files and repo.write_file for new files.",
-            "Use repo.apply_patch for multi-location existing-file edits when exact snippets are available.",
+            "repo.apply_patch is unavailable in this phase; for multi-location changes return multiple repo.replace_text actions.",
             "Do not rewrite a large existing file with repo.write_file to work around a narrow failed edit.",
             "Do not call read-only tools during implementation; use the provided fileSnippets and error feedback.",
             "Preferred targeted edit format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
@@ -660,17 +665,17 @@ export class IssueWorkflowRunner {
             "Do not call read-only tools during implementation; use the provided fileSnippets and plan.",
             "Use repo.replace_text for targeted edits based on exact current snippets.",
             "Use repo.write_file only for new files or tiny full-file replacements where every existing export and behavior is intentionally preserved.",
-            "Use repo.apply_patch for multi-location existing-file edits; every diff must include diff --git, ---/+++ file headers, and valid @@ hunk headers.",
+            "repo.apply_patch is unavailable in this phase; for multi-location changes return multiple repo.replace_text actions.",
             "Use only the provided tool names and do not include unrelated changes."
           ].join("\n");
       const checkpoint = await createImplementationCheckpoint(sandbox.repoDir);
       try {
-        await this.event(task.id, "AGENT_RUN_STARTED", `Implementation agent started attempt ${attempt}/5`, "info", {
+        await this.event(task.id, "AGENT_RUN_STARTED", `Implementation agent started attempt ${attempt}/${MAX_IMPLEMENTATION_ATTEMPTS}`, "info", {
           agentId: agent.id,
           agentRole: agent.role,
           phase: "implementation",
           attempt,
-          maxAttempts: 5
+          maxAttempts: MAX_IMPLEMENTATION_ATTEMPTS
         });
         let result: JsonObject;
         try {
@@ -686,9 +691,9 @@ export class IssueWorkflowRunner {
                     "The failed edit attempt was restored to the checkpoint from before that attempt; fileSnippets reflect the current worktree.",
                     "The repair context contains exact current file snippets for the files touched by the failed edit.",
                     "For repo.replace_text, search must exactly match current file text.",
-                    "If exact replacement is brittle, use repo.apply_patch with valid hunks or a smaller repo.replace_text.",
+                    "If exact replacement is brittle, use smaller repo.replace_text actions with exact current snippets.",
                     "Use repo.write_file only for new files; do not rewrite large existing files during repair.",
-                    "Return corrected repository edit action(s) only. Do not call repo.read_file, repo.search, or other read-only tools.",
+                    `Return corrected repository edit action(s) only using: ${supportedToolList}. Do not call repo.read_file, repo.search, repo.apply_patch, or other tools.`,
                     "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
                     languageInstruction(locale)
                   ].join("\n"),
@@ -709,15 +714,15 @@ export class IssueWorkflowRunner {
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent failed attempt ${attempt}/5: ${message}`, "error", {
+          await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent failed attempt ${attempt}/${MAX_IMPLEMENTATION_ATTEMPTS}: ${message}`, "error", {
             agentId: agent.id,
             agentRole: agent.role,
             phase: "implementation",
             attempt,
-            maxAttempts: 5,
+            maxAttempts: MAX_IMPLEMENTATION_ATTEMPTS,
             error: message
           });
-          if (attempt < 5 && agentRunFailureLooksRecoverable(message)) {
+          if (attempt < MAX_IMPLEMENTATION_ATTEMPTS && agentRunFailureLooksRecoverable(message)) {
             previousApplyError = agentJsonFailureLooksRecoverable(message)
               ? `Implementation agent returned invalid JSON. Return valid JSON only. Parser error: ${message}`
               : `Implementation agent provider call failed transiently. Retry with the same task context. Error: ${message}`;
@@ -726,12 +731,12 @@ export class IssueWorkflowRunner {
           }
           throw error;
         }
-        await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent returned JSON for attempt ${attempt}/5`, "info", {
+        await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent returned JSON for attempt ${attempt}/${MAX_IMPLEMENTATION_ATTEMPTS}`, "info", {
           agentId: agent.id,
           agentRole: agent.role,
           phase: "implementation",
           attempt,
-          maxAttempts: 5
+          maxAttempts: MAX_IMPLEMENTATION_ATTEMPTS
         });
         let implementation: ReturnType<typeof implementationSchema.parse>;
         try {
@@ -739,15 +744,22 @@ export class IssueWorkflowRunner {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           previousApplyError = `Implementation JSON failed schema validation. Return JSON matching the implementation schema. Schema error: ${message}`;
+          await this.writeArtifact(task.id, "tool-call", `implementation-attempt-${attempt}-invalid.json`, JSON.stringify(result, null, 2));
           await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
           continue;
         }
         const actions = implementationToToolActions(implementation);
         await this.writeArtifact(task.id, "tool-call", `implementation-attempt-${attempt}.json`, JSON.stringify(implementation, null, 2));
-        const editActions = selectImplementationEditActions(actions);
+        const candidateEditActions = selectImplementationEditActions(actions);
+        const editActions = candidateEditActions.filter((action) => implementationToolNames.has(action.toolName));
         if (editActions.length === 0) {
-          previousApplyError = "Implementation attempt did not include a repository edit action; read-only actions are not a valid implementation.";
+          const attemptedTools = candidateEditActions.map((action) => action.toolName);
+          previousApplyError =
+            attemptedTools.length > 0
+              ? `Implementation attempted unsupported edit tool(s): ${attemptedTools.join(", ")}. Use only: ${supportedToolList}.`
+              : "Implementation attempt did not include a repository edit action; read-only actions are not a valid implementation.";
           await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
+          previousEditActions = candidateEditActions;
           continue;
         }
         const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, editActions, attempt);
@@ -777,7 +789,7 @@ export class IssueWorkflowRunner {
       }
     }
 
-    throw new Error(`Implementation edits did not apply after 5 attempts: ${previousApplyError}`);
+    throw new Error(`Implementation edits did not apply after ${MAX_IMPLEMENTATION_ATTEMPTS} attempts: ${previousApplyError}`);
   }
 
   private async runImplementationSelfCheckLoop(
@@ -865,7 +877,7 @@ export class IssueWorkflowRunner {
   }
 
   private getImplementationTools(repositoryConfig: RepositoryConfig): ToolDefinition[] {
-    const implementationToolNames = new Set(["repo.replace_text", "repo.write_file", "repo.apply_patch"]);
+    const implementationToolNames = new Set(["repo.replace_text", "repo.write_file"]);
     return this.getAvailableTools(repositoryConfig).filter((tool) => implementationToolNames.has(tool.name));
   }
 

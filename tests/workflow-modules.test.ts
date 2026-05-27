@@ -18,6 +18,7 @@ import {
   formatQualityGateRepairFeedback,
   formatReviewRepairFeedback,
   getSelfCheckHardMaxAttempts,
+  implementationSchema,
   implementationToToolActions,
   IssueWorkflowRunner,
   qualityGateFailuresChanged,
@@ -46,6 +47,15 @@ describe("workflow modules", () => {
   });
 
   it("normalizes implementation responses into tool actions", () => {
+    expect(
+      implementationSchema.parse({
+        summary: "tool calls alias",
+        toolCalls: [{ tool: "replace_text", input: { file_path: "src/app.ts", oldText: "old", new_text: "new" } }]
+      }).actions
+    ).toHaveLength(1);
+
+    expect(implementationSchema.parse({ summary: "diff alias", diff: "diff --git a/a b/a\n" }).unifiedDiff).toBe("diff --git a/a b/a\n");
+
     expect(implementationToToolActions({ summary: "compat", unifiedDiff: "diff --git a/a b/a\n" })).toEqual([
       {
         toolName: "repo.apply_patch",

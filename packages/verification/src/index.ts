@@ -107,8 +107,9 @@ export async function runFrontendScreenshotGate(input: {
     await mkdir(input.artifactDir, { recursive: true });
     await waitForTargets(input.targets.map((target) => target.url), input.timeoutMs ?? 60_000);
     await new Promise((resolve) => setTimeout(resolve, 100));
-    if (childExitCode !== undefined) {
-      throw new Error(`Frontend dev command exited before screenshot capture with code ${childExitCode ?? "unknown"}`);
+    const earlyExitCode = observedChildExitCode(child, childExitCode);
+    if (earlyExitCode !== undefined) {
+      throw new Error(`Frontend dev command exited before screenshot capture with code ${earlyExitCode ?? "unknown"}`);
     }
 
     const browser = await chromium.launch({
@@ -146,6 +147,11 @@ export async function runFrontendScreenshotGate(input: {
       await browser.close();
     }
 
+    const finalExitCode = observedChildExitCode(child, childExitCode);
+    if (finalExitCode !== undefined) {
+      throw new Error(`Frontend dev command exited before screenshot capture with code ${finalExitCode ?? "unknown"}`);
+    }
+
     const consoleErrorOutput = output.filter((line) => line.includes("Console errors for"));
     if (consoleErrorOutput.length > 0) {
       throw new Error(`Frontend screenshot console errors detected:\n${consoleErrorOutput.join("\n")}`);
@@ -177,6 +183,14 @@ export async function runFrontendScreenshotGate(input: {
   } finally {
     await terminateDevProcess(child);
   }
+}
+
+function observedChildExitCode(child: ChildProcess, closeEventExitCode: number | null | undefined): number | null | undefined {
+  if (closeEventExitCode !== undefined) {
+    return closeEventExitCode;
+  }
+
+  return child.exitCode === null ? undefined : child.exitCode;
 }
 
 async function terminateDevProcess(child: ChildProcess): Promise<void> {
