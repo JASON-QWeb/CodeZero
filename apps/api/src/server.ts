@@ -1,10 +1,12 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
+import { registerGitHubSyncRoutes } from "./routes/github-sync.js";
 import { registerGitHubWebhookRoutes } from "./routes/github-webhook.js";
 import { registerKnowledgeGraphRoutes } from "./routes/knowledge-graphs.js";
 import { registerMemoryRoutes } from "./routes/memories.js";
 import { registerSettingsRoutes } from "./routes/settings.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
+import { startGitHubSyncScheduler } from "./services/github-sync.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -35,9 +37,18 @@ export async function buildServer() {
 
   await registerGitHubWebhookRoutes(app);
   await registerTaskRoutes(app);
+  await registerGitHubSyncRoutes(app);
   await registerKnowledgeGraphRoutes(app);
   await registerMemoryRoutes(app);
   await registerSettingsRoutes(app);
+
+  const stopGitHubSyncScheduler = startGitHubSyncScheduler({
+    info: (message, metadata) => app.log.info(metadata ?? {}, message),
+    error: (message, metadata) => app.log.error(metadata ?? {}, message)
+  });
+  app.addHook("onClose", async () => {
+    stopGitHubSyncScheduler();
+  });
 
   return app;
 }

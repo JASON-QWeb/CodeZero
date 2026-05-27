@@ -267,7 +267,7 @@ export class IssueWorkflowRunner {
       codeGraphIndex?.status === "success" ? await this.createCodeGraphContext(task, sandbox, repositoryConfig) : undefined;
     const files = await indexFiles(sandbox.repoDir);
     const symbols = await indexSymbols(sandbox.repoDir, files);
-    const projectContext = await loadProjectContext(sandbox.repoDir);
+    const projectContext = await loadProjectContext(sandbox.repoDir, repositoryConfig.project_skill_path);
     const businessRules = [summarizeProjectContext(projectContext)];
     const memoryStore = new FileMemoryStore(this.config.memory.filePath);
     const memoryResults = await memoryStore.search(task.issue, 8);

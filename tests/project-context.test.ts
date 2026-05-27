@@ -21,6 +21,20 @@ describe("project context", () => {
     expect(summary).toContain("refunds@1.2.3");
   });
 
+  it("uses configured project skill paths when loading repository context", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-project-context-custom-"));
+    await mkdir(path.join(repoDir, "ops-agent", "skills", "booking"), { recursive: true });
+    await writeFile(path.join(repoDir, "ops-agent", "project.md"), "# Booking\n");
+    await writeFile(path.join(repoDir, "ops-agent", "testing-guide.md"), "go test ./...\n");
+    await writeFile(path.join(repoDir, "ops-agent", "skills", "booking", "SKILL.md"), "version: \"2.0.0\"\n\nBooking rules\n");
+
+    const context = await loadProjectContext(repoDir, "ops-agent");
+
+    expect(context.projectDocument).toContain("# Booking");
+    expect(context.testingGuide).toContain("go test ./...");
+    expect(context.businessSkills[0]?.id).toBe("booking");
+  });
+
   it("summarizes missing project context with explicit fallback text", async () => {
     const context = await loadProjectContext(await mkdtemp(path.join(os.tmpdir(), "agent-project-context-empty-")));
 

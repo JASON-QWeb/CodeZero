@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Task, TaskTrace, TraceSpan } from "@agent/shared";
 import { StatusPill } from "../../components/status-pill";
 import {
+  fetchGitHubSync,
   fetchMemories,
   fetchProjectKnowledgeGraph,
   fetchRepositoryQueues,
@@ -29,12 +30,13 @@ import {
   fetchTrace,
   generateProjectKnowledgeGraph,
   openProjectKnowledgeGraphDashboard,
+  triggerGitHubSync,
   updateMemoryStatus
 } from "./api";
 import { mockMemories, mockTasks, mockTrace } from "./demo-data";
 import { buildRepositorySummariesFromTasks } from "./repository-summary";
 import { formatTime } from "./time";
-import type { MemoryRecord, ProjectKnowledgeGraph, RepositoryQueueSummary } from "./types";
+import type { GitHubSyncState, MemoryRecord, ProjectKnowledgeGraph, RepositoryQueueSummary } from "./types";
 
 type Locale = "zh" | "en";
 
@@ -62,6 +64,11 @@ const text = {
     graphMissing: "未生成",
     graphOverview: "图谱总览",
     graphReady: "已就绪",
+    githubSync: "同步 GitHub",
+    githubSyncFailed: (message: string) => `同步失败：${message}`,
+    githubSyncIdle: "等待同步",
+    githubSyncing: "同步中",
+    githubSyncSummary: (issues: number, comments: number, time: string) => `${time} 导入 ${issues} 个 Issue / ${comments} 条 PR 评论`,
     issue: "Issue",
     knowledgeGraph: "Knowledge Graph / 知识图谱",
     knowledgeGraphHint: "由 Understand-Anything 官方分析和 dashboard 驱动",
@@ -123,6 +130,11 @@ const text = {
     graphMissing: "Missing",
     graphOverview: "Graph Overview",
     graphReady: "Ready",
+    githubSync: "Sync GitHub",
+    githubSyncFailed: (message: string) => `Sync failed: ${message}`,
+    githubSyncIdle: "Waiting to sync",
+    githubSyncing: "Syncing",
+    githubSyncSummary: (issues: number, comments: number, time: string) => `${time}: imported ${issues} issues / ${comments} PR comments`,
     issue: "Issue",
     knowledgeGraph: "Knowledge Graph",
     knowledgeGraphHint: "Powered by Understand-Anything official analysis and dashboard",
@@ -193,6 +205,20 @@ export function TaskBoard() {
   const repositories = useMemo(() => (repositoryQuery.data?.length ? repositoryQuery.data : buildRepositorySummariesFromTasks(tasks)), [repositoryQuery.data, tasks]);
   const selectedRepository = repositories.find((repository) => repository.id === selectedRepositoryId) ?? repositories[0];
   const hasLiveRepositories = Boolean(repositoryQuery.data?.length);
+  const syncQuery = useQuery({
+    queryKey: ["github-sync", selectedRepository?.id],
+    queryFn: () => fetchGitHubSync(selectedRepository?.id ?? ""),
+    enabled: Boolean(hasLiveRepositories && selectedRepository?.configured),
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 2000 : false)
+  });
+  const syncMutation = useMutation({
+    mutationFn: triggerGitHubSync,
+    onSuccess: async (response) => {
+      queryClient.setQueryData(["github-sync", response.sync.repositoryId], response.sync);
+      await queryClient.invalidateQueries({ queryKey: ["github-sync", response.sync.repositoryId] });
+      await queryClient.invalidateQueries({ queryKey: ["task-repositories"] });
+    }
+  });
   const graphQuery = useQuery({
     queryKey: ["repository-knowledge-graph", selectedRepository?.id],
     queryFn: () => fetchProjectKnowledgeGraph(selectedRepository?.id ?? ""),
@@ -254,6 +280,16 @@ export function TaskBoard() {
       setSelectedTaskId(visibleTasks[0]?.id);
     }
   }, [selectedTaskId, visibleTasks]);
+
+  useEffect(() => {
+    if (syncQuery.data?.lastFinishedAt) {
+      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      void queryClient.invalidateQueries({ queryKey: ["task-repositories"] });
+    }
+  }, [queryClient, syncQuery.data?.lastFinishedAt]);
+
+  const syncStatus = syncQuery.data?.status ?? "idle";
+  const syncBusy = syncMutation.isPending || syncStatus === "running";
 
   return (
     <main className="shell">
@@ -324,7 +360,21 @@ export function TaskBoard() {
             <h2>{t.repositories}</h2>
             <span>{repositoryQuery.isError ? t.settingsDemo : t.configuredQueues(repositories.length)}</span>
           </div>
-          <GitBranch size={18} aria-hidden />
+          <div className="sectionActions">
+            {selectedRepository && hasLiveRepositories ? (
+              <span className={`syncState syncState-${syncStatus}`}>{formatGitHubSyncLabel(locale, syncQuery.data)}</span>
+            ) : null}
+            <button
+              className="iconButton neutral"
+              disabled={!selectedRepository?.configured || !hasLiveRepositories || syncBusy}
+              onClick={() => selectedRepository && syncMutation.mutate(selectedRepository.id)}
+              type="button"
+            >
+              <RotateCcw size={16} aria-hidden />
+              <span>{syncBusy ? t.githubSyncing : t.githubSync}</span>
+            </button>
+            <GitBranch size={18} aria-hidden />
+          </div>
         </div>
         <div className="repositoryCards">
           {repositories.map((repository) => (
@@ -440,6 +490,28 @@ export function TaskBoard() {
       </section>
     </main>
   );
+}
+
+function formatGitHubSyncLabel(locale: Locale, sync?: GitHubSyncState): string {
+  const t = text[locale];
+
+  if (!sync) {
+    return t.githubSyncIdle;
+  }
+
+  if (sync.status === "running") {
+    return sync.lastStartedAt ? `${t.githubSyncing} · ${formatTime(sync.lastStartedAt)}` : t.githubSyncing;
+  }
+
+  if (sync.status === "failed") {
+    return t.githubSyncFailed(sync.lastError ?? "unknown");
+  }
+
+  if (sync.status === "finished" && sync.lastResult && sync.lastFinishedAt) {
+    return t.githubSyncSummary(sync.lastResult.importedIssues, sync.lastResult.importedFeedbackComments, formatTime(sync.lastFinishedAt));
+  }
+
+  return t.githubSyncIdle;
 }
 
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
