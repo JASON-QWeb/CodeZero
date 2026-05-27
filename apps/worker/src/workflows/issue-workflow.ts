@@ -1,5 +1,5 @@
 import { findRepository, loadAppConfig, type AppConfig } from "@agent/config";
-import { shouldDeferForRepositoryConcurrency } from "@agent/orchestrator";
+import { isComputeActiveStatus, shouldDeferForRepositoryConcurrency } from "@agent/orchestrator";
 import { createRepository, createTaskEvent, type TaskRepository } from "@agent/persistence";
 import { IssueWorkflowRunner } from "@agent/workflows";
 
@@ -12,6 +12,7 @@ export type IssueWorkflowResult = {
   status: string;
   prUrl?: string;
   deferred?: boolean;
+  skipped?: boolean;
   retryDelayMs?: number;
 };
 
@@ -36,6 +37,23 @@ export async function runIssueWorkflow(job: IssueWorkflowJob, dependencies: Issu
   if (!repository) {
     const runner = createRunner(config, tasks, dependencies);
     return runner.run(job.taskId);
+  }
+
+  if (isComputeActiveStatus(task.status)) {
+    await tasks.appendEvent(
+      createTaskEvent({
+        taskId: task.id,
+        type: "TASK_QUEUED",
+        message: `Duplicate workflow job skipped because task is already running with status ${task.status}`,
+        metadata: { status: task.status }
+      })
+    );
+
+    return {
+      taskId: task.id,
+      status: task.status,
+      skipped: true
+    };
   }
 
   const decision = shouldDeferForRepositoryConcurrency(await tasks.listTasks(), task, repository);

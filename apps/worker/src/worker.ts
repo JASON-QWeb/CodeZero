@@ -40,6 +40,10 @@ export async function processIssueWorkflowJob(
     console.log(`Workflow deferred for ${result.taskId}; repository concurrency limit reached`);
     return result;
   }
+  if (result.skipped) {
+    console.log(`Workflow skipped for ${result.taskId}: ${result.status}`);
+    return result;
+  }
   console.log(`Workflow completed for ${result.taskId}: ${result.status}${result.prUrl ? ` ${result.prUrl}` : ""}`);
   return result;
 }

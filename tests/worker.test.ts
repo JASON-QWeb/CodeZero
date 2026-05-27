@@ -46,4 +46,19 @@ describe("worker", () => {
     expect(result.prUrl).toContain("/pull/1");
     expect(queue.add).not.toHaveBeenCalled();
   });
+
+  it("does not requeue skipped duplicate workflow jobs", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const queue = { add: vi.fn().mockResolvedValue(undefined) };
+    const processor = vi.fn().mockResolvedValue({
+      taskId: "task-3",
+      status: "IMPLEMENTING",
+      skipped: true
+    });
+
+    const result = await processIssueWorkflowJob({ taskId: "task-3" }, queue, processor);
+
+    expect(result.skipped).toBe(true);
+    expect(queue.add).not.toHaveBeenCalled();
+  });
 });

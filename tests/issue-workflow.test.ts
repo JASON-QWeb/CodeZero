@@ -54,6 +54,24 @@ describe("worker issue workflow", () => {
     expect(tasks.appendEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "TASK_QUEUED" }));
   });
 
+  it("skips duplicate jobs for a task that is already running", async () => {
+    const task = { ...createTask(issue), status: "IMPLEMENTING" as const };
+    const runner = vi.fn();
+    const tasks = createTaskRepository(task);
+    const result = await runIssueWorkflow(
+      { taskId: task.id },
+      dependencies({
+        task,
+        tasks,
+        runner
+      })
+    );
+
+    expect(result).toMatchObject({ taskId: task.id, status: "IMPLEMENTING", skipped: true });
+    expect(runner).not.toHaveBeenCalled();
+    expect(tasks.appendEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "TASK_QUEUED" }));
+  });
+
   it("runs configured repository work when capacity is available", async () => {
     const runner = vi.fn().mockResolvedValue({ taskId: "task-acme-shop-42", status: "HUMAN_REVIEW", prUrl: "https://example.test/pr" });
     const result = await runIssueWorkflow(
