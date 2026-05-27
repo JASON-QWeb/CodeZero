@@ -283,6 +283,10 @@ function RepositoryCard({
           <strong>{repository.blockedCount}</strong>
           Blocked
         </span>
+        <span>
+          <strong>{repository.completedCount}</strong>
+          Completed
+        </span>
       </div>
     </button>
   );

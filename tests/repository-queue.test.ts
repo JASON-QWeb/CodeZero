@@ -58,7 +58,8 @@ describe("repository issue queue", () => {
       runningCount: 1,
       queuedCount: 1,
       reviewCount: 1,
-      blockedCount: 1
+      blockedCount: 1,
+      completedCount: 0
     });
 
     await app.close();
