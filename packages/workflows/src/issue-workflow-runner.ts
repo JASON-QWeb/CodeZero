@@ -493,17 +493,21 @@ export class IssueWorkflowRunner {
     let previousApplyError = "";
     const locale = detectIssueLocale(task.issue);
 
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
       const firstAttemptPrompt = reviewerFeedback
         ? [
             "Implement the latest PR reviewer feedback on the existing PR branch. Return only JSON.",
             `Latest reviewer feedback:\n${reviewerFeedback}`,
+            "Return exactly one or more repo.apply_patch actions with complete valid unified diffs.",
+            "Do not call read-only tools during implementation; use the provided fileSnippets and error feedback.",
             "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
             "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
             "Use only the provided tool names and keep the existing PR branch focused on the same issue."
           ].join("\n")
         : [
             "Implement the minimal change plan. Return only JSON.",
+            "Return exactly one or more repo.apply_patch actions with complete valid unified diffs.",
+            "Do not call read-only tools during implementation; use the provided fileSnippets and plan.",
             "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
             "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
             "Use only the provided tool names and do not include unrelated changes."
@@ -517,6 +521,8 @@ export class IssueWorkflowRunner {
             : [
                 "Repair the implementation so it applies cleanly. Return only JSON.",
                 `Previous tool/apply error:\n${previousApplyError}`,
+                "Return corrected repo.apply_patch action(s) only. Do not call repo.read_file, repo.search, or other read-only tools.",
+                "Each unified diff must include diff --git, ---/+++ file headers, and valid @@ hunk headers.",
                 "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
                 "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
                 languageInstruction(locale)
@@ -528,14 +534,21 @@ export class IssueWorkflowRunner {
           minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
           reviewerFeedback,
           fileSnippets: snippets as JsonObject,
-          availableTools: this.getAvailableTools(repositoryConfig) as unknown as JsonObject,
+          availableTools: this.getImplementationTools(repositoryConfig) as unknown as JsonObject,
           policies: this.config.policies as unknown as JsonObject,
           repositoryPermissions: repositoryConfig.permissions as unknown as JsonObject
         }
       });
       const implementation = implementationSchema.parse(result);
       const actions = implementationToToolActions(implementation);
-      const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, actions, attempt);
+      await this.writeArtifact(task.id, "tool-call", `implementation-attempt-${attempt}.json`, JSON.stringify(implementation, null, 2));
+      const patchActions = selectImplementationPatchActions(actions);
+      if (patchActions.length === 0) {
+        previousApplyError = "Implementation attempt did not include a repo.apply_patch action; read-only actions are not a valid implementation.";
+        await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
+        continue;
+      }
+      const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, patchActions, attempt);
       const failedToolCall = toolResults.find((toolResult) => toolResult.status !== "success");
 
       if (!failedToolCall) {
@@ -553,7 +566,11 @@ export class IssueWorkflowRunner {
       previousApplyError = summarizeToolFailure(failedToolCall);
     }
 
-    throw new Error(`Implementation diff did not apply after 3 attempts: ${previousApplyError}`);
+    throw new Error(`Implementation diff did not apply after 5 attempts: ${previousApplyError}`);
+  }
+
+  private getImplementationTools(repositoryConfig: RepositoryConfig): ToolDefinition[] {
+    return this.getAvailableTools(repositoryConfig).filter((tool) => tool.name === "repo.apply_patch");
   }
 
   private async executeToolActions(
@@ -948,6 +965,10 @@ export function selectImplementationSnippetPaths(task: Pick<Task, "contextPack" 
     .filter(Boolean);
 
   return paths.filter((value, index) => paths.indexOf(value) === index);
+}
+
+export function selectImplementationPatchActions(actions: JsonToolAction[]): JsonToolAction[] {
+  return actions.filter((action) => action.toolName === "repo.apply_patch");
 }
 
 export function compactContextPackForImplementation(contextPack: ContextPack): JsonObject {

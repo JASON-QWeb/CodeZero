@@ -13,6 +13,7 @@ import {
   createWorkflowAgentRunner,
   implementationToToolActions,
   IssueWorkflowRunner,
+  selectImplementationPatchActions,
   selectImplementationSnippetPaths,
   selectProviderForComplexity,
   summarizeToolFailure,
@@ -61,6 +62,15 @@ describe("workflow modules", () => {
     expect(summary).toContain("Command failed");
     expect(summary).toContain("stderr text");
     expect(summary).toContain("stdout text");
+  });
+
+  it("keeps only patch actions for implementation execution", () => {
+    expect(
+      selectImplementationPatchActions([
+        { toolName: "repo.read_file", input: { path: "src/app.ts" } },
+        { toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }
+      ])
+    ).toEqual([{ toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }]);
   });
 
   it("compacts implementation context and prioritizes plan files", () => {
