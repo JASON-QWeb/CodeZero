@@ -53,6 +53,9 @@ importers:
       '@agent/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@agent/github':
+        specifier: workspace:*
+        version: link:../../packages/github
       '@agent/memory':
         specifier: workspace:*
         version: link:../../packages/memory
@@ -65,6 +68,9 @@ importers:
       '@agent/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
+      '@agent/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@agent/shared':
         specifier: workspace:*
         version: link:../../packages/shared

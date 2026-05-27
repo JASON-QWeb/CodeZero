@@ -2,14 +2,16 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { evaluateRepositoryTrigger, findRepository } from "@agent/config";
 import { z } from "zod";
-import { createAndEnqueueTask, getServices } from "../services/task-services.js";
+import { createTaskEvent } from "@agent/persistence";
+import { createAndEnqueueTask, enqueueIssueWorkflow, getServices } from "../services/task-services.js";
 
 const issueSchema = z.object({
   number: z.number(),
   html_url: z.string().url(),
   title: z.string(),
   body: z.string().nullable(),
-  labels: z.array(z.object({ name: z.string().nullable() })).default([])
+  labels: z.array(z.object({ name: z.string().nullable() })).default([]),
+  pull_request: z.object({ url: z.string().url().optional(), html_url: z.string().url().optional() }).optional()
 });
 
 const repositorySchema = z.object({
@@ -31,6 +33,7 @@ const issueCommentWebhookSchema = z.object({
   action: z.string(),
   issue: issueSchema,
   comment: z.object({
+    id: z.number().optional(),
     body: z.string().nullable(),
     user: z.object({ login: z.string().optional() }).nullable().optional(),
     html_url: z.string().url().optional(),
@@ -104,6 +107,58 @@ export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise
       }
 
       const commentBody = parsed.data.comment.body ?? "";
+      const commentAuthor = parsed.data.comment.user?.login ?? parsed.data.sender?.login ?? "unknown";
+
+      if (parsed.data.issue.pull_request) {
+        const task = (await services.tasks.listTasks()).find(
+          (candidate) =>
+            candidate.prUrl === parsed.data.issue.html_url ||
+            candidate.prUrl?.endsWith(`/pull/${parsed.data.issue.number}`) ||
+            candidate.branchName === parsed.data.issue.title
+        );
+
+        if (!task) {
+          return { ignored: true, reason: `No tracked task found for PR ${parsed.data.issue.html_url}` };
+        }
+
+        if (isBotActor(commentAuthor)) {
+          return { ignored: true, reason: "Ignored bot PR comment" };
+        }
+
+        if (!["HUMAN_REVIEW", "BLOCKED"].includes(task.status)) {
+          return { ignored: true, reason: `Task ${task.id} is not waiting for PR feedback` };
+        }
+
+        const updated = await services.tasks.updateTask(task.id, {
+          issue: {
+            ...task.issue,
+            comments: [
+              ...task.issue.comments,
+              {
+                author: commentAuthor,
+                body: commentBody,
+                createdAt: parsed.data.comment.created_at ?? new Date().toISOString()
+              }
+            ]
+          },
+          updatedAt: new Date().toISOString()
+        });
+        await services.tasks.appendEvent(
+          createTaskEvent({
+            taskId: task.id,
+            type: "PR_REVIEW_COMMENT_RECEIVED",
+            message: `PR feedback received from ${commentAuthor}`,
+            metadata: {
+              commentUrl: parsed.data.comment.html_url ?? null,
+              commentId: parsed.data.comment.id ?? null,
+              prUrl: parsed.data.issue.html_url
+            }
+          })
+        );
+        await enqueueIssueWorkflow(updated.id, `${updated.id}-pr-comment-${parsed.data.comment.id ?? Date.now()}`);
+        return reply.code(202).send({ task: updated, trigger: "pr_comment", reason: "Queued same-PR feedback iteration" });
+      }
+
       const labels = parsed.data.issue.labels.map((label) => label.name ?? "").filter(Boolean);
       const repository = findRepository(services.config, parsed.data.repository.owner.login, parsed.data.repository.name);
       const decision = evaluateRepositoryTrigger({
@@ -144,6 +199,10 @@ export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise
 
     return { ignored: true, reason: `Unsupported event ${String(event)}` };
   });
+}
+
+function isBotActor(actor: string): boolean {
+  return actor.endsWith("[bot]") || actor === "github-actions" || actor === "dependabot";
 }
 
 function verifyGitHubSignature(request: FastifyRequest, body: string, secret: string): boolean {

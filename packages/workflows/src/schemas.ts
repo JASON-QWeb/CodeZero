@@ -47,10 +47,17 @@ export const implementationSchema = z
     message: "Implementation must include unifiedDiff or actions"
   });
 
+const reviewFindingSchema = z.object({
+  title: z.string(),
+  body: z.string(),
+  blocking: z.boolean(),
+  file: z.preprocess((value) => (value === null ? undefined : value), z.string().optional())
+});
+
 export const reviewSchema = z.object({
   approved: z.boolean(),
-  blockingFindings: z.array(z.object({ title: z.string(), body: z.string(), blocking: z.boolean(), file: z.string().optional() })).default([]),
-  nonBlockingFindings: z.array(z.object({ title: z.string(), body: z.string(), blocking: z.boolean(), file: z.string().optional() })).default([]),
+  blockingFindings: z.array(reviewFindingSchema).default([]),
+  nonBlockingFindings: z.array(reviewFindingSchema).default([]),
   missingTests: z.array(z.string()).default([]),
   scopeViolations: z.array(z.string()).default([]),
   riskLevel: z.enum(["low", "medium", "high"]).default("medium"),

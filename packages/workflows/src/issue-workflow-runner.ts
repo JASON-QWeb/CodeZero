@@ -1,4 +1,5 @@
 import path from "node:path";
+import { copyFile, mkdir } from "node:fs/promises";
 import { runJsonAgent, type AgentDefinition, type AgentRunner } from "@agent/agent-runtime";
 import {
   buildContextPack,
@@ -20,6 +21,7 @@ import { createTaskEvent, type TaskRepository } from "@agent/persistence";
 import { loadProjectContext, summarizeProjectContext } from "@agent/project-context";
 import {
   cloneRepository,
+  cloneRepositoryBranch,
   commitAll,
   DockerSandboxManager,
   getCurrentCommitSha,
@@ -41,7 +43,16 @@ import {
 import { createQualityGateCommands, runFrontendScreenshotGate, runQualityGates } from "@agent/verification";
 import { createExecutionAgents, createWorkflowAgent, createWorkflowAgentRunner } from "./agent-factory.js";
 import { createArtifactId, writeTaskArtifact } from "./artifacts.js";
-import { createAgentPrBody, createPrLocalVerificationPlan, detectInstallCommand } from "./pr-local-verification.js";
+import {
+  assertAgentPrBodyComplete,
+  createAgentPrBody,
+  createPrFeedbackUpdateComment,
+  createPrReadyIssueComment,
+  createPrLocalVerificationPlan,
+  detectInstallCommand,
+  detectIssueLocale,
+  languageInstruction
+} from "./pr-local-verification.js";
 import { createRepositoryPermissionPolicies, repositoryAllowsTool } from "./repository-policies.js";
 import { implementationSchema, planSchema, prdSchema, reviewSchema } from "./schemas.js";
 import { implementationToToolActions, summarizeToolFailure } from "./tool-actions.js";
@@ -63,6 +74,10 @@ export class IssueWorkflowRunner {
 
     try {
       const repositoryConfig = this.requiredRepository(task);
+      if (this.shouldRunPrFeedbackIteration(task)) {
+        return await this.runPrFeedbackIteration(task, repositoryConfig);
+      }
+
       const runner = await createWorkflowAgentRunner(this.config);
       const prdAgent = await createWorkflowAgent(this.config, "prd", "prd");
 
@@ -117,14 +132,58 @@ export class IssueWorkflowRunner {
     }
   }
 
+  private shouldRunPrFeedbackIteration(task: Task): boolean {
+    return Boolean(
+      task.prUrl &&
+        task.branchName &&
+        task.issue.comments.length > 0 &&
+        (task.status === "HUMAN_REVIEW" || task.status === "BLOCKED")
+    );
+  }
+
+  private async runPrFeedbackIteration(task: Task, repositoryConfig: RepositoryConfig): Promise<IssueWorkflowResult> {
+    const runner = await createWorkflowAgentRunner(this.config);
+    const agents = await createExecutionAgents(this.config, task.prd?.complexity.score ?? 30);
+    const sandbox = await this.prepareExistingPrSandbox(task, repositoryConfig);
+    let updated = await this.updateStatus(task.id, "IMPLEMENTING", { sandbox });
+    const feedback = this.latestReviewerFeedback(updated);
+
+    await this.applyImplementation(updated, sandbox, repositoryConfig, runner, agents.implementation, feedback);
+    await this.syncCodeGraphAfterImplementation(updated, sandbox, repositoryConfig);
+
+    const qualityGateResults = await this.runQualityGates(updated, sandbox, repositoryConfig);
+    updated = await this.updateStatus(updated.id, "QUALITY_GATES_RUNNING", { qualityGateResults });
+
+    if (!allQualityGatesPassed(qualityGateResults)) {
+      updated = await this.updateStatus(updated.id, "BLOCKED");
+      await this.event(updated.id, "TASK_BLOCKED", "PR feedback iteration quality gates failed", "warn");
+      return { taskId: updated.id, status: updated.status, prUrl: updated.prUrl };
+    }
+
+    const reviewResult = await this.review(updated, sandbox, runner, agents.review, feedback);
+    updated = await this.updateStatus(updated.id, "SUBAGENT_REVIEWING", { reviewResult });
+
+    if (!reviewAllowsPr(reviewResult)) {
+      updated = await this.updateStatus(updated.id, "BLOCKED");
+      await this.event(updated.id, "TASK_BLOCKED", "Review subagent blocked PR update", "warn");
+      return { taskId: updated.id, status: updated.status, prUrl: updated.prUrl };
+    }
+
+    await this.updateExistingPullRequest(updated, sandbox, repositoryConfig, feedback);
+    updated = await this.requiredTask(updated.id);
+    updated = await this.updateStatus(updated.id, "HUMAN_REVIEW");
+    return { taskId: updated.id, status: updated.status, prUrl: updated.prUrl };
+  }
+
   private async draftPrd(task: Task, runner: AgentRunner, agent: AgentDefinition): Promise<PrdDocument> {
     await this.updateStatus(task.id, "CONTEXT_COLLECTING");
     await this.updateStatus(task.id, "BRAINSTORMING");
     const platformSkills = await loadPlatformSkills(this.config.rootDir);
+    const locale = detectIssueLocale(task.issue);
     const result = await runJsonAgent({
       runner,
       agent,
-      userPrompt: "Generate the PRD JSON. Return only JSON matching the required schema.",
+      userPrompt: ["Generate the PRD JSON. Return only JSON matching the required schema.", languageInstruction(locale)].join("\n"),
       context: {
         issue: task.issue as unknown as JsonObject,
         platformSkills: platformSkills.map((skill) => ({ id: skill.id, content: skill.content }))
@@ -165,6 +224,39 @@ export class IssueWorkflowRunner {
     }
 
     await this.event(task.id, "REPO_CLONED", "Repository cloned and issue branch created");
+    return sandbox;
+  }
+
+  private async prepareExistingPrSandbox(task: Task, repositoryConfig: RepositoryConfig): Promise<Sandbox> {
+    await this.event(task.id, "PR_REVIEW_COMMENT_RECEIVED", "PR review feedback queued for same-branch iteration", "info", {
+      prUrl: task.prUrl ?? null,
+      branchName: task.branchName ?? null
+    });
+    const manager = new DockerSandboxManager({
+      mode: this.config.sandbox.mode,
+      rootDir: path.resolve(this.config.rootDir, this.config.sandbox.root_dir),
+      dockerImage: this.config.sandbox.image,
+      networkAllowlist: this.config.sandbox.network.allow,
+      maxRuntimeMinutes: this.config.sandbox.limits.max_runtime_minutes
+    });
+    const sandbox = await manager.create({ taskId: `${task.id}-feedback-${Date.now()}`, issue: task.issue });
+    const remoteUrl = createGitHubRemoteUrl(repositoryConfig.github_owner, repositoryConfig.github_repo, this.config.github.token);
+    const results = await cloneRepositoryBranch({
+      sandbox,
+      remoteUrl,
+      branch: task.branchName ?? `agent/issue-${task.issue.number}`,
+      timeoutMs: this.config.sandbox.limits.max_runtime_minutes * 60_000
+    });
+
+    for (const result of results) {
+      await this.event(task.id, "COMMAND_FINISHED", `${redactRemoteUrl(result.command)} exited ${result.exitCode}`, result.exitCode === 0 ? "info" : "error");
+    }
+
+    if (results.some((result) => result.exitCode !== 0)) {
+      throw new Error("Existing PR branch clone failed");
+    }
+
+    await this.event(task.id, "REPO_CLONED", "Existing PR branch cloned for feedback iteration");
     return sandbox;
   }
 
@@ -361,10 +453,11 @@ export class IssueWorkflowRunner {
   }
 
   private async createMinimalChangePlan(task: Task, runner: AgentRunner, agent: AgentDefinition): Promise<MinimalChangePlan> {
+    const locale = detectIssueLocale(task.issue);
     const result = await runJsonAgent({
       runner,
       agent,
-      userPrompt: "Create a minimal change plan. Return only JSON.",
+      userPrompt: ["Create a minimal change plan. Return only JSON.", languageInstruction(locale)].join("\n"),
       context: {
         prd: task.prd as unknown as JsonObject,
         contextPack: task.contextPack as unknown as JsonObject
@@ -376,32 +469,52 @@ export class IssueWorkflowRunner {
     return plan;
   }
 
-  private async applyImplementation(task: Task, sandbox: Sandbox, repositoryConfig: RepositoryConfig, runner: AgentRunner, agent: AgentDefinition): Promise<void> {
+  private async applyImplementation(
+    task: Task,
+    sandbox: Sandbox,
+    repositoryConfig: RepositoryConfig,
+    runner: AgentRunner,
+    agent: AgentDefinition,
+    reviewerFeedback = ""
+  ): Promise<void> {
     const snippets = await readContextFileSnippets(sandbox.repoDir, task.contextPack ?? this.missing("ContextPack"));
     let previousApplyError = "";
+    const locale = detectIssueLocale(task.issue);
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const firstAttemptPrompt = reviewerFeedback
+        ? [
+            "Implement the latest PR reviewer feedback on the existing PR branch. Return only JSON.",
+            `Latest reviewer feedback:\n${reviewerFeedback}`,
+            "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
+            "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
+            "Use only the provided tool names and keep the existing PR branch focused on the same issue."
+          ].join("\n")
+        : [
+            "Implement the minimal change plan. Return only JSON.",
+            "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
+            "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
+            "Use only the provided tool names and do not include unrelated changes."
+          ].join("\n");
       const result = await runJsonAgent({
         runner,
         agent,
         userPrompt:
           attempt === 1
-            ? [
-                "Implement the minimal change plan. Return only JSON.",
-                "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
-                "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
-                "Use only the provided tool names and do not include unrelated changes."
-              ].join("\n")
+            ? [firstAttemptPrompt, languageInstruction(locale)].join("\n")
             : [
                 "Repair the implementation so it applies cleanly. Return only JSON.",
                 `Previous tool/apply error:\n${previousApplyError}`,
                 "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
-                "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}."
+                "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
+                languageInstruction(locale)
               ].join("\n"),
         context: {
+          issue: task.issue as unknown as JsonObject,
           prd: task.prd as unknown as JsonObject,
           contextPack: task.contextPack as unknown as JsonObject,
           minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
+          reviewerFeedback,
           fileSnippets: snippets as JsonObject,
           availableTools: this.getAvailableTools(repositoryConfig) as unknown as JsonObject,
           policies: this.config.policies as unknown as JsonObject,
@@ -521,18 +634,27 @@ export class IssueWorkflowRunner {
     return results;
   }
 
-  private async review(task: Task, sandbox: Sandbox, runner: AgentRunner, agent: AgentDefinition): Promise<ReviewResult> {
+  private async review(task: Task, sandbox: Sandbox, runner: AgentRunner, agent: AgentDefinition, reviewerFeedback = ""): Promise<ReviewResult> {
     const diff = await getGitDiff(sandbox.repoDir);
     const changedFiles = await listChangedFiles(sandbox.repoDir);
+    const locale = detectIssueLocale(task.issue);
     const result = await runJsonAgent({
       runner,
       agent,
-      userPrompt: "Review the draft changes. Return only JSON with approved, findings, missingTests, scopeViolations, riskLevel, and prDescriptionNotes.",
+      userPrompt: [
+        "Review the draft changes. Return only JSON with approved, findings, missingTests, scopeViolations, riskLevel, and prDescriptionNotes.",
+        reviewerFeedback ? `This is a PR feedback iteration. Confirm the diff addresses this latest reviewer feedback:\n${reviewerFeedback}` : "",
+        languageInstruction(locale)
+      ]
+        .filter(Boolean)
+        .join("\n"),
       context: {
+        issue: task.issue as unknown as JsonObject,
         prd: task.prd as unknown as JsonObject,
         contextPack: task.contextPack as unknown as JsonObject,
         minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
         qualityGateResults: (task.qualityGateResults ?? []) as unknown as JsonObject,
+        reviewerFeedback,
         changedFiles,
         diff
       }
@@ -553,6 +675,7 @@ export class IssueWorkflowRunner {
     const baseSha = await getCurrentCommitSha(sandbox.repoDir);
     const installCommand = await detectInstallCommand(sandbox.repoDir);
     const artifacts = await this.tasks.listArtifacts(task.id);
+    const screenshotArtifacts = await this.publishScreenshotArtifactsToBranch(task, sandbox, repositoryConfig, agentBranch, artifacts);
     const verification = createPrLocalVerificationPlan({
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
@@ -563,7 +686,7 @@ export class IssueWorkflowRunner {
       installCommand,
       qualityGateResults: task.qualityGateResults ?? [],
       devCommand: repositoryConfig.frontend.dev_command,
-      screenshotArtifacts: artifacts.filter((artifact) => artifact.type === "screenshot"),
+      screenshotArtifacts,
       sandbox: {
         mode: sandbox.mode,
         image: this.config.sandbox.image,
@@ -587,13 +710,22 @@ export class IssueWorkflowRunner {
     }
 
     const github = new GitHubClient({ token: this.config.github.token });
+    const locale = detectIssueLocale(task.issue);
+    const body = createAgentPrBody({ task, verification, locale });
+    assertAgentPrBodyComplete({ task, verification, locale, body });
     const prUrl = await github.createDraftPullRequest({
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
-      title: `Agent: ${task.issue.title}`,
-      body: createAgentPrBody({ task, verification }),
+      title: `${locale === "zh" ? "机器人" : "Agent"}: ${task.issue.title}`,
+      body,
       head: agentBranch,
       base: repositoryConfig.default_branch
+    });
+    await github.createIssueComment({
+      owner: repositoryConfig.github_owner,
+      repo: repositoryConfig.github_repo,
+      issueNumber: task.issue.number,
+      body: createPrReadyIssueComment({ task, verification, prUrl, locale })
     });
     const memoryProposal = createTaskMemoryProposal({
       task: { ...task, prUrl },
@@ -604,6 +736,115 @@ export class IssueWorkflowRunner {
     await this.event(task.id, "MEMORY_PROPOSAL_CREATED", `Memory proposal created with ${memoryProposal.records.length} records`);
     await this.event(task.id, "PR_CREATED", `Draft PR created: ${prUrl}`);
     return prUrl;
+  }
+
+  private async updateExistingPullRequest(task: Task, sandbox: Sandbox, repositoryConfig: RepositoryConfig, reviewerFeedback: string): Promise<void> {
+    if (!this.config.github.token) {
+      throw new Error("GITHUB_TOKEN is required to update the pull request");
+    }
+
+    const pullNumber = parseGitHubIssueNumber(task.prUrl ?? "");
+    if (!pullNumber) {
+      throw new Error(`Cannot parse pull request number from ${task.prUrl ?? "missing PR URL"}`);
+    }
+
+    const agentBranch = task.branchName ?? `agent/issue-${task.issue.number}`;
+    const baseSha = await getCurrentCommitSha(sandbox.repoDir);
+    const artifacts = await this.tasks.listArtifacts(task.id);
+    const screenshotArtifacts = await this.publishScreenshotArtifactsToBranch(task, sandbox, repositoryConfig, agentBranch, artifacts);
+    const installCommand = await detectInstallCommand(sandbox.repoDir);
+    const verification = createPrLocalVerificationPlan({
+      owner: repositoryConfig.github_owner,
+      repo: repositoryConfig.github_repo,
+      baseBranch: repositoryConfig.default_branch,
+      baseSha,
+      agentBranch,
+      cloneUrl: createGitHubRemoteUrl(repositoryConfig.github_owner, repositoryConfig.github_repo),
+      installCommand,
+      qualityGateResults: task.qualityGateResults ?? [],
+      devCommand: repositoryConfig.frontend.dev_command,
+      screenshotArtifacts,
+      sandbox: {
+        mode: sandbox.mode,
+        image: this.config.sandbox.image,
+        repoDir: sandbox.repoDir,
+        artifactDir: sandbox.artifactDir
+      }
+    });
+
+    await this.writeArtifact(task.id, "pr-verification", `pr-local-verification-${Date.now()}.json`, JSON.stringify(verification, null, 2));
+    await this.updateStatus(task.id, "PR_CREATING");
+
+    const commitResults = await commitAll(sandbox.repoDir, `Agent feedback: ${task.issue.title}`);
+
+    if (commitResults.some((result) => result.exitCode !== 0)) {
+      throw new Error("Feedback commit failed");
+    }
+
+    const pushResult = await pushBranch(sandbox.repoDir, agentBranch);
+
+    if (pushResult.exitCode !== 0) {
+      throw new Error(`Feedback push failed: ${pushResult.stderr || pushResult.stdout}`);
+    }
+
+    const github = new GitHubClient({ token: this.config.github.token });
+    const locale = detectIssueLocale(task.issue);
+    const body = createAgentPrBody({ task, verification, locale, updateReason: reviewerFeedback });
+    assertAgentPrBodyComplete({ task, verification, locale, updateReason: reviewerFeedback, body });
+    await github.updatePullRequest({
+      owner: repositoryConfig.github_owner,
+      repo: repositoryConfig.github_repo,
+      pullNumber,
+      title: `${locale === "zh" ? "机器人" : "Agent"}: ${task.issue.title}`,
+      body
+    });
+    await github.createIssueComment({
+      owner: repositoryConfig.github_owner,
+      repo: repositoryConfig.github_repo,
+      issueNumber: pullNumber,
+      body: createPrFeedbackUpdateComment({ task, verification, updateReason: reviewerFeedback, locale })
+    });
+    await this.event(task.id, "PR_UPDATED", `Draft PR updated after reviewer feedback: ${task.prUrl}`);
+  }
+
+  private async publishScreenshotArtifactsToBranch(
+    task: Task,
+    sandbox: Sandbox,
+    repositoryConfig: RepositoryConfig,
+    agentBranch: string,
+    artifacts: Artifact[]
+  ): Promise<Array<Pick<Artifact, "path" | "url" | "metadata">>> {
+    const screenshots = artifacts.filter((artifact) => artifact.type === "screenshot" && artifact.path);
+    const targetDir = path.join(sandbox.repoDir, ".agent", "screenshots", `issue-${task.issue.number}`);
+
+    if (screenshots.length === 0) {
+      return [];
+    }
+
+    await mkdir(targetDir, { recursive: true });
+
+    return Promise.all(
+      screenshots.map(async (artifact, index) => {
+        const source = artifact.path ?? "";
+        const extension = path.extname(source) || ".png";
+        const viewport = typeof artifact.metadata?.viewport === "string" ? artifact.metadata.viewport : `shot-${index + 1}`;
+        const filename = `${String(index + 1).padStart(2, "0")}-${safePathSegment(viewport)}${extension}`;
+        const relativePath = path.posix.join(".agent", "screenshots", `issue-${task.issue.number}`, filename);
+        const target = path.join(targetDir, filename);
+        await copyFile(source, target);
+
+        return {
+          path: relativePath,
+          url: rawGitHubUrl(repositoryConfig.github_owner, repositoryConfig.github_repo, agentBranch, relativePath),
+          metadata: artifact.metadata
+        };
+      })
+    );
+  }
+
+  private latestReviewerFeedback(task: Task): string {
+    const latest = task.issue.comments.at(-1);
+    return latest ? `${latest.author} at ${latest.createdAt}:\n${latest.body}` : "";
   }
 
   private createToolGateway(repositoryConfig: RepositoryConfig): ToolGateway {
@@ -681,4 +922,21 @@ export class IssueWorkflowRunner {
   private missing<T>(name: string): T {
     throw new Error(`${name} is required`);
   }
+}
+
+function parseGitHubIssueNumber(url: string): number | undefined {
+  const match = /\/(?:pull|issues)\/(\d+)(?:$|[?#])/.exec(url);
+  return match?.[1] ? Number(match[1]) : undefined;
+}
+
+function rawGitHubUrl(owner: string, repo: string, branch: string, relativePath: string): string {
+  return encodeURI(`https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${branch}/${relativePath}`);
+}
+
+function safePathSegment(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 64) || "screenshot";
 }

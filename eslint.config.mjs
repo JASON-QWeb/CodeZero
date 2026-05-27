@@ -8,6 +8,10 @@ export default tseslint.config(
       "**/dist/**",
       "**/.next/**",
       "**/node_modules/**",
+      "artifacts/**",
+      "coverage/**",
+      "data/**",
+      "sandboxes/**",
       "pnpm-lock.yaml",
       "docs/**",
       "blueprints/**"

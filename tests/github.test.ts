@@ -3,16 +3,22 @@ import { GitHubClient, createGitHubRemoteUrl, redactRemoteUrl, type GitHubApiCli
 
 const issuesGet = vi.fn();
 const listComments = vi.fn();
+const issuesUpdate = vi.fn();
+const createComment = vi.fn();
 const pullsCreate = vi.fn();
+const pullsUpdate = vi.fn();
 
 function fakeOctokit(): GitHubApiClient {
   return {
     issues: {
       get: issuesGet,
-      listComments
+      listComments,
+      update: issuesUpdate,
+      createComment
     },
     pulls: {
-      create: pullsCreate
+      create: pullsCreate,
+      update: pullsUpdate
     }
   } as unknown as GitHubApiClient;
 }
@@ -71,5 +77,24 @@ describe("github client", () => {
       })
     ).resolves.toBe("https://github.com/acme/shop/pull/5");
     expect(pullsCreate).toHaveBeenCalledWith(expect.objectContaining({ draft: true, head: "agent/issue-1" }));
+  });
+
+  it("updates pull requests and comments on the PR conversation", async () => {
+    pullsUpdate.mockResolvedValue({ data: { html_url: "https://github.com/acme/shop/pull/5" } });
+    createComment.mockResolvedValue({ data: { html_url: "https://github.com/acme/shop/pull/5#issuecomment-1" } });
+
+    const client = new GitHubClient({ token: "token" }, fakeOctokit());
+
+    await expect(
+      client.updatePullRequest({
+        owner: "acme",
+        repo: "shop",
+        pullNumber: 5,
+        body: "updated"
+      })
+    ).resolves.toBe("https://github.com/acme/shop/pull/5");
+    await expect(client.createIssueComment({ owner: "acme", repo: "shop", issueNumber: 5, body: "done" })).resolves.toContain("#issuecomment-1");
+    expect(pullsUpdate).toHaveBeenCalledWith(expect.objectContaining({ pull_number: 5, body: "updated" }));
+    expect(createComment).toHaveBeenCalledWith(expect.objectContaining({ issue_number: 5, body: "done" }));
   });
 });

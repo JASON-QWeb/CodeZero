@@ -87,6 +87,7 @@ export async function runFrontendScreenshotGate(input: {
   const startedAt = Date.now();
   const output: string[] = [];
   const screenshots: ScreenshotResult[] = [];
+  let childExitCode: number | null | undefined;
   const child = spawn(input.devCommand, {
     cwd: input.cwd,
     shell: true,
@@ -95,10 +96,17 @@ export async function runFrontendScreenshotGate(input: {
 
   child.stdout.on("data", (chunk: Buffer) => output.push(chunk.toString("utf8")));
   child.stderr.on("data", (chunk: Buffer) => output.push(chunk.toString("utf8")));
+  child.on("close", (code) => {
+    childExitCode = code;
+  });
 
   try {
     await mkdir(input.artifactDir, { recursive: true });
     await waitForTargets(input.targets.map((target) => target.url), input.timeoutMs ?? 60_000);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (childExitCode !== undefined) {
+      throw new Error(`Frontend dev command exited before screenshot capture with code ${childExitCode ?? "unknown"}`);
+    }
 
     const browser = await chromium.launch({
       executablePath: input.chromeExecutablePath ?? defaultChromeExecutablePath(),
@@ -133,6 +141,11 @@ export async function runFrontendScreenshotGate(input: {
       }
     } finally {
       await browser.close();
+    }
+
+    const consoleErrorOutput = output.filter((line) => line.includes("Console errors for"));
+    if (consoleErrorOutput.length > 0) {
+      throw new Error(`Frontend screenshot console errors detected:\n${consoleErrorOutput.join("\n")}`);
     }
 
     return {

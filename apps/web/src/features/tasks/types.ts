@@ -25,6 +25,34 @@ export type RepositoryQueuesResponse = {
   repositories: RepositoryQueueSummary[];
 };
 
+export type KnowledgeGraphStatus = "missing" | "generating" | "ready" | "failed";
+
+export type ProjectKnowledgeGraph = {
+  repositoryId: string;
+  fullName: string;
+  status: KnowledgeGraphStatus;
+  graphAvailable: boolean;
+  pluginInstalled: boolean;
+  provider: {
+    name: "Understand-Anything";
+    projectUrl: string;
+    testedVersion: string;
+    outputFile: ".understand-anything/knowledge-graph.json";
+  };
+  graph?: {
+    projectName?: string;
+    analyzedAt?: string;
+    nodes?: number;
+    edges?: number;
+  };
+  message?: string;
+  dashboardUrl?: string;
+};
+
+export type ProjectKnowledgeGraphResponse = {
+  knowledgeGraph: ProjectKnowledgeGraph;
+};
+
 export type TraceResponse = {
   trace: TaskTrace;
 };

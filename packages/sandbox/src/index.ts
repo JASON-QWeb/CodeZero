@@ -153,6 +153,21 @@ export async function cloneRepository(input: {
   return results;
 }
 
+export async function cloneRepositoryBranch(input: {
+  sandbox: Sandbox;
+  remoteUrl: string;
+  branch: string;
+  timeoutMs?: number;
+}): Promise<CommandResult[]> {
+  const result = await runCommand({
+    cwd: path.dirname(input.sandbox.repoDir),
+    command: `git clone --depth 1 --branch ${shellQuote(input.branch)} ${shellQuote(input.remoteUrl)} ${shellQuote(input.sandbox.repoDir)}`,
+    timeoutMs: input.timeoutMs
+  });
+
+  return [result];
+}
+
 export async function getGitDiff(repoDir: string): Promise<string> {
   const result = await runCommand({ cwd: repoDir, command: "git diff -- . ':!package-lock.json' ':!pnpm-lock.yaml'", timeoutMs: 60_000 });
   return `${result.stdout}${result.stderr}`.trim();
