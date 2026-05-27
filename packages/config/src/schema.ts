@@ -129,6 +129,14 @@ const repositoryPermissionsSchema = z
     blocked_permissions: []
   });
 
+const repositoryWorkflowSchema = z
+  .object({
+    require_prd_review: z.boolean().default(true)
+  })
+  .default({
+    require_prd_review: true
+  });
+
 export const repositorySchema = z.object({
   id: z.string().min(1),
   github_owner: z.string().min(1),
@@ -144,6 +152,7 @@ export const repositorySchema = z.object({
     .default({
       max_concurrent_issues: 1
     }),
+  workflow: repositoryWorkflowSchema,
   permissions: repositoryPermissionsSchema,
   quality_gates: z
     .object({
