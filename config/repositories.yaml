@@ -61,3 +61,64 @@ repositories:
         - "http://localhost:3000/"
     pr:
       default_draft: true
+  - id: beautyskillshub
+    github_owner: JASON-QWeb
+    github_repo: BeautySkillsHub
+    default_branch: main
+    project_skill_path: ".agent"
+    trigger:
+      mode: mention
+      mention: "@codeZero"
+      auto_events:
+        - issues.opened
+        - issues.reopened
+      label_allowlist:
+        - agent-ready
+      label_blocklist:
+        - no-agent
+        - security-review
+      actor_allowlist: []
+    codebase_intelligence:
+      codegraph:
+        enabled: true
+        package: "@colbymchenry/codegraph@0.9.3"
+        init_args:
+          - "--index"
+        timeout_ms: 600000
+        fail_on_error: true
+      navigation_graph:
+        enabled: true
+        include_git_history: true
+        include_codeowners: true
+        max_depth: 4
+    queue:
+      max_concurrent_issues: 1
+    permissions:
+      allowed_tools:
+        - repo.search
+        - repo.read_file
+        - codegraph.query
+        - codegraph.context
+        - repo.apply_patch
+        - shell.run
+        - github.create_draft_pr
+        - browser.screenshot
+        - memory.propose_update
+      blocked_tools: []
+      allowed_permissions:
+        - read
+        - safe_write
+        - repo_write
+        - external_write
+      blocked_permissions:
+        - dangerous
+    quality_gates:
+      build: "cd frontend && npm ci && npm run build && cd ../backend && go test ./..."
+      typecheck: "cd frontend && npx tsc -b"
+      unit_test: "cd frontend && npm run test:node && cd ../backend && go test ./..."
+    frontend:
+      dev_command: "cd frontend && npm run dev -- --host 127.0.0.1 --port 5173"
+      screenshot_urls:
+        - "http://127.0.0.1:5173/"
+    pr:
+      default_draft: true

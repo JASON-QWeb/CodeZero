@@ -14,6 +14,8 @@ export type ApiServices = {
   tasks: TaskRepository;
 };
 
+export type EnqueueIssueWorkflow = (taskId: string, jobId?: string) => Promise<void>;
+
 let servicesPromise: Promise<ApiServices> | undefined;
 
 export async function getServices(): Promise<ApiServices> {
@@ -25,7 +27,7 @@ export function resetServicesForTests(): void {
   servicesPromise = undefined;
 }
 
-export async function createAndEnqueueTask(issue: IssueContext): Promise<Task> {
+export async function createAndEnqueueTask(issue: IssueContext, options: { enqueue?: EnqueueIssueWorkflow } = {}): Promise<Task> {
   const services = await getServices();
   const task = {
     ...createTask(issue),
@@ -42,7 +44,7 @@ export async function createAndEnqueueTask(issue: IssueContext): Promise<Task> {
   );
 
   try {
-    await enqueueIssueWorkflow(created.id);
+    await (options.enqueue ?? enqueueIssueWorkflow)(created.id);
     await services.tasks.appendEvent(
       createTaskEvent({
         taskId: created.id,

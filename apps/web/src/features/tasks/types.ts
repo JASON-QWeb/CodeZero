@@ -25,6 +25,35 @@ export type RepositoryQueuesResponse = {
   repositories: RepositoryQueueSummary[];
 };
 
+export type GitHubSyncStatus = "idle" | "running" | "finished" | "failed";
+
+export type GitHubSyncResult = {
+  repositoryId: string;
+  fullName: string;
+  scannedIssues: number;
+  importedIssues: number;
+  skippedIssues: number;
+  scannedFeedbackPullRequests: number;
+  importedFeedbackComments: number;
+  queuedFeedbackTasks: number;
+  failedFeedbackQueues: number;
+  skippedFeedbackComments: number;
+};
+
+export type GitHubSyncState = {
+  repositoryId: string;
+  status: GitHubSyncStatus;
+  lastStartedAt?: string;
+  lastFinishedAt?: string;
+  lastError?: string;
+  lastResult?: GitHubSyncResult;
+};
+
+export type GitHubSyncResponse = {
+  started?: boolean;
+  sync: GitHubSyncState;
+};
+
 export type KnowledgeGraphStatus = "missing" | "generating" | "ready" | "failed";
 
 export type ProjectKnowledgeGraph = {

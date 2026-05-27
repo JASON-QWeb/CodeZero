@@ -199,6 +199,40 @@ p {
   border-bottom: 1px solid var(--line);
 }
 
+.sectionActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.syncState {
+  max-width: min(420px, 42vw);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.syncState-running {
+  color: var(--active);
+}
+
+.syncState-finished {
+  color: var(--done);
+}
+
+.syncState-failed {
+  color: var(--blocked);
+}
+
 .sectionHeader.compact {
   margin-top: 4px;
 }

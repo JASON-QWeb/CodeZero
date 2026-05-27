@@ -2,6 +2,8 @@ import type {
   MemoryRecord,
   MemoriesResponse,
   MemoryStatus,
+  GitHubSyncResponse,
+  GitHubSyncState,
   ProjectKnowledgeGraph,
   ProjectKnowledgeGraphResponse,
   RepositoryQueueSummary,
@@ -33,6 +35,31 @@ export async function fetchRepositoryQueues(): Promise<RepositoryQueueSummary[]>
 
   const data = (await response.json()) as RepositoryQueuesResponse;
   return data.repositories;
+}
+
+export async function fetchGitHubSync(repositoryId: string): Promise<GitHubSyncState> {
+  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error("Failed to load GitHub sync state");
+  }
+
+  return ((await response.json()) as GitHubSyncResponse).sync;
+}
+
+export async function triggerGitHubSync(repositoryId: string): Promise<GitHubSyncResponse> {
+  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`, {
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as {
+      message?: string;
+    };
+    throw new Error(data.message ?? "Failed to start GitHub sync");
+  }
+
+  return (await response.json()) as GitHubSyncResponse;
 }
 
 export async function fetchProjectKnowledgeGraph(repositoryId: string): Promise<ProjectKnowledgeGraph> {

@@ -3,22 +3,28 @@ import { GitHubClient, createGitHubRemoteUrl, redactRemoteUrl, type GitHubApiCli
 
 const issuesGet = vi.fn();
 const listComments = vi.fn();
+const listForRepo = vi.fn();
 const issuesUpdate = vi.fn();
 const createComment = vi.fn();
 const pullsCreate = vi.fn();
 const pullsUpdate = vi.fn();
+const listReviewComments = vi.fn();
+const listReviews = vi.fn();
 
 function fakeOctokit(): GitHubApiClient {
   return {
     issues: {
       get: issuesGet,
       listComments,
+      listForRepo,
       update: issuesUpdate,
       createComment
     },
     pulls: {
       create: pullsCreate,
-      update: pullsUpdate
+      update: pullsUpdate,
+      listReviewComments,
+      listReviews
     }
   } as unknown as GitHubApiClient;
 }
@@ -46,7 +52,7 @@ describe("github client", () => {
       }
     });
     listComments.mockResolvedValue({
-      data: [{ user: { login: "alice" }, body: "please fix", created_at: "2026-01-01T00:00:00Z" }]
+      data: [{ id: 1, user: { login: "alice" }, body: "please fix", created_at: "2026-01-01T00:00:00Z" }]
     });
 
     const issue = await new GitHubClient({ token: "token" }, fakeOctokit()).getIssue("acme", "shop", 12, "develop");
@@ -61,6 +67,127 @@ describe("github client", () => {
       baseBranch: "develop"
     });
     expect(issue.comments[0]?.author).toBe("alice");
+  });
+
+  it("paginates issue comments so late trigger comments are not missed", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      user: { login: "alice" },
+      body: `comment ${index + 1}`,
+      created_at: `2026-05-27T00:${String(index % 60).padStart(2, "0")}:00Z`,
+      html_url: `https://github.com/acme/shop/issues/14#issuecomment-${index + 1}`
+    }));
+    listComments
+      .mockResolvedValueOnce({ data: firstPage })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: 101,
+            user: { login: "bob" },
+            body: "@agent-prd this is the latest trigger",
+            created_at: "2026-05-27T02:00:00Z",
+            html_url: "https://github.com/acme/shop/issues/14#issuecomment-101"
+          }
+        ]
+      });
+
+    const comments = await new GitHubClient({ token: "token" }, fakeOctokit()).listIssueComments("acme", "shop", 14);
+
+    expect(comments).toHaveLength(101);
+    expect(comments[100]).toMatchObject({ id: "issue_comment-101", source: "issue_comment", author: "bob" });
+    expect(listComments).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, per_page: 100 }));
+  });
+
+  it("lists open issue threads with comments and skips pull requests", async () => {
+    listForRepo.mockResolvedValue({
+      data: [
+        {
+          number: 14,
+          html_url: "https://github.com/acme/shop/issues/14",
+          title: "Async sync",
+          body: "please sync",
+          labels: [{ name: "agent-ready" }],
+          user: { login: "alice" },
+          updated_at: "2026-05-27T00:00:00Z"
+        },
+        {
+          number: 15,
+          html_url: "https://github.com/acme/shop/pull/15",
+          title: "Pull request",
+          body: "",
+          labels: [],
+          user: { login: "bot" },
+          updated_at: "2026-05-27T00:00:00Z",
+          pull_request: { html_url: "https://github.com/acme/shop/pull/15" }
+        }
+      ]
+    });
+    listComments.mockResolvedValue({
+      data: [
+        {
+          id: 99,
+          user: { login: "alice" },
+          body: "@agent-prd go",
+          created_at: "2026-05-27T01:00:00Z",
+          html_url: "https://github.com/acme/shop/issues/14#issuecomment-99"
+        }
+      ]
+    });
+
+    const issues = await new GitHubClient({ token: "token" }, fakeOctokit()).listOpenIssueThreads("acme", "shop", {
+      baseBranch: "develop",
+      perPage: 25
+    });
+
+    expect(listForRepo).toHaveBeenCalledWith(expect.objectContaining({ state: "open", sort: "updated", per_page: 25 }));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      number: 14,
+      title: "Async sync",
+      labels: ["agent-ready"],
+      author: "alice",
+      baseBranch: "develop",
+      isPullRequest: false
+    });
+    expect(issues[0]?.comments[0]?.body).toContain("@agent-prd");
+  });
+
+  it("combines PR conversation comments, review summaries, and inline review comments", async () => {
+    listComments.mockResolvedValue({ data: [] });
+    listReviews.mockResolvedValue({
+      data: [
+        {
+          id: 7,
+          user: { login: "reviewer" },
+          body: "Overall please adjust copy",
+          state: "CHANGES_REQUESTED",
+          submitted_at: "2026-05-27T01:00:00Z",
+          html_url: "https://github.com/acme/shop/pull/5#pullrequestreview-7"
+        }
+      ]
+    });
+    listReviewComments.mockResolvedValue({
+      data: [
+        {
+          id: 8,
+          user: { login: "reviewer" },
+          body: "This branch needs async state",
+          path: "src/App.tsx",
+          line: 42,
+          created_at: "2026-05-27T01:01:00Z",
+          html_url: "https://github.com/acme/shop/pull/5#discussion_r8"
+        }
+      ]
+    });
+
+    const feedback = await new GitHubClient({ token: "token" }, fakeOctokit()).listPullRequestFeedback("acme", "shop", 5);
+
+    expect(feedback).toHaveLength(2);
+    expect(feedback[0]).toMatchObject({ id: "review-7", source: "review", author: "reviewer" });
+    expect(feedback[1]).toMatchObject({ id: "review_comment-8", source: "review_comment" });
+    expect(feedback[1]?.body).toContain("src/App.tsx:42");
+    expect(listReviews).toHaveBeenCalledWith(expect.objectContaining({ pull_number: 5, page: 1, per_page: 100 }));
+    expect(listReviewComments).toHaveBeenCalledWith(expect.objectContaining({ pull_number: 5, page: 1, per_page: 100 }));
   });
 
   it("creates draft pull requests and returns the HTML URL", async () => {
