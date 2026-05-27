@@ -51,7 +51,7 @@ repositories:
       blocked_permissions:
         - dangerous
     quality_gates:
-      build: "pnpm build"
+      build: "pnpm install --frozen-lockfile && pnpm build"
       lint: "pnpm lint"
       typecheck: "pnpm typecheck"
       unit_test: "pnpm test"

@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Task } from "@agent/shared";
-import { fetchMemories, fetchRepositoryQueues, fetchTasks, fetchTrace, updateMemoryStatus } from "../apps/web/src/features/tasks/api";
+import {
+  fetchMemories,
+  fetchProjectKnowledgeGraph,
+  fetchRepositoryQueues,
+  fetchTasks,
+  fetchTrace,
+  generateProjectKnowledgeGraph,
+  openProjectKnowledgeGraphDashboard,
+  updateMemoryStatus
+} from "../apps/web/src/features/tasks/api";
 import { mockMemories, mockTasks, mockTrace } from "../apps/web/src/features/tasks/demo-data";
 import { buildRepositorySummariesFromTasks, isQueuedStatus, isRunningStatus } from "../apps/web/src/features/tasks/repository-summary";
 import { formatTime } from "../apps/web/src/features/tasks/time";
@@ -43,6 +52,19 @@ describe("web task board utilities", () => {
 
   it("fetches task board resources from the configured API base URL", async () => {
     process.env.NEXT_PUBLIC_API_URL = "https://api.example.test";
+    const knowledgeGraph = {
+      repositoryId: "commerce",
+      fullName: "demo/commerce",
+      status: "ready" as const,
+      graphAvailable: true,
+      pluginInstalled: true,
+      provider: {
+        name: "Understand-Anything" as const,
+        projectUrl: "https://github.com/Lum1104/Understand-Anything",
+        testedVersion: "v2.7.3",
+        outputFile: ".understand-anything/knowledge-graph.json" as const
+      }
+    };
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith("/tasks")) {
         return ok({ tasks: mockTasks });
@@ -56,6 +78,9 @@ describe("web task board utilities", () => {
       if (url.endsWith("/memories?status=proposed")) {
         return ok({ memories: mockMemories });
       }
+      if (url.includes("/repositories/commerce/knowledge-graph")) {
+        return ok({ knowledgeGraph });
+      }
       return ok({ memory: { ...mockMemories[0], status: "approved" } });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -64,6 +89,9 @@ describe("web task board utilities", () => {
     await expect(fetchRepositoryQueues()).resolves.toHaveLength(2);
     await expect(fetchTrace(mockTasks[0]?.id ?? "")).resolves.toMatchObject({ taskId: mockTasks[0]?.id });
     await expect(fetchMemories("proposed")).resolves.toEqual(mockMemories);
+    await expect(fetchProjectKnowledgeGraph("commerce")).resolves.toMatchObject({ status: "ready" });
+    await expect(generateProjectKnowledgeGraph({ repositoryId: "commerce" })).resolves.toMatchObject({ provider: { name: "Understand-Anything" } });
+    await expect(openProjectKnowledgeGraphDashboard("commerce")).resolves.toMatchObject({ graphAvailable: true });
     await expect(updateMemoryStatus({ id: mockMemories[0]?.id ?? "", status: "approved" })).resolves.toMatchObject({ status: "approved" });
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/tasks");
   });
@@ -73,6 +101,9 @@ describe("web task board utilities", () => {
 
     await expect(fetchTasks()).rejects.toThrow("Failed to load tasks");
     await expect(fetchRepositoryQueues()).rejects.toThrow("Failed to load repository queues");
+    await expect(fetchProjectKnowledgeGraph("shop")).rejects.toThrow("Failed to load project knowledge graph");
+    await expect(generateProjectKnowledgeGraph({ repositoryId: "shop" })).rejects.toThrow("Failed to generate project knowledge graph");
+    await expect(openProjectKnowledgeGraphDashboard("shop")).rejects.toThrow("Failed to start the Understand-Anything dashboard");
     await expect(fetchTrace("task-1")).rejects.toThrow("Failed to load task trace");
     await expect(fetchMemories("proposed")).rejects.toThrow("Failed to load memories");
     await expect(updateMemoryStatus({ id: "memory-1", status: "rejected" })).rejects.toThrow("Failed to update memory");

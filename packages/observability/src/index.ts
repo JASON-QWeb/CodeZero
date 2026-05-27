@@ -98,7 +98,7 @@ function eventKind(type: TaskEventType): TraceSpanKind {
     return "memory";
   }
 
-  if (type === "PR_CREATED" || type === "REPO_CLONED" || type === "ISSUE_BRANCH_CREATED") {
+  if (type === "PR_CREATED" || type === "PR_UPDATED" || type === "PR_REVIEW_COMMENT_RECEIVED" || type === "REPO_CLONED" || type === "ISSUE_BRANCH_CREATED") {
     return "github";
   }
 

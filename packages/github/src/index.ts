@@ -58,6 +58,49 @@ export class GitHubClient {
 
     return data.html_url;
   }
+
+  async updatePullRequest(input: {
+    owner: string;
+    repo: string;
+    pullNumber: number;
+    title?: string;
+    body?: string;
+    state?: "open" | "closed";
+  }): Promise<string> {
+    const { data } = await this.octokit.pulls.update({
+      owner: input.owner,
+      repo: input.repo,
+      pull_number: input.pullNumber,
+      title: input.title,
+      body: input.body,
+      state: input.state
+    });
+
+    return data.html_url;
+  }
+
+  async createIssueComment(input: { owner: string; repo: string; issueNumber: number; body: string }): Promise<string> {
+    const { data } = await this.octokit.issues.createComment({
+      owner: input.owner,
+      repo: input.repo,
+      issue_number: input.issueNumber,
+      body: input.body
+    });
+
+    return data.html_url;
+  }
+
+  async closeIssue(input: { owner: string; repo: string; issueNumber: number; stateReason?: "completed" | "not_planned" }): Promise<string> {
+    const { data } = await this.octokit.issues.update({
+      owner: input.owner,
+      repo: input.repo,
+      issue_number: input.issueNumber,
+      state: "closed",
+      state_reason: input.stateReason
+    });
+
+    return data.html_url;
+  }
 }
 
 export function createGitHubRemoteUrl(owner: string, repo: string, token?: string): string {

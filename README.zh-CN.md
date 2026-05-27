@@ -116,6 +116,17 @@ pnpm dev:web
 
 打开 Web 控制台：`http://localhost:3000`。
 
+若要在仓库卡片中生成并查看项目知识图，请安装官方
+[Understand-Anything](https://github.com/Lum1104/Understand-Anything) Codex skill：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/install.sh | bash -s codex
+```
+
+Run Console 的项目知识图操作会运行官方 `$understand` 多 Agent pipeline，并在页面内启动其官方 dashboard；产物保持为上游定义的 `.understand-anything/knowledge-graph.json`，不会使用平台轻量图替代。
+
+Run Console 默认中文并提供中英文切换。机器人会按 Issue/PR 评论语言生成 PRD、计划、Review 说明和 PR 正文；前端截图会随 PR 分支提交到 `.agent/screenshots/`，并在 PR 描述中直接以内嵌图片展示。PR 创建后，用户在同一个 PR conversation 中继续评论，机器人会更新同一个分支、重新自检并刷新原 PR，直到用户满意后自行合并。
+
 ## 验证命令
 
 ```bash
@@ -153,6 +164,6 @@ pnpm eval:golden
 
 ## 当前状态
 
-MVP 已可本地运行，包含 GitHub Issue 接入、仓库触发策略、仓库队列与并发限制、PRD 生成、人工 PRD 审批、Repo Navigation Graph MVP、ContextPack 生成、Tool Gateway JSON action fallback、Trace Replay API、Run Console、Settings Console、Memory Inbox、Golden Issue Eval CLI/CI、Repository Onboarding、沙箱执行、质量门禁、Review subagent 和 draft PR 创建。
+MVP 已可本地运行，包含 GitHub Issue 接入、仓库触发策略、仓库队列与并发限制、PRD 生成、人工 PRD 审批、Repo Navigation Graph MVP、ContextPack 生成、Understand-Anything 官方项目知识图入口、Tool Gateway JSON action fallback、Trace Replay API、Run Console、Settings Console、Memory Inbox、Golden Issue Eval CLI/CI、Repository Onboarding、沙箱执行、质量门禁、Review subagent 和 draft PR 创建。
 
 下一步重点是审批恢复、更严格的 tool input schema、安全扫描、更丰富的 eval assertion，以及面向大仓库的更深层图适配器。

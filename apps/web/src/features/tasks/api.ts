@@ -1,4 +1,14 @@
-import type { MemoryRecord, MemoriesResponse, MemoryStatus, RepositoryQueueSummary, RepositoryQueuesResponse, TasksResponse, TraceResponse } from "./types";
+import type {
+  MemoryRecord,
+  MemoriesResponse,
+  MemoryStatus,
+  ProjectKnowledgeGraph,
+  ProjectKnowledgeGraphResponse,
+  RepositoryQueueSummary,
+  RepositoryQueuesResponse,
+  TasksResponse,
+  TraceResponse
+} from "./types";
 import type { Task, TaskTrace } from "@agent/shared";
 
 export const apiBaseUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -23,6 +33,48 @@ export async function fetchRepositoryQueues(): Promise<RepositoryQueueSummary[]>
 
   const data = (await response.json()) as RepositoryQueuesResponse;
   return data.repositories;
+}
+
+export async function fetchProjectKnowledgeGraph(repositoryId: string): Promise<ProjectKnowledgeGraph> {
+  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph`, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error("Failed to load project knowledge graph");
+  }
+
+  return ((await response.json()) as ProjectKnowledgeGraphResponse).knowledgeGraph;
+}
+
+export async function generateProjectKnowledgeGraph(input: { repositoryId: string; full?: boolean }): Promise<ProjectKnowledgeGraph> {
+  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/knowledge-graph/generate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ full: input.full })
+  });
+
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as {
+      message?: string;
+    };
+    throw new Error(data.message ?? "Failed to generate project knowledge graph");
+  }
+
+  return ((await response.json()) as ProjectKnowledgeGraphResponse).knowledgeGraph;
+}
+
+export async function openProjectKnowledgeGraphDashboard(repositoryId: string): Promise<ProjectKnowledgeGraph> {
+  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph/dashboard`, {
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as {
+      message?: string;
+    };
+    throw new Error(data.message ?? "Failed to start the Understand-Anything dashboard");
+  }
+
+  return ((await response.json()) as ProjectKnowledgeGraphResponse).knowledgeGraph;
 }
 
 export async function fetchTrace(taskId: string): Promise<TaskTrace> {

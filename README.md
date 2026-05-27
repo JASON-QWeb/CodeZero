@@ -116,6 +116,17 @@ pnpm dev:web
 
 Open the web console at `http://localhost:3000`.
 
+To generate and explore per-repository knowledge graphs from the repository cards, install the official
+[Understand-Anything](https://github.com/Lum1104/Understand-Anything) Codex skill:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/install.sh | bash -s codex
+```
+
+The Run Console invokes the official `$understand` multi-agent pipeline and starts its official dashboard in the page. The output remains the upstream `.understand-anything/knowledge-graph.json`; the platform's lightweight graph is not substituted for it.
+
+The Run Console defaults to Chinese and includes a Chinese/English switch. Agent PRD, planning, review notes and PR descriptions follow the Issue/PR comment language. Frontend screenshots are committed to `.agent/screenshots/` on the PR branch and embedded directly in the PR description as images. After PR creation, human comments in the same PR conversation update the same branch, rerun agent verification, refresh the original PR, and repeat until the user is ready to merge.
+
 ## Validation
 
 ```bash
@@ -153,6 +164,6 @@ Historical planning notes are kept in [docs/archive](docs/archive/).
 
 ## Status
 
-The MVP runs locally and includes GitHub Issue ingestion, repository trigger policy, repository queue and concurrency limits, PRD generation, human PRD approval, Repo Navigation Graph MVP, ContextPack generation, Tool Gateway JSON action fallback, Trace Replay API, Run Console, Settings Console, Memory Inbox, Golden Issue Eval CLI/CI, Repository Onboarding, sandbox execution, quality gates, Review subagent, and draft PR creation.
+The MVP runs locally and includes GitHub Issue ingestion, repository trigger policy, repository queue and concurrency limits, PRD generation, human PRD approval, Repo Navigation Graph MVP, ContextPack generation, an official Understand-Anything project graph entry point, Tool Gateway JSON action fallback, Trace Replay API, Run Console, Settings Console, Memory Inbox, Golden Issue Eval CLI/CI, Repository Onboarding, sandbox execution, quality gates, Review subagent, and draft PR creation.
 
 Next hardening areas include approval recovery, stricter tool input schemas, security scanning, richer eval assertions, and deeper graph adapters for larger repositories.

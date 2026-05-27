@@ -11,5 +11,7 @@ artifacts
 sandboxes
 data/*.json
 data/codegraph/
+data/understand-anything/
+apps/api/data/
 *.log
 *.tsbuildinfo

@@ -7,7 +7,7 @@ import type {
   TaskStatus
 } from "@agent/shared";
 
-const terminalStatuses = new Set<TaskStatus>(["DONE", "BLOCKED", "FAILED", "CANCELLED"]);
+const terminalStatuses = new Set<TaskStatus>(["DONE", "CANCELLED"]);
 const queueWaitingStatuses = new Set<TaskStatus>(["QUEUED", "ISSUE_RECEIVED", "PRD_APPROVED"]);
 const humanWaitingStatuses = new Set<TaskStatus>(["PRD_REVIEW_REQUIRED", "HUMAN_REVIEW"]);
 const computeActiveStatuses = new Set<TaskStatus>([

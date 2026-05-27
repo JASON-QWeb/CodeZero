@@ -185,7 +185,8 @@ export async function buildCodeGraphTaskContext(input: CodeGraphContextInput): P
     args: command.args,
     cwd: input.repoDir,
     timeoutMs: input.timeoutMs ?? 60_000,
-    env: input.env ?? process.env
+    env: input.env ?? process.env,
+    preserveStdout: true
   });
   let context: JsonObject | undefined;
   let parseError = "";
@@ -211,7 +212,7 @@ export async function buildCodeGraphTaskContext(input: CodeGraphContextInput): P
     args: command.args,
     displayCommand: command.displayCommand,
     exitCode: result.exitCode,
-    stdout: result.stdout,
+    stdout: tail(result.stdout),
     stderr: [result.stderr, parseError].filter(Boolean).join("\n"),
     durationMs: Date.now() - startedAt,
     context,
@@ -293,6 +294,7 @@ async function runProcess(input: {
   cwd: string;
   timeoutMs: number;
   env: NodeJS.ProcessEnv;
+  preserveStdout?: boolean;
 }): Promise<ProcessResult> {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -316,7 +318,7 @@ async function runProcess(input: {
 
   return {
     exitCode,
-    stdout: tail(stdout.join("")),
+    stdout: input.preserveStdout ? stdout.join("") : tail(stdout.join("")),
     stderr: tail(stderr.join(""))
   };
 }

@@ -80,7 +80,9 @@ p {
 
 .health,
 .branchCell,
-.metric {
+.metric,
+.topbarActions,
+.languageSwitch {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -94,6 +96,29 @@ p {
   background: var(--surface);
   color: var(--accent);
   font-weight: 700;
+}
+
+.topbarActions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.languageSwitch {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.languageSwitch select {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
 }
 
 .metrics {
@@ -492,7 +517,7 @@ p {
 
 .repositoryStats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -509,6 +534,187 @@ p {
   color: var(--text);
   font-size: 18px;
   line-height: 1.1;
+}
+
+.knowledgeGraphPanel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px;
+}
+
+.knowledgeGraphBody {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.34fr) minmax(420px, 1fr);
+  gap: 12px;
+}
+
+.codeGraphBody {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.34fr) minmax(420px, 1fr);
+  gap: 12px;
+}
+
+.knowledgeGraphInfo {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 13px;
+}
+
+.graphStatus {
+  width: max-content;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  padding: 6px 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.graphStatus-ready {
+  color: var(--done);
+}
+
+.graphStatus-generating {
+  color: var(--active);
+}
+
+.graphStatus-failed {
+  color: var(--blocked);
+}
+
+.graphStats {
+  display: grid;
+  gap: 8px;
+}
+
+.graphStats span {
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.graphStats strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.graphMessage,
+.graphError {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.graphError {
+  color: var(--blocked);
+}
+
+.longText {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.longText summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
+.longText pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+  color: var(--text);
+  font: 12px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 10px;
+}
+
+.graphArtifactList {
+  display: grid;
+  max-height: 260px;
+  overflow: auto;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.graphArtifactList article {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+
+.graphArtifactList article:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.graphArtifactList span,
+.graphArtifactList p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.graphActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.graphPreviewPlaceholder {
+  display: grid;
+  min-height: 290px;
+  place-content: center;
+  gap: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.graphPreviewPlaceholder svg {
+  justify-self: center;
+  color: var(--accent);
+}
+
+.graphPreviewPlaceholder strong {
+  color: var(--text);
+}
+
+.knowledgeGraphFrame {
+  width: 100%;
+  min-height: 680px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0d1117;
 }
 
 .memoryList {
@@ -983,6 +1189,8 @@ p {
   .topbar,
   .taskRow,
   .workspaceGrid,
+  .codeGraphBody,
+  .knowledgeGraphBody,
   .settingsTopline,
   .settingsGrid,
   .editorHeader,
@@ -1017,14 +1225,17 @@ p {
   }
 
   .settingsHealth,
+  .graphActions,
   .editorActions,
   .editorActions .iconButton,
+  .graphActions .iconButton,
   .providerVerifierControls .iconButton,
   .repositoryQuickActions .iconButton {
     width: 100%;
   }
 
   .editorActions .iconButton,
+  .graphActions .iconButton,
   .providerVerifierControls .iconButton,
   .repositoryQuickActions .iconButton {
     justify-content: center;

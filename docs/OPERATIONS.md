@@ -109,7 +109,7 @@ Run Console：
 http://localhost:3000
 ```
 
-看板会按仓库展示运行队列、queued/running/review/blocked 计数、仓库并发上限、选中仓库的 issue 列表、选中 task 的 Trace Replay、tool/policy/quality gate 摘要、Settings Console 配置中心，以及 Memory Inbox。Memory Inbox 的 approve/reject 会调用同一组 Memory API，因此可以直接演示“proposal -> human review -> approved memory -> ContextPack”的闭环。
+看板会按仓库展示运行队列、queued/running/review/blocked 计数、仓库并发上限、选中仓库的 Understand-Anything Knowledge Graph、issue 列表、选中 task 的 Trace Replay、tool/policy/quality gate 摘要、Settings Console 配置中心，以及 Memory Inbox。Memory Inbox 的 approve/reject 会调用同一组 Memory API，因此可以直接演示“proposal -> human review -> approved memory -> ContextPack”的闭环。
 
 Task API：
 
@@ -119,6 +119,31 @@ GET  http://localhost:4000/tasks/repositories
 GET  http://localhost:4000/tasks/<task-id>/trace
 POST http://localhost:4000/tasks/import-issue
 POST http://localhost:4000/tasks/<task-id>/approve-prd
+```
+
+Project Knowledge Graph API：
+
+```text
+GET  http://localhost:4000/repositories/<repository-id>/knowledge-graph
+POST http://localhost:4000/repositories/<repository-id>/knowledge-graph/generate
+POST http://localhost:4000/repositories/<repository-id>/knowledge-graph/dashboard
+```
+
+项目知识图严格复用开源项目 [Understand-Anything](https://github.com/Lum1104/Understand-Anything) 的官方流程。首次使用前按上游方式安装 Codex skill：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/install.sh | bash -s codex
+```
+
+点击生成时，API 会将配置仓库 checkout 到被 Git 忽略的 `data/understand-anything/<owner>--<repo>/repo/`，再调用 Codex 执行官方 `$understand --language zh` 多 Agent pipeline。只有上游规定的 `.understand-anything/knowledge-graph.json` 存在时状态才会变为 `ready`。点击打开后，系统按官方 `/understand-dashboard` 规约启动上游 Vite dashboard，并通过 `GRAPH_DIR` 将该真实产物呈现在 Run Console 中。已有的 CodeGraph 与 Repo Navigation Graph 继续负责 issue 上下文检索，不作为此可视知识图的替代数据源。
+
+可选环境变量：
+
+```bash
+UNDERSTAND_ANYTHING_LANGUAGE=zh
+UNDERSTAND_ANYTHING_TIMEOUT_MS=5400000
+UNDERSTAND_ANYTHING_PLUGIN_ROOT=/absolute/path/to/understand-anything-plugin
+CODEX_COMMAND=codex
 ```
 
 Settings API：
@@ -319,6 +344,7 @@ worker 会按顺序执行：
 11. 前端 Chrome 截图，如果配置了 URL。
 12. Review subagent。
 13. commit/push/draft PR。
+14. PR 人工评论触发同一分支迭代，重新执行实现、自检、review、push 和 PR 正文刷新。
 
 没有 OpenAI 或 GitHub 凭证时，任务会进入 `FAILED` 或 `BLOCKED` 并记录明确事件；不会假装成功。
 
@@ -363,7 +389,7 @@ codebase_intelligence:
 
 ## 7. PR 本地验证模板
 
-Agent 创建 PR 前会生成 `pr-local-verification.json` artifact，并把同一份验证计划渲染进 PR 描述。开发者可以直接复制运行：
+Agent 创建 PR 前会生成 `pr-local-verification.json` artifact，并把同一份验证计划渲染进 PR 描述。PR 默认跟随 Issue/评论语言：中文 Issue 生成中文 PRD、计划、review notes 和 PR 正文；英文 Issue 生成英文输出。开发者可以直接复制运行：
 
 ````markdown
 ## Local Verification
@@ -399,7 +425,9 @@ git checkout <agent-branch>
 - Sandbox mode: `<docker|worktree>`
 - Sandbox image: `<sandbox-image>`
 - Quality gates: `<build/lint/typecheck/test summary>`
-- Screenshots: `<artifact links>`
+- Screenshots: `![viewport](https://raw.githubusercontent.com/.../.agent/screenshots/...)`
 ````
 
-当前实现会从 lockfile 推导安装命令，从 `repositories.yaml` 的 `quality_gates` 和 `frontend.dev_command` 推导验证/启动命令，并写入质量门禁结果和截图 artifact。后续 Review subagent 会阻断缺少本地验证说明的 PR。
+当前实现会从 lockfile 推导安装命令，从 `repositories.yaml` 的 `quality_gates` 和 `frontend.dev_command` 推导验证/启动命令，并写入质量门禁结果和截图 artifact。前端截图会复制进 PR 分支的 `.agent/screenshots/issue-<number>/`，PR 正文使用 GitHub raw URL 直接嵌图，避免只给本地路径或不可渲染链接。后续 Review subagent 会阻断缺少本地验证说明的 PR。
+
+PR 创建后，GitHub PR conversation 中的人工评论会被 webhook 映射回已有 task。系统不会新建另一个 Issue task，而是 clone 当前 PR 分支，在同一个分支上应用用户反馈、重新跑质量门禁和 review subagent，通过后 push 并更新原 PR 正文，再在 PR 里回复本轮已处理。用户继续评论时重复这一轮，直到用户满意并自行合并。

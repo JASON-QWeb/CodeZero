@@ -12,11 +12,13 @@
   },
   "dependencies": {
     "@agent/config": "workspace:*",
+    "@agent/github": "workspace:*",
     "@agent/memory": "workspace:*",
     "@agent/observability": "workspace:*",
     "@agent/orchestrator": "workspace:*",
     "@agent/persistence": "workspace:*",
     "@agent/shared": "workspace:*",
+    "@agent/sandbox": "workspace:*",
     "@fastify/cors": "^11.1.0",
     "bullmq": "^5.64.1",
     "fastify": "^5.6.2",
