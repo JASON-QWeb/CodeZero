@@ -1,6 +1,7 @@
 export {
   IssueWorkflowRunner,
   compactContextPackForImplementation,
+  selectImplementationPatchActions,
   selectImplementationSnippetPaths,
   type IssueWorkflowResult
 } from "./issue-workflow-runner.js";
