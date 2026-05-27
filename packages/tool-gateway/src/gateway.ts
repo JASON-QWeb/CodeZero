@@ -7,7 +7,7 @@ import {
   type ToolExecutionContext,
   type ToolHandler
 } from "./types.js";
-import { asJsonValue, withTimeout } from "./utils.js";
+import { asJsonValue, isRecord, withTimeout } from "./utils.js";
 
 type RegisteredTool = {
   definition: ToolDefinition;
@@ -98,6 +98,20 @@ export class ToolGateway {
         registered.definition.timeoutMs ?? 30_000,
         registered.definition.name
       );
+      const processFailure = getProcessFailure(output);
+
+      if (processFailure) {
+        return {
+          id,
+          taskId: request.taskId,
+          toolName: request.toolName,
+          status: "failed",
+          output: asJsonValue(output),
+          error: processFailure,
+          durationMs: Date.now() - startedAt,
+          policyDecisions
+        };
+      }
 
       return {
         id,
@@ -120,4 +134,20 @@ export class ToolGateway {
       };
     }
   }
+}
+
+function getProcessFailure(output: unknown): string | undefined {
+  if (!isRecord(output) || !("exitCode" in output)) {
+    return undefined;
+  }
+
+  const exitCode = output.exitCode;
+  if (exitCode === 0) {
+    return undefined;
+  }
+
+  const stderr = typeof output.stderr === "string" ? output.stderr.trim() : "";
+  const stdout = typeof output.stdout === "string" ? output.stdout.trim() : "";
+  const details = [stderr, stdout].filter(Boolean).join("\n");
+  return [`Process exited with ${exitCode === null ? "no exit code" : `code ${exitCode}`}`, details].filter(Boolean).join(": ");
 }

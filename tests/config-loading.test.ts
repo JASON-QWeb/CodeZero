@@ -22,7 +22,7 @@ describe("app config loading", () => {
     expect(config.repositories[0]?.codebase_intelligence.codegraph.enabled).toBe(true);
     expect(config.repositories[0]?.codebase_intelligence.codegraph.init_args).toContain("--index");
     expect(config.repositories[0]?.queue.max_concurrent_issues).toBe(2);
-    expect(config.repositories[0]?.workflow.require_prd_review).toBe(false);
+    expect(config.repositories[0]?.workflow.require_prd_review).toBe(true);
     expect(config.repositories[0]?.permissions.blocked_permissions).toContain("dangerous");
     expect(config.tools.map((tool) => tool.name)).toContain("repo.apply_patch");
     expect(config.policies.map((policy) => policy.id)).toContain("block-dangerous-shell");

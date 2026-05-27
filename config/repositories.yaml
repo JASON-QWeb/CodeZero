@@ -32,7 +32,7 @@ repositories:
     queue:
       max_concurrent_issues: 2
     workflow:
-      require_prd_review: false
+      require_prd_review: true
     permissions:
       allowed_tools:
         - repo.search
@@ -96,7 +96,7 @@ repositories:
     queue:
       max_concurrent_issues: 1
     workflow:
-      require_prd_review: false
+      require_prd_review: true
     permissions:
       allowed_tools:
         - repo.search
