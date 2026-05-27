@@ -30,7 +30,7 @@ import {
   pushBranch,
   type Sandbox
 } from "@agent/sandbox";
-import type { Artifact, JsonObject, MinimalChangePlan, PrdDocument, QualityGateResult, ReviewResult, Task } from "@agent/shared";
+import type { Artifact, ContextPack, JsonObject, JsonValue, MinimalChangePlan, PrdDocument, QualityGateResult, ReviewResult, Task } from "@agent/shared";
 import { loadPlatformSkills } from "@agent/skills";
 import {
   createBuiltInToolRegistry,
@@ -483,7 +483,13 @@ export class IssueWorkflowRunner {
     agent: AgentDefinition,
     reviewerFeedback = ""
   ): Promise<void> {
-    const snippets = await readContextFileSnippets(sandbox.repoDir, task.contextPack ?? this.missing("ContextPack"));
+    const contextPack = task.contextPack ?? this.missing<ContextPack>("ContextPack");
+    const snippets = await readContextFileSnippets(sandbox.repoDir, contextPack, {
+      includePaths: selectImplementationSnippetPaths(task),
+      maxCharsPerFile: 6_000,
+      maxFiles: 8
+    });
+    const implementationContextPack = compactContextPackForImplementation(contextPack);
     let previousApplyError = "";
     const locale = detectIssueLocale(task.issue);
 
@@ -518,7 +524,7 @@ export class IssueWorkflowRunner {
         context: {
           issue: task.issue as unknown as JsonObject,
           prd: task.prd as unknown as JsonObject,
-          contextPack: task.contextPack as unknown as JsonObject,
+          contextPack: implementationContextPack,
           minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
           reviewerFeedback,
           fileSnippets: snippets as JsonObject,
@@ -928,6 +934,72 @@ export class IssueWorkflowRunner {
   private missing<T>(name: string): T {
     throw new Error(`${name} is required`);
   }
+}
+
+export function selectImplementationSnippetPaths(task: Pick<Task, "contextPack" | "minimalChangePlan">): string[] {
+  const plan = task.minimalChangePlan;
+  const paths = [
+    ...(plan?.filesExpectedToChange ?? []),
+    ...(plan?.filesToRead ?? []),
+    ...(plan?.testsToAddOrUpdate ?? []).map(extractPlanPath),
+    ...(task.contextPack?.tests ?? [])
+  ]
+    .map(normalizePlanPath)
+    .filter(Boolean);
+
+  return paths.filter((value, index) => paths.indexOf(value) === index);
+}
+
+export function compactContextPackForImplementation(contextPack: ContextPack): JsonObject {
+  const codeGraphContext = compactCodeGraphContext(contextPack.codeGraphContext);
+  return {
+    id: contextPack.id,
+    taskSummary: contextPack.taskSummary,
+    businessRules: contextPack.businessRules,
+    memories: contextPack.memories.map((memory) => ({
+      id: memory.id,
+      kind: memory.kind,
+      title: memory.title,
+      content: memory.content,
+      score: memory.score,
+      confidence: memory.confidence
+    })),
+    ...(codeGraphContext ? { codeGraphContext } : {}),
+    relevantFiles: contextPack.relevantFiles.map((file) => ({
+      path: file.path,
+      reason: file.reason,
+      readMode: file.readMode
+    })),
+    symbols: contextPack.symbols.slice(0, 40),
+    tests: contextPack.tests,
+    openQuestions: contextPack.openQuestions
+  };
+}
+
+function compactCodeGraphContext(value: JsonValue | undefined): JsonObject | undefined {
+  if (!isJsonObject(value)) {
+    return undefined;
+  }
+
+  return {
+    ...(typeof value.query === "string" ? { query: value.query } : {}),
+    ...(typeof value.summary === "string" ? { summary: value.summary } : {}),
+    ...(Array.isArray(value.entryPoints) ? { entryPoints: value.entryPoints.slice(0, 8) as JsonValue[] } : {}),
+    ...(Array.isArray(value.relatedFiles) ? { relatedFiles: value.relatedFiles.slice(0, 12) as JsonValue[] } : {}),
+    ...(isJsonObject(value.stats) ? { stats: value.stats } : {})
+  };
+}
+
+function extractPlanPath(value: string): string {
+  return value.split(/\s|\(/)[0] ?? "";
+}
+
+function normalizePlanPath(value: string): string {
+  return value.trim().replace(/^`|`$/g, "").replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseGitHubIssueNumber(url: string): number | undefined {

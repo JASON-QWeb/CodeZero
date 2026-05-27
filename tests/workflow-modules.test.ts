@@ -5,13 +5,15 @@ import { describe, expect, it } from "vitest";
 import type { AppConfig, RepositoryConfig } from "@agent/config";
 import { createTask } from "@agent/orchestrator";
 import type { TaskRepository } from "@agent/persistence";
-import type { Artifact, IssueContext, PrdDocument, Task, TaskEvent } from "@agent/shared";
+import type { Artifact, ContextPack, IssueContext, PrdDocument, Task, TaskEvent } from "@agent/shared";
 import {
+  compactContextPackForImplementation,
   createArtifactId,
   createWorkflowAgent,
   createWorkflowAgentRunner,
   implementationToToolActions,
   IssueWorkflowRunner,
+  selectImplementationSnippetPaths,
   selectProviderForComplexity,
   summarizeToolFailure,
   writeTaskArtifact
@@ -59,6 +61,33 @@ describe("workflow modules", () => {
     expect(summary).toContain("Command failed");
     expect(summary).toContain("stderr text");
     expect(summary).toContain("stdout text");
+  });
+
+  it("compacts implementation context and prioritizes plan files", () => {
+    const contextPack = compactableContextPack();
+    const task = {
+      contextPack,
+      minimalChangePlan: {
+        goal: "Change sync",
+        acceptanceCriteria: [],
+        filesToRead: ["src/read.ts", "src/change.ts"],
+        filesExpectedToChange: ["src/change.ts"],
+        testsToAddOrUpdate: ["src/change.test.ts (add coverage)"],
+        commandsToRun: [],
+        explicitNonGoals: [],
+        riskNotes: []
+      }
+    } satisfies Pick<Task, "contextPack" | "minimalChangePlan">;
+
+    expect(selectImplementationSnippetPaths(task)).toEqual(["src/change.ts", "src/read.ts", "src/change.test.ts", "src/existing.test.ts"]);
+
+    const compact = compactContextPackForImplementation(contextPack);
+    expect(JSON.stringify(compact)).not.toContain("large code block");
+    expect(compact.codeGraphContext).toEqual({
+      summary: "Relevant graph",
+      relatedFiles: ["src/change.ts"],
+      stats: { nodeCount: 1 }
+    });
   });
 
   it("writes task artifacts through the shared artifact helper", async () => {
@@ -178,6 +207,33 @@ const highComplexityPrd: PrdDocument = {
     reasons: ["large change"]
   }
 };
+
+function compactableContextPack(): ContextPack {
+  return {
+    id: "ctx-1",
+    taskId: "task-1",
+    taskSummary: "Demo task",
+    businessRules: ["Rule"],
+    memories: [],
+    codeGraphContext: {
+      summary: "Relevant graph",
+      relatedFiles: ["src/change.ts"],
+      stats: { nodeCount: 1 },
+      codeBlocks: [{ content: "large code block" }]
+    },
+    relevantFiles: [
+      { path: "src/change.ts", reason: "plan", evidence: [], readMode: "full" },
+      { path: "src/read.ts", reason: "plan", evidence: [], readMode: "full" }
+    ],
+    symbols: Array.from({ length: 50 }, (_, index) => `symbol-${index}`),
+    tests: ["src/existing.test.ts"],
+    similarChanges: [],
+    nonRelevantAreas: [],
+    openQuestions: [],
+    tokenBudget: 1000,
+    createdAt: "2026-01-01T00:00:00.000Z"
+  };
+}
 
 function createAppConfig(rootDir: string, repositories: RepositoryConfig[] = []): AppConfig {
   return {
