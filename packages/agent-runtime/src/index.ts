@@ -248,6 +248,9 @@ function jsonParseCandidates(candidate: string): string[] {
   const escaped = escapeControlCharactersInJsonStrings(candidate);
   push(escaped);
   push(stripTrailingCommasOutsideStrings(escaped));
+  const withoutComments = stripJsonCommentsOutsideStrings(escaped);
+  push(withoutComments);
+  push(stripTrailingCommasOutsideStrings(withoutComments));
 
   return candidates;
 }
@@ -268,6 +271,62 @@ function stripTrailingCommasOutsideStrings(content: string): string {
       if (content[cursor] === "}" || content[cursor] === "]") {
         continue;
       }
+    }
+
+    repaired += char;
+
+    if (!inString) {
+      if (char === "\"") {
+        inString = true;
+      }
+      continue;
+    }
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = false;
+    }
+  }
+
+  return repaired;
+}
+
+function stripJsonCommentsOutsideStrings(content: string): string {
+  let repaired = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+    const next = content[index + 1];
+
+    if (!inString && char === "/" && next === "/") {
+      index += 2;
+      while (index < content.length && content[index] !== "\n") {
+        index += 1;
+      }
+      if (content[index] === "\n") {
+        repaired += "\n";
+      }
+      continue;
+    }
+
+    if (!inString && char === "/" && next === "*") {
+      index += 2;
+      while (index < content.length && !(content[index] === "*" && content[index + 1] === "/")) {
+        index += 1;
+      }
+      index += 1;
+      continue;
     }
 
     repaired += char;

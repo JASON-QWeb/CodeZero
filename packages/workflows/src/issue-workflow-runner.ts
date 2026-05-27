@@ -708,6 +708,11 @@ export class IssueWorkflowRunner {
           maxAttempts: 5,
           error: message
         });
+        if (attempt < 5 && agentJsonFailureLooksRecoverable(message)) {
+          previousApplyError = `Implementation agent returned invalid JSON. Return valid JSON only. Parser error: ${message}`;
+          previousEditActions = [];
+          continue;
+        }
         throw error;
       }
       await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent returned JSON for attempt ${attempt}/5`, "info", {
@@ -717,7 +722,15 @@ export class IssueWorkflowRunner {
         attempt,
         maxAttempts: 5
       });
-      const implementation = implementationSchema.parse(result);
+      let implementation: ReturnType<typeof implementationSchema.parse>;
+      try {
+        implementation = implementationSchema.parse(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        previousApplyError = `Implementation JSON failed schema validation. Return JSON matching the implementation schema. Schema error: ${message}`;
+        await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
+        continue;
+      }
       const actions = implementationToToolActions(implementation);
       await this.writeArtifact(task.id, "tool-call", `implementation-attempt-${attempt}.json`, JSON.stringify(implementation, null, 2));
       const editActions = selectImplementationEditActions(actions);
@@ -1432,6 +1445,10 @@ function normalizePlanPath(value: string): string {
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function agentJsonFailureLooksRecoverable(message: string): boolean {
+  return /json|property name|unexpected token|unexpected end|bad control character|unterminated string/i.test(message);
 }
 
 function parseGitHubIssueNumber(url: string): number | undefined {

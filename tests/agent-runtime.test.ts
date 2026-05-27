@@ -49,6 +49,29 @@ describe("agent runtime", () => {
     });
   });
 
+  it("repairs comments outside strings in JSON-like agent responses", () => {
+    const response = `{
+      // implementation summary
+      "summary": "ok // keep string content",
+      "actions": [
+        {"tool": "repo.write_file", /* inline comment */ "input": {"path": "src/a.ts", "content": "x"}}
+      ],
+    }`;
+
+    expect(parseJsonObject(response)).toEqual({
+      summary: "ok // keep string content",
+      actions: [
+        {
+          tool: "repo.write_file",
+          input: {
+            path: "src/a.ts",
+            content: "x"
+          }
+        }
+      ]
+    });
+  });
+
   it("calls OpenAI-compatible chat completions and extracts assistant content", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
