@@ -63,6 +63,8 @@ import { implementationSchema, planSchema, prdSchema, reviewSchema } from "./sch
 import { implementationToToolActions, summarizeToolFailure } from "./tool-actions.js";
 
 const MAX_IMPLEMENTATION_ATTEMPTS = 8;
+const MAX_EXISTING_WRITE_FILE_BYTES = 2_000;
+const MAX_EXISTING_WRITE_FILE_LINES = 120;
 
 export type IssueWorkflowResult = {
   taskId: string;
@@ -762,6 +764,13 @@ export class IssueWorkflowRunner {
           previousEditActions = candidateEditActions;
           continue;
         }
+        const writeFileGuardError = await validateImplementationWriteFileActions(sandbox.repoDir, editActions);
+        if (writeFileGuardError) {
+          previousApplyError = writeFileGuardError;
+          previousEditActions = editActions;
+          await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
+          continue;
+        }
         const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, editActions, attempt);
         const failedToolCall = toolResults.find((toolResult) => toolResult.status !== "success");
 
@@ -808,6 +817,7 @@ export class IssueWorkflowRunner {
     let maxAttempts = configuredMaxAttempts;
     let previousQualityGateResults: QualityGateResult[] | undefined;
     let previousReviewResult: ReviewResult | undefined;
+    let previousSelfCheckFailureKind: "quality" | "review" | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       if (updated.status !== "IMPLEMENTING") {
@@ -825,7 +835,10 @@ export class IssueWorkflowRunner {
           return { task: updated, passed: false, reason: "Quality gates failed because the verification environment is unavailable" };
         }
 
-        const shouldExtend = attempt >= maxAttempts && shouldExtendQualityGateSelfCheck(previousQualityGateResults, qualityGateResults, attempt, hardMaxAttempts);
+        const shouldExtend =
+          attempt >= maxAttempts &&
+          (shouldExtendQualityGateSelfCheck(previousQualityGateResults, qualityGateResults, attempt, hardMaxAttempts) ||
+            shouldExtendSelfCheckAfterFailureKindChange(previousSelfCheckFailureKind, "quality", attempt, hardMaxAttempts));
         if (attempt >= maxAttempts && !shouldExtend) {
           return { task: updated, passed: false, reason: "Quality gates failed after automated repair attempts" };
         }
@@ -835,6 +848,7 @@ export class IssueWorkflowRunner {
         }
         implementationFeedback = formatQualityGateRepairFeedback(qualityGateResults, attempt, maxAttempts);
         previousQualityGateResults = qualityGateResults;
+        previousSelfCheckFailureKind = "quality";
         await this.event(updated.id, "SELF_CHECK_REPAIR_STARTED", `${shouldExtend ? "Quality gates still failed but diagnostics changed; extending automated repair" : "Quality gates failed; starting automated repair"} attempt ${attempt + 1}/${maxAttempts}`, "warn", {
           attempt: attempt + 1,
           maxAttempts,
@@ -845,7 +859,6 @@ export class IssueWorkflowRunner {
         continue;
       }
 
-      previousQualityGateResults = undefined;
       const reviewResult = await this.review(updated, sandbox, runner, reviewAgent, initialFeedback);
       updated = await this.updateStatus(updated.id, "SUBAGENT_REVIEWING", { reviewResult });
 
@@ -853,7 +866,10 @@ export class IssueWorkflowRunner {
         return { task: updated, passed: true, reason: "Self-check passed" };
       }
 
-      const shouldExtend = attempt >= maxAttempts && shouldExtendReviewSelfCheck(previousReviewResult, reviewResult, attempt, hardMaxAttempts);
+      const shouldExtend =
+        attempt >= maxAttempts &&
+        (shouldExtendReviewSelfCheck(previousReviewResult, reviewResult, attempt, hardMaxAttempts) ||
+          shouldExtendSelfCheckAfterFailureKindChange(previousSelfCheckFailureKind, "review", attempt, hardMaxAttempts));
       if (attempt >= maxAttempts && !shouldExtend) {
         return { task: updated, passed: false, reason: "Review subagent blocked PR creation after automated repair attempts" };
       }
@@ -863,6 +879,7 @@ export class IssueWorkflowRunner {
       }
       implementationFeedback = formatReviewRepairFeedback(reviewResult, attempt, maxAttempts);
       previousReviewResult = reviewResult;
+      previousSelfCheckFailureKind = "review";
       await this.event(updated.id, "SELF_CHECK_REPAIR_STARTED", `${shouldExtend ? "Review findings changed; extending automated repair" : "Review subagent blocked changes; starting automated repair"} attempt ${attempt + 1}/${maxAttempts}`, "warn", {
         attempt: attempt + 1,
         maxAttempts,
@@ -1370,6 +1387,15 @@ export function shouldExtendReviewSelfCheck(
   return attempt < hardMaxAttempts && reviewFailuresChanged(previousReview, currentReview);
 }
 
+export function shouldExtendSelfCheckAfterFailureKindChange(
+  previousKind: "quality" | "review" | undefined,
+  currentKind: "quality" | "review",
+  attempt: number,
+  hardMaxAttempts: number
+): boolean {
+  return attempt < hardMaxAttempts && previousKind !== undefined && previousKind !== currentKind;
+}
+
 export function reviewFailuresChanged(previousReview: ReviewResult | undefined, currentReview: ReviewResult): boolean {
   if (!previousReview) {
     return false;
@@ -1429,6 +1455,50 @@ function reviewFailureSignature(review: ReviewResult): string {
   ]
     .sort()
     .join("\n");
+}
+
+export async function validateImplementationWriteFileActions(repoDir: string, actions: JsonToolAction[]): Promise<string | undefined> {
+  for (const action of actions) {
+    if (action.toolName !== "repo.write_file") {
+      continue;
+    }
+
+    const inputPath = action.input.path;
+    if (typeof inputPath !== "string" || inputPath.length === 0) {
+      continue;
+    }
+
+    const targetPath = path.resolve(repoDir, inputPath);
+    const relativePath = path.relative(repoDir, targetPath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      return `repo.write_file cannot write outside the repository: ${inputPath}`;
+    }
+
+    let targetStat;
+    try {
+      targetStat = await stat(targetPath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+
+    if (!targetStat.isFile()) {
+      return `repo.write_file cannot replace non-file path ${inputPath}. Use a repository edit action for a concrete file.`;
+    }
+
+    const currentContent = await readFile(targetPath, "utf8");
+    const currentLineCount = currentContent.split(/\r?\n/).length;
+    if (targetStat.size > MAX_EXISTING_WRITE_FILE_BYTES || currentLineCount > MAX_EXISTING_WRITE_FILE_LINES) {
+      return [
+        `repo.write_file cannot overwrite existing large file ${inputPath} (${targetStat.size} bytes, ${currentLineCount} lines).`,
+        "Use repo.replace_text with exact current snippets for existing files, or repo.write_file only for new files."
+      ].join(" ");
+    }
+  }
+
+  return undefined;
 }
 
 export async function resetImplementationAttempt(repoDir: string): Promise<void> {

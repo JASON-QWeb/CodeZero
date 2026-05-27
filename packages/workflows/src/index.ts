@@ -16,6 +16,8 @@ export {
   selectImplementationSnippetPaths,
   shouldExtendQualityGateSelfCheck,
   shouldExtendReviewSelfCheck,
+  shouldExtendSelfCheckAfterFailureKindChange,
+  validateImplementationWriteFileActions,
   type ImplementationCheckpoint,
   type IssueWorkflowResult
 } from "./issue-workflow-runner.js";

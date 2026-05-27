@@ -31,7 +31,9 @@ import {
   selectImplementationSnippetPaths,
   selectProviderForComplexity,
   shouldExtendQualityGateSelfCheck,
+  shouldExtendSelfCheckAfterFailureKindChange,
   summarizeToolFailure,
+  validateImplementationWriteFileActions,
   writeTaskArtifact
 } from "@agent/workflows";
 
@@ -213,6 +215,20 @@ describe("workflow modules", () => {
     ).toEqual(["src/app.ts", "tests/app.test.ts"]);
   });
 
+  it("blocks repo.write_file from overwriting existing large files", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-write-file-guard-"));
+    await mkdir(path.join(repoDir, "src"), { recursive: true });
+    await writeFile(path.join(repoDir, "src/app.ts"), "export const value = 1;\n".repeat(121));
+
+    await expect(
+      validateImplementationWriteFileActions(repoDir, [{ toolName: "repo.write_file", input: { path: "src/app.ts", content: "replacement\n" } }])
+    ).resolves.toContain("repo.write_file cannot overwrite existing large file src/app.ts");
+
+    await expect(
+      validateImplementationWriteFileActions(repoDir, [{ toolName: "repo.write_file", input: { path: "src/new.ts", content: "export {};\n" } }])
+    ).resolves.toBeUndefined();
+  });
+
   it("rolls back partial implementation edits before a retry", async () => {
     const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-workflow-reset-"));
     await runCommand({ cwd: repoDir, command: "git init" });
@@ -368,6 +384,9 @@ describe("workflow modules", () => {
     expect(qualityGateFailuresChanged(firstFailure, nextFailure)).toBe(true);
     expect(shouldExtendQualityGateSelfCheck(firstFailure, nextFailure, 4, 7)).toBe(true);
     expect(shouldExtendQualityGateSelfCheck(nextFailure, nextFailure, 7, 7)).toBe(false);
+    expect(shouldExtendSelfCheckAfterFailureKindChange("review", "quality", 7, 10)).toBe(true);
+    expect(shouldExtendSelfCheckAfterFailureKindChange("quality", "quality", 7, 10)).toBe(false);
+    expect(shouldExtendSelfCheckAfterFailureKindChange("review", "quality", 10, 10)).toBe(false);
   });
 
   it("formats PRD comments for GitHub issue review", () => {
