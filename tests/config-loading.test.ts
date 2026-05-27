@@ -28,6 +28,38 @@ describe("app config loading", () => {
     expect(config.memory.filePath).toContain("memory.json");
   });
 
+  it("resolves relative file storage env paths from the project root", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-config-storage-"));
+    await mkdir(path.join(dir, "config"), { recursive: true });
+    await Promise.all(
+      ["agents", "repositories", "sandbox", "policies", "tools"].map((section) =>
+        writeFile(path.join(dir, "config", `${section}.example.yaml`), section === "repositories" ? "repositories: []\n" : section === "policies" ? "policies: []\n" : section === "tools" ? "tools: []\n" : section === "sandbox" ? "sandbox: {}\n" : "providers: {}\nagents: {}\n")
+      )
+    );
+    const previousTaskStore = process.env.TASK_STORE_FILE;
+    const previousMemoryStore = process.env.MEMORY_STORE_FILE;
+    process.env.TASK_STORE_FILE = "data/custom-tasks.json";
+    process.env.MEMORY_STORE_FILE = "data/custom-memory.json";
+
+    try {
+      const config = await loadAppConfig(dir);
+
+      expect(config.storage.filePath).toBe(path.join(dir, "data", "custom-tasks.json"));
+      expect(config.memory.filePath).toBe(path.join(dir, "data", "custom-memory.json"));
+    } finally {
+      if (previousTaskStore === undefined) {
+        delete process.env.TASK_STORE_FILE;
+      } else {
+        process.env.TASK_STORE_FILE = previousTaskStore;
+      }
+      if (previousMemoryStore === undefined) {
+        delete process.env.MEMORY_STORE_FILE;
+      } else {
+        process.env.MEMORY_STORE_FILE = previousMemoryStore;
+      }
+    }
+  });
+
   it("validates and writes editable config sections", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-config-"));
     const content = [
