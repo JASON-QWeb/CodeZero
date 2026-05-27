@@ -130,6 +130,46 @@ describe("tool gateway", () => {
     expect(result.status).toBe("success");
   });
 
+  it("writes and replaces sandbox files through direct repository edit tools", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
+    const gateway = new ToolGateway({ registry: createBuiltInToolRegistry() });
+    const writeResult = await gateway.execute(
+      {
+        toolName: "repo.write_file",
+        input: { path: "src/note.txt", content: "before\n" }
+      },
+      { repoDir }
+    );
+    const replaceResult = await gateway.execute(
+      {
+        toolName: "repo.replace_text",
+        input: { path: "src/note.txt", search: "before", replace: "after" }
+      },
+      { repoDir }
+    );
+
+    expect(writeResult.status).toBe("success");
+    expect(replaceResult.status).toBe("success");
+    await expect(readFile(path.join(repoDir, "src/note.txt"), "utf8")).resolves.toBe("after\n");
+  });
+
+  it("fails direct replacements when the exact text is missing", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
+    await writeFile(path.join(repoDir, "note.txt"), "before\n");
+    const gateway = new ToolGateway({ registry: createBuiltInToolRegistry() });
+    const result = await gateway.execute(
+      {
+        toolName: "repo.replace_text",
+        input: { path: "note.txt", search: "missing", replace: "after" }
+      },
+      { repoDir }
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("Search text was not found");
+    await expect(readFile(path.join(repoDir, "note.txt"), "utf8")).resolves.toBe("before\n");
+  });
+
   it("recounts hunk lengths when applying model-generated patches", async () => {
     const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
     await writeFile(path.join(repoDir, "note.txt"), "before\n");

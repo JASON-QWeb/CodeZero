@@ -1,6 +1,6 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
-import type { Artifact, IssueContext, JsonValue, QualityGateResult, Task } from "@agent/shared";
+import type { Artifact, IssueContext, JsonValue, PrdDocument, QualityGateResult, Task } from "@agent/shared";
 
 export type ConversationLocale = "zh" | "en";
 
@@ -219,6 +219,52 @@ export function languageInstruction(locale: ConversationLocale): string {
   return locale === "zh"
     ? "用户使用中文。所有面向用户的字段、说明、PRD、计划、review notes、PR 正文和 GitHub 回复都必须使用中文；代码标识符和命令保持原文。"
     : "The user is using English. Write all user-facing fields, notes, PR text, and GitHub replies in English; keep code identifiers and commands unchanged.";
+}
+
+export function createPrdIssueComment(input: {
+  task: Task;
+  prd: PrdDocument;
+  requiresHumanReview: boolean;
+  mention: string;
+  locale?: ConversationLocale;
+}): string {
+  const locale = input.locale ?? detectIssueLocale(input.task.issue);
+  const text = prdCopy(locale);
+  const prd = input.prd;
+  const reviewLine = input.requiresHumanReview
+    ? text.requiresReview(input.mention)
+    : text.autoApproved;
+
+  return [
+    `## ${text.title}: ${prd.title}`,
+    "",
+    reviewLine,
+    "",
+    `### ${text.background}`,
+    prd.background || text.none,
+    "",
+    markdownList(text.goals, prd.goals, text.none),
+    "",
+    markdownList(text.nonGoals, prd.nonGoals, text.none),
+    "",
+    markdownList(text.userStories, prd.userStories, text.none),
+    "",
+    markdownList(text.acceptanceCriteria, prd.acceptanceCriteria, text.none),
+    "",
+    markdownList(text.risks, prd.risks, text.none),
+    "",
+    markdownList(text.unknowns, prd.unknowns, text.none),
+    "",
+    `### ${text.complexity}`,
+    `- ${text.taskType}: ${prd.taskType}`,
+    `- ${text.score}: ${prd.complexity.score}`,
+    `- ${text.humanReview}: ${prd.complexity.requiresHumanReview ? text.yes : text.no}`,
+    ...prd.complexity.reasons.map((reason) => `- ${reason}`)
+  ].join("\n");
+}
+
+function markdownList(title: string, values: string[], fallback: string): string {
+  return [`### ${title}`, ...(values.length > 0 ? values.map((value) => `- ${value}`) : [`- ${fallback}`])].join("\n");
 }
 
 export function validateAgentPrBodyCompleteness(input: AgentPrBodyInput & { body: string }): PrBodyCompletenessResult {
@@ -468,5 +514,47 @@ function copy(locale: ConversationLocale) {
         summary: "Summary",
         unknown: "unknown",
         issueReady: (prUrl: string) => `Agent self-checks completed and created the PR: ${prUrl}`
+      };
+}
+
+function prdCopy(locale: ConversationLocale) {
+  return locale === "zh"
+    ? {
+        acceptanceCriteria: "验收标准",
+        autoApproved: "PRD 风险较低，已自动通过；CodeZero 会继续进入实现和自检阶段。",
+        background: "背景",
+        complexity: "复杂度与审核",
+        goals: "目标",
+        humanReview: "需要人工审核",
+        no: "否",
+        nonGoals: "非目标",
+        none: "无。",
+        requiresReview: (mention: string) => `PRD 需要人工审核。确认可执行后，请在本 issue 回复 \`${mention} approve prd\` 或 \`${mention} 批准 PRD\`，也可以在看板点击批准。`,
+        risks: "风险",
+        score: "复杂度分数",
+        taskType: "任务类型",
+        title: "CodeZero PRD",
+        unknowns: "未知项",
+        userStories: "用户故事",
+        yes: "是"
+      }
+    : {
+        acceptanceCriteria: "Acceptance Criteria",
+        autoApproved: "The PRD is low risk and has been auto-approved; CodeZero will continue to implementation and self-checks.",
+        background: "Background",
+        complexity: "Complexity And Review",
+        goals: "Goals",
+        humanReview: "Requires human review",
+        no: "no",
+        nonGoals: "Non-Goals",
+        none: "None.",
+        requiresReview: (mention: string) => `The PRD requires human review. Reply with \`${mention} approve prd\` on this issue, or approve it from the dashboard, when it is ready to implement.`,
+        risks: "Risks",
+        score: "Complexity score",
+        taskType: "Task type",
+        title: "CodeZero PRD",
+        unknowns: "Unknowns",
+        userStories: "User Stories",
+        yes: "yes"
       };
 }

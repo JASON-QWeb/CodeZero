@@ -83,11 +83,12 @@ flowchart TD
 主 Agent 输出：
 
 - 实现计划
-- JSON action，优先通过 `repo.apply_patch` 写入代码改动和测试改动
+- JSON action，优先通过 `repo.replace_text` / `repo.write_file` 直接编辑 sandbox 文件
+- 兼容旧格式时可使用 `repo.apply_patch`
 - 运行日志
 - 风险说明
 
-编排层负责把 JSON action 交给 Tool Gateway，记录 `TOOL_CALL_*`、`POLICY_DECISION` 事件和 `tool-call` artifact。旧版 `unifiedDiff` 输出会被自动包装成 `repo.apply_patch` action。
+编排层负责把 JSON action 交给 Tool Gateway，记录 `TOOL_CALL_*`、`POLICY_DECISION` 事件和 `tool-call` artifact。旧版 `unifiedDiff` 输出会被自动包装成 `repo.apply_patch` action，但主路径应是直接编辑 sandbox 工作区。
 
 ## 4. Subagent 策略
 

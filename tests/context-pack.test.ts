@@ -23,6 +23,21 @@ describe("context pack snippets", () => {
       "src/b.ts": "bbbb"
     });
   });
+
+  it("can read execution-plan files even when they were not selected as relevant files", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-context-snippets-"));
+    await mkdir(path.join(repoDir, "src"), { recursive: true });
+    await writeFile(path.join(repoDir, "src/planned.ts"), "planned file\n");
+
+    const snippets = await readContextFileSnippets(repoDir, contextPack(), {
+      includePaths: ["src/planned.ts"],
+      maxCharsPerFile: 20
+    });
+
+    expect(snippets).toEqual({
+      "src/planned.ts": "planned file\n"
+    });
+  });
 });
 
 function contextPack(): ContextPack {

@@ -1,6 +1,7 @@
 export {
   IssueWorkflowRunner,
   compactContextPackForImplementation,
+  selectImplementationEditActions,
   selectImplementationPatchActions,
   selectImplementationPatchPaths,
   selectImplementationSnippetPaths,
@@ -9,6 +10,7 @@ export {
 export {
   assertAgentPrBodyComplete,
   createAgentPrBody,
+  createPrdIssueComment,
   createPrFeedbackUpdateComment,
   createPrReadyIssueComment,
   createPrLocalVerificationPlan,

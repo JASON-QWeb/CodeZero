@@ -24,7 +24,9 @@ export async function loadProjectContext(repoDir: string, projectSkillPath = ".a
 }
 
 export function summarizeProjectContext(context: ProjectContext): string {
-  const skillList = context.businessSkills.map((skill) => `- ${skill.id}@${skill.version}`).join("\n");
+  const skillList = context.businessSkills
+    .map((skill) => [`## Skill: ${skill.id}@${skill.version}`, trimForContext(skill.content, 4_000)].join("\n"))
+    .join("\n\n");
 
   return [
     "# Project Context",
@@ -36,4 +38,8 @@ export function summarizeProjectContext(context: ProjectContext): string {
     "# Testing Guide",
     context.testingGuide || "No .agent/testing-guide.md found."
   ].join("\n");
+}
+
+function trimForContext(content: string, maxChars: number): string {
+  return content.length > maxChars ? `${content.slice(0, maxChars)}\n... (truncated)` : content;
 }

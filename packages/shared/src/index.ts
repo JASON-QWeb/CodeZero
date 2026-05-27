@@ -108,6 +108,7 @@ export type Task = {
 export type TaskEventType =
   | "TASK_CREATED"
   | "TASK_QUEUED"
+  | "ISSUE_COMMENT_RECEIVED"
   | "ISSUE_CONTEXT_COLLECTED"
   | "PRD_DRAFTED"
   | "PRD_APPROVED"
@@ -181,6 +182,7 @@ export type ContextPack = {
   businessRules: string[];
   memories: ContextMemory[];
   codeGraphContext?: JsonObject;
+  knowledgeGraphContext?: JsonObject;
   relevantFiles: RelevantFile[];
   symbols: string[];
   tests: string[];

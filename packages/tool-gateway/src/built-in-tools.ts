@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { JsonObject } from "@agent/shared";
 import { runProcess } from "./process-runner.js";
@@ -51,6 +51,61 @@ export function createBuiltInToolRegistry(): ToolRegistry {
       } finally {
         await rm(patchPath, { force: true });
       }
+    }
+  );
+
+  registry.register(
+    {
+      name: "repo.write_file",
+      description: "Create or replace a UTF-8 file inside the task repository.",
+      permission: "repo_write",
+      timeoutMs: 30_000
+    },
+    async (input, context) => {
+      const relativePath = expectString(input.path, "path");
+      const content = expectText(input.content, "content");
+      const filePath = resolveInsideRepo(context.repoDir, relativePath);
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, content, "utf8");
+
+      return {
+        path: normalizeRelativePath(relativePath),
+        bytes: Buffer.byteLength(content, "utf8")
+      };
+    }
+  );
+
+  registry.register(
+    {
+      name: "repo.replace_text",
+      description: "Replace exact text in a UTF-8 file inside the task repository.",
+      permission: "repo_write",
+      timeoutMs: 30_000
+    },
+    async (input, context) => {
+      const relativePath = expectString(input.path, "path");
+      const search = expectString(input.search, "search");
+      const replace = expectText(input.replace, "replace");
+      const replaceAll = input.replaceAll === true;
+      const filePath = resolveInsideRepo(context.repoDir, relativePath);
+      const current = await readFile(filePath, "utf8");
+      const occurrences = countOccurrences(current, search);
+
+      if (occurrences === 0) {
+        throw new Error(`Search text was not found in ${normalizeRelativePath(relativePath)}`);
+      }
+
+      if (occurrences > 1 && !replaceAll) {
+        throw new Error(`Search text matched ${occurrences} times in ${normalizeRelativePath(relativePath)}; set replaceAll true or provide a more specific search`);
+      }
+
+      const updated = replaceAll ? current.split(search).join(replace) : current.replace(search, replace);
+      await writeFile(filePath, updated, "utf8");
+
+      return {
+        path: normalizeRelativePath(relativePath),
+        replacements: replaceAll ? occurrences : 1
+      };
     }
   );
 
@@ -204,4 +259,16 @@ function parseRipgrepLine(line: string): JsonObject {
     line: Number(lineNumber ?? 0),
     text: rest.join(":")
   };
+}
+
+function expectText(value: unknown, name: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${name} must be a string`);
+  }
+
+  return value;
+}
+
+function countOccurrences(content: string, search: string): number {
+  return content.split(search).length - 1;
 }

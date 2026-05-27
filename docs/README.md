@@ -4,6 +4,7 @@ This directory contains the current product, architecture, runtime, and operatio
 
 ## Start Here
 
+- [Core Product Flow](CORE_PRODUCT_FLOW.md): canonical Issue-to-PR product contract; keep this updated so future agents do not lose the main logic after context compaction.
 - [Product Requirements](PRD.md): product goals, user stories, acceptance gates, and non-goals.
 - [System Architecture](ARCHITECTURE.md): service layers, core components, and runtime responsibilities.
 - [Workflow Blueprint](WORKFLOW_BLUEPRINT.md): end-to-end Issue-to-PR state flow.

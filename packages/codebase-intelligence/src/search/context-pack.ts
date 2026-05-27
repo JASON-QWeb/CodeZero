@@ -15,6 +15,7 @@ export type ContextPackInput = {
   businessRules: string[];
   memories?: ContextMemory[];
   codeGraphContext?: JsonObject;
+  knowledgeGraphContext?: JsonObject;
   navigationRoute?: NavigationRoute;
   tokenBudget?: number;
 };
@@ -25,7 +26,7 @@ export async function buildContextPack(input: ContextPackInput): Promise<Context
   const hypothesis = createSearchHypothesis(`${issueText}\n${input.businessRules.join("\n")}\n${memoryHints}`);
   const searchResults = hybridSearch(input.files, hypothesis, 18);
   const relevantFiles = mergeCodeGraphFiles(
-    mergeNavigationRouteFiles(toRelevantFiles(searchResults), input.navigationRoute, input.files),
+    mergeKnowledgeGraphFiles(mergeNavigationRouteFiles(toRelevantFiles(searchResults), input.navigationRoute, input.files), input.knowledgeGraphContext, input.files),
     input.codeGraphContext,
     input.files
   );
@@ -47,6 +48,7 @@ export async function buildContextPack(input: ContextPackInput): Promise<Context
     businessRules: input.businessRules.slice(0, 40),
     memories: (input.memories ?? []).slice(0, 8),
     codeGraphContext: input.codeGraphContext,
+    knowledgeGraphContext: input.knowledgeGraphContext,
     relevantFiles,
     symbols: relevantSymbols,
     tests,
@@ -56,6 +58,39 @@ export async function buildContextPack(input: ContextPackInput): Promise<Context
     tokenBudget: input.tokenBudget ?? 30_000,
     createdAt: new Date().toISOString()
   };
+}
+
+function mergeKnowledgeGraphFiles(
+  relevantFiles: ContextPack["relevantFiles"],
+  context: JsonObject | undefined,
+  files: FileIndexEntry[]
+): ContextPack["relevantFiles"] {
+  const filePaths = asStringArray(context?.files);
+
+  if (filePaths.length === 0) {
+    return relevantFiles;
+  }
+
+  const fileMap = new Map(files.map((file) => [file.path, file]));
+  const merged = new Map(relevantFiles.map((file) => [file.path, file]));
+
+  for (const filePath of filePaths.slice(0, 20)) {
+    const normalizedPath = filePath.replaceAll("\\", "/").replace(/^\.\//, "");
+    const file = fileMap.get(normalizedPath);
+
+    if (!file || merged.has(normalizedPath)) {
+      continue;
+    }
+
+    merged.set(normalizedPath, {
+      path: normalizedPath,
+      reason: "Selected by Understand-Anything knowledge graph",
+      evidence: [{ kind: "graph", score: 9, summary: "Selected by repository-level knowledge graph" }],
+      readMode: file.sizeBytes < 40_000 ? "full" : "excerpt"
+    });
+  }
+
+  return Array.from(merged.values()).slice(0, 20);
 }
 
 function mergeCodeGraphFiles(relevantFiles: ContextPack["relevantFiles"], context: JsonObject | undefined, files: FileIndexEntry[]): ContextPack["relevantFiles"] {
@@ -152,7 +187,7 @@ export async function readContextFileSnippets(
   const relevantByPath = new Map(contextPack.relevantFiles.map((file) => [normalizeSnippetPath(file.path), file]));
   const files =
     includePaths.length > 0
-      ? includePaths.map((filePath) => relevantByPath.get(filePath)).filter((file): file is ContextPack["relevantFiles"][number] => Boolean(file))
+      ? includePaths.map((filePath) => relevantByPath.get(filePath) ?? ({ path: filePath, reason: "Selected by execution plan", evidence: [], readMode: "full" } satisfies ContextPack["relevantFiles"][number]))
       : contextPack.relevantFiles;
   const snippets: Record<string, string> = {};
 

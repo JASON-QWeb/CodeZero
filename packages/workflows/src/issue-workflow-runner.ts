@@ -1,5 +1,5 @@
 import path from "node:path";
-import { copyFile, mkdir, readFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile } from "node:fs/promises";
 import { runJsonAgent, type AgentDefinition, type AgentRunner } from "@agent/agent-runtime";
 import {
   buildContextPack,
@@ -28,6 +28,7 @@ import {
   getGitDiff,
   listChangedFiles,
   pushBranch,
+  runCommand,
   type Sandbox
 } from "@agent/sandbox";
 import type { Artifact, ContextPack, JsonObject, JsonValue, MinimalChangePlan, PrdDocument, QualityGateResult, ReviewResult, Task } from "@agent/shared";
@@ -47,6 +48,7 @@ import { createArtifactId, writeTaskArtifact } from "./artifacts.js";
 import {
   assertAgentPrBodyComplete,
   createAgentPrBody,
+  createPrdIssueComment,
   createPrFeedbackUpdateComment,
   createPrReadyIssueComment,
   createPrLocalVerificationPlan,
@@ -82,20 +84,30 @@ export class IssueWorkflowRunner {
       const runner = await createWorkflowAgentRunner(this.config);
       const prdAgent = await createWorkflowAgent(this.config, "prd", "prd");
 
-      const prd = task.prd ?? (await this.draftPrd(task, runner, prdAgent));
+      const prdWasCreated = !task.prd;
+      const prd = task.prd ?? (await this.draftPrd(task, repositoryConfig, runner, prdAgent));
       let updated = task.prd ? task : await this.updateStatus(task.id, "PRD_DRAFTED", { prd });
       const agents = await createExecutionAgents(this.config, prd.complexity.score);
 
       const requirePrdReview = repositoryConfig.workflow?.require_prd_review ?? true;
-      if (updated.status !== "PRD_APPROVED" && requirePrdReview && shouldRequirePrdReview(prd.complexity)) {
-        updated = await this.updateStatus(updated.id, "PRD_REVIEW_REQUIRED");
-        await this.event(updated.id, "HUMAN_REVIEW_REQUIRED", "PRD requires human approval before implementation");
+      const requiresHumanPrdReview = requirePrdReview && shouldRequirePrdReview(prd.complexity);
+      if (updated.status !== "PRD_APPROVED" && requiresHumanPrdReview) {
+        if (updated.status !== "PRD_REVIEW_REQUIRED") {
+          updated = await this.updateStatus(updated.id, "PRD_REVIEW_REQUIRED");
+          await this.event(updated.id, "HUMAN_REVIEW_REQUIRED", "PRD requires human approval before implementation");
+        }
+        if (prdWasCreated) {
+          await this.publishPrdIssueComment(updated, repositoryConfig, prd, true);
+        }
         return { taskId: updated.id, status: updated.status };
       }
 
-      if (updated.status === "PRD_REVIEW_REQUIRED" && !requirePrdReview) {
+      if (updated.status !== "PRD_APPROVED") {
         updated = await this.updateStatus(updated.id, "PRD_APPROVED");
-        await this.event(updated.id, "PRD_APPROVED", "PRD auto-approved by repository workflow policy");
+        await this.event(updated.id, "PRD_APPROVED", requiresHumanPrdReview ? "PRD approved" : "PRD auto-approved by repository workflow policy");
+        if (prdWasCreated) {
+          await this.publishPrdIssueComment(updated, repositoryConfig, prd, false);
+        }
       }
 
       const sandbox = await this.prepareSandbox(updated, repositoryConfig);
@@ -182,10 +194,11 @@ export class IssueWorkflowRunner {
     return { taskId: updated.id, status: updated.status, prUrl: updated.prUrl };
   }
 
-  private async draftPrd(task: Task, runner: AgentRunner, agent: AgentDefinition): Promise<PrdDocument> {
+  private async draftPrd(task: Task, repositoryConfig: RepositoryConfig, runner: AgentRunner, agent: AgentDefinition): Promise<PrdDocument> {
     await this.updateStatus(task.id, "CONTEXT_COLLECTING");
     await this.updateStatus(task.id, "BRAINSTORMING");
     const platformSkills = await loadPlatformSkills(this.config.rootDir);
+    const repositoryContext = await this.loadRepositoryProjectContextForPrd(task, repositoryConfig);
     const locale = detectIssueLocale(task.issue);
     const result = await runJsonAgent({
       runner,
@@ -193,13 +206,125 @@ export class IssueWorkflowRunner {
       userPrompt: ["Generate the PRD JSON. Return only JSON matching the required schema.", languageInstruction(locale)].join("\n"),
       context: {
         issue: task.issue as unknown as JsonObject,
-        platformSkills: platformSkills.map((skill) => ({ id: skill.id, content: skill.content }))
+        platformSkills: platformSkills.map((skill) => ({ id: skill.id, content: skill.content })),
+        repositoryContext
       }
     });
     const prd = prdSchema.parse(result);
     await this.writeArtifact(task.id, "prd", "prd.json", JSON.stringify(prd, null, 2));
     await this.event(task.id, "PRD_DRAFTED", `PRD drafted with complexity ${prd.complexity.score}`);
     return prd;
+  }
+
+  private async loadRepositoryProjectContextForPrd(task: Task, repositoryConfig: RepositoryConfig): Promise<JsonObject> {
+    if (!this.config.github.token) {
+      return {
+        available: false,
+        reason: "GITHUB_TOKEN is not configured; PRD will use issue text and platform skills only."
+      };
+    }
+
+    try {
+      const repoDir = await this.prepareRepositoryContextCheckout(repositoryConfig);
+      const projectContext = await loadProjectContext(repoDir, repositoryConfig.project_skill_path);
+      await this.event(task.id, "ISSUE_CONTEXT_COLLECTED", "Repository rules and skills loaded for PRD", "info", {
+        projectSkillPath: repositoryConfig.project_skill_path,
+        skillCount: projectContext.businessSkills.length
+      });
+      return {
+        available: true,
+        projectSkillPath: repositoryConfig.project_skill_path,
+        summary: summarizeProjectContext(projectContext)
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.event(task.id, "ISSUE_CONTEXT_COLLECTED", "Repository rules could not be loaded for PRD; continuing with issue context", "warn", {
+        error: message.slice(0, 2000)
+      });
+      return {
+        available: false,
+        reason: message
+      };
+    }
+  }
+
+  private async prepareRepositoryContextCheckout(repositoryConfig: RepositoryConfig): Promise<string> {
+    const repoDir = path.join(this.config.rootDir, "data", "repository-context", repositoryStorageKey(repositoryConfig), "repo");
+    const remoteUrl = createGitHubRemoteUrl(repositoryConfig.github_owner, repositoryConfig.github_repo, this.config.github.token);
+    await mkdir(path.dirname(repoDir), { recursive: true });
+
+    if (!(await pathExists(path.join(repoDir, ".git")))) {
+      const clone = await runCommand({
+        cwd: path.dirname(repoDir),
+        command: `git clone --depth 1 --branch ${shellQuote(repositoryConfig.default_branch)} ${shellQuote(remoteUrl)} ${shellQuote(repoDir)}`,
+        timeoutMs: 10 * 60_000
+      });
+      if (clone.exitCode !== 0) {
+        throw new Error(`Repository context clone failed: ${redactRemoteUrl(clone.stderr || clone.stdout)}`);
+      }
+      return repoDir;
+    }
+
+    const setRemote = await runCommand({
+      cwd: repoDir,
+      command: `git remote set-url origin ${shellQuote(remoteUrl)}`,
+      timeoutMs: 60_000
+    });
+    if (setRemote.exitCode !== 0) {
+      throw new Error(`Repository context remote update failed: ${redactRemoteUrl(setRemote.stderr || setRemote.stdout)}`);
+    }
+
+    const fetch = await runCommand({
+      cwd: repoDir,
+      command: `git fetch --depth 1 origin ${shellQuote(repositoryConfig.default_branch)}`,
+      timeoutMs: 10 * 60_000
+    });
+    if (fetch.exitCode !== 0) {
+      throw new Error(`Repository context fetch failed: ${redactRemoteUrl(fetch.stderr || fetch.stdout)}`);
+    }
+
+    const checkout = await runCommand({
+      cwd: repoDir,
+      command: `git checkout -B repository-context ${shellQuote(`origin/${repositoryConfig.default_branch}`)}`,
+      timeoutMs: 60_000
+    });
+    if (checkout.exitCode !== 0) {
+      throw new Error(`Repository context checkout failed: ${redactRemoteUrl(checkout.stderr || checkout.stdout)}`);
+    }
+
+    return repoDir;
+  }
+
+  private async publishPrdIssueComment(
+    task: Task,
+    repositoryConfig: RepositoryConfig,
+    prd: PrdDocument,
+    requiresHumanReview: boolean
+  ): Promise<void> {
+    if (!this.config.github.token) {
+      await this.event(task.id, "PRD_DRAFTED", "PRD issue comment skipped because GITHUB_TOKEN is not configured", "warn");
+      return;
+    }
+
+    const github = new GitHubClient({ token: this.config.github.token });
+    const locale = detectIssueLocale(task.issue);
+    const body = createPrdIssueComment({
+      task,
+      prd,
+      requiresHumanReview,
+      mention: repositoryConfig.trigger.mention,
+      locale
+    });
+    const url = await github.createIssueComment({
+      owner: repositoryConfig.github_owner,
+      repo: repositoryConfig.github_repo,
+      issueNumber: task.issue.number,
+      body
+    });
+    await this.event(task.id, "PRD_DRAFTED", "PRD commented on GitHub issue", "info", {
+      commentUrl: url,
+      requiresHumanReview
+    });
   }
 
   private async prepareSandbox(task: Task, repositoryConfig: RepositoryConfig): Promise<Sandbox> {
@@ -275,7 +400,10 @@ export class IssueWorkflowRunner {
     const files = await indexFiles(sandbox.repoDir);
     const symbols = await indexSymbols(sandbox.repoDir, files);
     const projectContext = await loadProjectContext(sandbox.repoDir, repositoryConfig.project_skill_path);
-    const businessRules = [summarizeProjectContext(projectContext)];
+    const knowledgeGraphContext = await this.loadUnderstandAnythingContext(task, repositoryConfig);
+    const businessRules = [summarizeProjectContext(projectContext), formatKnowledgeGraphBusinessRule(knowledgeGraphContext)].filter(
+      (entry): entry is string => Boolean(entry)
+    );
     const memoryStore = new FileMemoryStore(this.config.memory.filePath);
     const memoryResults = await memoryStore.search(task.issue, 8);
     const memories = toContextMemories(memoryResults);
@@ -293,6 +421,7 @@ export class IssueWorkflowRunner {
       businessRules,
       memories,
       codeGraphContext: codeGraphContext?.context,
+      knowledgeGraphContext,
       navigationRoute
     });
     await this.writeArtifact(task.id, "memory-context", "memory-context.json", JSON.stringify(memories, null, 2));
@@ -426,8 +555,43 @@ export class IssueWorkflowRunner {
   }
 
   private codeGraphCacheDatabaseFile(repositoryConfig: RepositoryConfig): string {
-    const repositoryKey = `${repositoryConfig.github_owner}--${repositoryConfig.github_repo}`.replace(/[^A-Za-z0-9._-]+/g, "-");
-    return path.join(this.config.rootDir, "data", "codegraph", repositoryKey, "codegraph.db");
+    return path.join(this.config.rootDir, "data", "codegraph", repositoryStorageKey(repositoryConfig), "codegraph.db");
+  }
+
+  private async loadUnderstandAnythingContext(task: Task, repositoryConfig: RepositoryConfig): Promise<JsonObject | undefined> {
+    const graphFile = path.join(
+      this.config.rootDir,
+      "data",
+      "understand-anything",
+      repositoryStorageKey(repositoryConfig),
+      "repo",
+      ".understand-anything",
+      "knowledge-graph.json"
+    );
+    const content = await readFile(graphFile, "utf8").catch(() => "");
+
+    if (!content) {
+      await this.event(task.id, "CODEBASE_INDEXED", "Understand-Anything knowledge graph is not available for this repository", "debug", {
+        graphFile
+      });
+      return undefined;
+    }
+
+    try {
+      const parsed = JSON.parse(content) as unknown;
+      const context = summarizeUnderstandAnythingGraph(parsed);
+      await this.event(task.id, "CODEBASE_INDEXED", "Understand-Anything knowledge graph loaded for task context", "info", {
+        graphFile,
+        files: Array.isArray(context.files) ? context.files.length : 0
+      });
+      return context;
+    } catch (error) {
+      await this.event(task.id, "CODEBASE_INDEXED", "Understand-Anything knowledge graph could not be parsed", "warn", {
+        graphFile,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return undefined;
+    }
   }
 
   private async createNavigationRoute(
@@ -492,30 +656,30 @@ export class IssueWorkflowRunner {
     });
     const implementationContextPack = compactContextPackForImplementation(contextPack);
     let previousApplyError = "";
-    let previousPatchActions: JsonToolAction[] = [];
+    let previousEditActions: JsonToolAction[] = [];
     const locale = detectIssueLocale(task.issue);
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       const repairContext =
         attempt === 1
           ? undefined
-          : await createImplementationRepairContext(sandbox.repoDir, previousPatchActions.length > 0 ? previousPatchActions : []);
+          : await createImplementationRepairContext(sandbox.repoDir, previousEditActions.length > 0 ? previousEditActions : []);
       const firstAttemptPrompt = reviewerFeedback
         ? [
             "Implement the latest PR reviewer feedback on the existing PR branch. Return only JSON.",
             `Latest reviewer feedback:\n${reviewerFeedback}`,
-            "Return exactly one or more repo.apply_patch actions with complete valid unified diffs.",
+            "Return one or more repository edit actions. Prefer repo.replace_text or repo.write_file; repo.apply_patch is only a compatibility fallback.",
             "Do not call read-only tools during implementation; use the provided fileSnippets and error feedback.",
-            "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
-            "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
+            "Preferred targeted edit format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
+            "Preferred file creation format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.write_file\",\"input\":{\"path\":\"src/file.ts\",\"content\":\"complete file contents\"}}]}",
             "Use only the provided tool names and keep the existing PR branch focused on the same issue."
           ].join("\n")
         : [
             "Implement the minimal change plan. Return only JSON.",
-            "Return exactly one or more repo.apply_patch actions with complete valid unified diffs.",
+            "Return one or more repository edit actions. Prefer repo.replace_text or repo.write_file; repo.apply_patch is only a compatibility fallback.",
             "Do not call read-only tools during implementation; use the provided fileSnippets and plan.",
-            "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
-            "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
+            "Use repo.replace_text for targeted edits based on exact current snippets; use repo.write_file when creating a file or replacing a whole file is clearer.",
+            "If you use repo.apply_patch, every diff must include diff --git, ---/+++ file headers, and valid @@ hunk headers.",
             "Use only the provided tool names and do not include unrelated changes."
           ].join("\n");
       const result = await runJsonAgent({
@@ -526,14 +690,12 @@ export class IssueWorkflowRunner {
             ? [firstAttemptPrompt, languageInstruction(locale)].join("\n")
             : [
                 "Repair the implementation so it applies cleanly. Return only JSON.",
-                `Previous tool/apply error:\n${previousApplyError}`,
-                "The repair context contains exact current file snippets for the files touched by the failed patch.",
-                "Base every hunk on those exact current lines; do not reuse old or imagined file context.",
-                "Prefer smaller per-file patches over one large patch when that makes the hunks more reliable.",
-                "Return corrected repo.apply_patch action(s) only. Do not call repo.read_file, repo.search, or other read-only tools.",
-                "Each unified diff must include diff --git, ---/+++ file headers, and valid @@ hunk headers.",
-                "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
-                "Compatibility format is also accepted: {\"summary\":\"...\",\"unifiedDiff\":\"...\"}.",
+                `Previous tool/edit error:\n${previousApplyError}`,
+                "The repair context contains exact current file snippets for the files touched by the failed edit.",
+                "For repo.replace_text, search must exactly match current file text.",
+                "If exact replacement is brittle, use repo.write_file with complete file contents.",
+                "Return corrected repository edit action(s) only. Do not call repo.read_file, repo.search, or other read-only tools.",
+                "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
                 languageInstruction(locale)
               ].join("\n"),
         context: {
@@ -543,8 +705,8 @@ export class IssueWorkflowRunner {
           minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
           reviewerFeedback,
           previousApplyError,
-          previousPatchFiles: repairContext?.patchFiles ?? [],
-          previousPatchPreview: repairContext?.patchPreview ?? "",
+          previousEditFiles: repairContext?.editFiles ?? [],
+          previousEditPreview: repairContext?.editPreview ?? "",
           fileSnippets: (repairContext?.fileSnippets ?? snippets) as JsonObject,
           availableTools: this.getImplementationTools(repositoryConfig) as unknown as JsonObject,
           policies: this.config.policies as unknown as JsonObject,
@@ -554,13 +716,13 @@ export class IssueWorkflowRunner {
       const implementation = implementationSchema.parse(result);
       const actions = implementationToToolActions(implementation);
       await this.writeArtifact(task.id, "tool-call", `implementation-attempt-${attempt}.json`, JSON.stringify(implementation, null, 2));
-      const patchActions = selectImplementationPatchActions(actions);
-      if (patchActions.length === 0) {
-        previousApplyError = "Implementation attempt did not include a repo.apply_patch action; read-only actions are not a valid implementation.";
+      const editActions = selectImplementationEditActions(actions);
+      if (editActions.length === 0) {
+        previousApplyError = "Implementation attempt did not include a repository edit action; read-only actions are not a valid implementation.";
         await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
         continue;
       }
-      const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, patchActions, attempt);
+      const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, editActions, attempt);
       const failedToolCall = toolResults.find((toolResult) => toolResult.status !== "success");
 
       if (!failedToolCall) {
@@ -576,14 +738,15 @@ export class IssueWorkflowRunner {
       }
 
       previousApplyError = summarizeToolFailure(failedToolCall);
-      previousPatchActions = patchActions;
+      previousEditActions = editActions;
     }
 
-    throw new Error(`Implementation diff did not apply after 5 attempts: ${previousApplyError}`);
+    throw new Error(`Implementation edits did not apply after 5 attempts: ${previousApplyError}`);
   }
 
   private getImplementationTools(repositoryConfig: RepositoryConfig): ToolDefinition[] {
-    return this.getAvailableTools(repositoryConfig).filter((tool) => tool.name === "repo.apply_patch");
+    const implementationToolNames = new Set(["repo.replace_text", "repo.write_file", "repo.apply_patch"]);
+    return this.getAvailableTools(repositoryConfig).filter((tool) => implementationToolNames.has(tool.name));
   }
 
   private async executeToolActions(
@@ -980,6 +1143,11 @@ export function selectImplementationSnippetPaths(task: Pick<Task, "contextPack" 
   return paths.filter((value, index) => paths.indexOf(value) === index);
 }
 
+export function selectImplementationEditActions(actions: JsonToolAction[]): JsonToolAction[] {
+  const implementationToolNames = new Set(["repo.replace_text", "repo.write_file", "repo.apply_patch"]);
+  return actions.filter((action) => implementationToolNames.has(action.toolName));
+}
+
 export function selectImplementationPatchActions(actions: JsonToolAction[]): JsonToolAction[] {
   return actions.filter((action) => action.toolName === "repo.apply_patch");
 }
@@ -987,7 +1155,12 @@ export function selectImplementationPatchActions(actions: JsonToolAction[]): Jso
 export function selectImplementationPatchPaths(actions: JsonToolAction[]): string[] {
   const paths = actions.flatMap((action) => {
     const diff = extractPatchDiff(action);
-    return diff ? extractDiffPaths(diff) : [];
+    if (diff) {
+      return extractDiffPaths(diff);
+    }
+
+    const targetPath = action.input.path;
+    return typeof targetPath === "string" ? [targetPath] : [];
   });
 
   return paths.filter((value, index) => value.length > 0 && paths.indexOf(value) === index);
@@ -996,12 +1169,12 @@ export function selectImplementationPatchPaths(actions: JsonToolAction[]): strin
 async function createImplementationRepairContext(
   repoDir: string,
   actions: JsonToolAction[]
-): Promise<{ patchFiles: string[]; patchPreview: string; fileSnippets: Record<string, string> }> {
-  const patchFiles = selectImplementationPatchPaths(actions).slice(0, 8);
+): Promise<{ editFiles: string[]; editPreview: string; fileSnippets: Record<string, string> }> {
+  const editFiles = selectImplementationPatchPaths(actions).slice(0, 8);
   return {
-    patchFiles,
-    patchPreview: createPatchPreview(actions, 12_000),
-    fileSnippets: await readFreshFileSnippets(repoDir, patchFiles, 8_000, 8)
+    editFiles,
+    editPreview: createEditPreview(actions, 12_000),
+    fileSnippets: await readFreshFileSnippets(repoDir, editFiles, 8_000, 8)
   };
 }
 
@@ -1027,12 +1200,21 @@ async function readFreshFileSnippets(repoDir: string, paths: string[], maxCharsP
   return snippets;
 }
 
-function createPatchPreview(actions: JsonToolAction[], maxChars: number): string {
+function createEditPreview(actions: JsonToolAction[], maxChars: number): string {
   const preview = actions
-    .map(extractPatchDiff)
+    .map(describeEditAction)
     .filter(Boolean)
-    .join("\n\n--- next patch action ---\n\n");
+    .join("\n\n--- next edit action ---\n\n");
   return preview.length > maxChars ? `${preview.slice(0, maxChars)}\n... (truncated)` : preview;
+}
+
+function describeEditAction(action: JsonToolAction): string {
+  const diff = extractPatchDiff(action);
+  if (diff) {
+    return diff;
+  }
+
+  return JSON.stringify(action, (_key, value) => (typeof value === "string" && value.length > 4_000 ? `${value.slice(0, 4_000)}\n... (truncated)` : value), 2);
 }
 
 function extractPatchDiff(action: JsonToolAction): string {
@@ -1056,6 +1238,7 @@ function normalizeRepairPath(value: string): string {
 
 export function compactContextPackForImplementation(contextPack: ContextPack): JsonObject {
   const codeGraphContext = compactCodeGraphContext(contextPack.codeGraphContext);
+  const knowledgeGraphContext = compactKnowledgeGraphContext(contextPack.knowledgeGraphContext);
   return {
     id: contextPack.id,
     taskSummary: contextPack.taskSummary,
@@ -1069,6 +1252,7 @@ export function compactContextPackForImplementation(contextPack: ContextPack): J
       confidence: memory.confidence
     })),
     ...(codeGraphContext ? { codeGraphContext } : {}),
+    ...(knowledgeGraphContext ? { knowledgeGraphContext } : {}),
     relevantFiles: contextPack.relevantFiles.map((file) => ({
       path: file.path,
       reason: file.reason,
@@ -1077,6 +1261,19 @@ export function compactContextPackForImplementation(contextPack: ContextPack): J
     symbols: contextPack.symbols.slice(0, 40),
     tests: contextPack.tests,
     openQuestions: contextPack.openQuestions
+  };
+}
+
+function compactKnowledgeGraphContext(value: JsonValue | undefined): JsonObject | undefined {
+  if (!isJsonObject(value)) {
+    return undefined;
+  }
+
+  return {
+    provider: "Understand-Anything",
+    ...(isJsonObject(value.graph) ? { graph: value.graph } : {}),
+    ...(Array.isArray(value.files) ? { files: value.files.slice(0, 30) as JsonValue[] } : {}),
+    ...(Array.isArray(value.highlights) ? { highlights: value.highlights.slice(0, 20) as JsonValue[] } : {})
   };
 }
 
@@ -1115,10 +1312,101 @@ function rawGitHubUrl(owner: string, repo: string, branch: string, relativePath:
   return encodeURI(`https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${branch}/${relativePath}`);
 }
 
+function repositoryStorageKey(repositoryConfig: Pick<RepositoryConfig, "github_owner" | "github_repo">): string {
+  return `${repositoryConfig.github_owner}--${repositoryConfig.github_repo}`.replace(/[^A-Za-z0-9._-]+/g, "-");
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  return access(filePath).then(
+    () => true,
+    () => false
+  );
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function safePathSegment(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 64) || "screenshot";
+}
+
+function summarizeUnderstandAnythingGraph(value: unknown): JsonObject {
+  const graph = isUnknownRecord(value) ? value : {};
+  const project = isUnknownRecord(graph.project) ? graph.project : {};
+  const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  const edges = Array.isArray(graph.edges) ? graph.edges : [];
+  const highlights = nodes.map(summarizeKnowledgeGraphNode).filter(isJsonObject).slice(0, 80);
+  const files = highlights.map((node) => (typeof node.path === "string" ? node.path : "")).filter(uniqueString).slice(0, 80);
+
+  return {
+    provider: "Understand-Anything",
+    graph: {
+      projectName: typeof project.name === "string" ? project.name : undefined,
+      analyzedAt: typeof project.analyzedAt === "string" ? project.analyzedAt : undefined,
+      nodes: nodes.length,
+      edges: edges.length
+    },
+    files,
+    highlights
+  } as JsonObject;
+}
+
+function summarizeKnowledgeGraphNode(value: unknown): JsonObject | undefined {
+  if (!isUnknownRecord(value)) {
+    return undefined;
+  }
+
+  const pathValue = typeof value.path === "string" ? value.path : inferPathFromNodeId(value.id);
+  const label = [value.label, value.name, value.title].find((entry): entry is string => typeof entry === "string");
+  const kind = [value.kind, value.type, value.category].find((entry): entry is string => typeof entry === "string");
+  const description = [value.description, value.summary].find((entry): entry is string => typeof entry === "string");
+
+  if (!pathValue && !label && !kind) {
+    return undefined;
+  }
+
+  return {
+    ...(pathValue ? { path: normalizeGraphPath(pathValue) } : {}),
+    ...(label ? { label } : {}),
+    ...(kind ? { kind } : {}),
+    ...(description ? { description: description.slice(0, 500) } : {})
+  };
+}
+
+function inferPathFromNodeId(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const match = /(?:^|:)((?:apps|packages|src|frontend|backend|internal|cmd|lib|components|pages|app)\/[^#?]+)/.exec(value);
+  return match?.[1];
+}
+
+function normalizeGraphPath(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function formatKnowledgeGraphBusinessRule(context: JsonObject | undefined): string | undefined {
+  if (!context) {
+    return undefined;
+  }
+
+  return [
+    "# Repository Knowledge Graph",
+    "Understand-Anything graph is available for this repository.",
+    `Files highlighted: ${Array.isArray(context.files) ? context.files.slice(0, 30).join(", ") : "none"}`
+  ].join("\n");
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function uniqueString(value: string, index: number, array: string[]): boolean {
+  return value.length > 0 && array.indexOf(value) === index;
 }

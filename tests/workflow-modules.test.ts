@@ -9,10 +9,12 @@ import type { Artifact, ContextPack, IssueContext, PrdDocument, Task, TaskEvent 
 import {
   compactContextPackForImplementation,
   createArtifactId,
+  createPrdIssueComment,
   createWorkflowAgent,
   createWorkflowAgentRunner,
   implementationToToolActions,
   IssueWorkflowRunner,
+  selectImplementationEditActions,
   selectImplementationPatchActions,
   selectImplementationPatchPaths,
   selectImplementationSnippetPaths,
@@ -74,6 +76,21 @@ describe("workflow modules", () => {
     ).toEqual([{ toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }]);
   });
 
+  it("keeps only repository edit actions for implementation execution", () => {
+    expect(
+      selectImplementationEditActions([
+        { toolName: "repo.read_file", input: { path: "src/app.ts" } },
+        { toolName: "repo.replace_text", input: { path: "src/app.ts", search: "old", replace: "new" } },
+        { toolName: "repo.write_file", input: { path: "src/new.ts", content: "export {};\n" } },
+        { toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }
+      ])
+    ).toEqual([
+      { toolName: "repo.replace_text", input: { path: "src/app.ts", search: "old", replace: "new" } },
+      { toolName: "repo.write_file", input: { path: "src/new.ts", content: "export {};\n" } },
+      { toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }
+    ]);
+  });
+
   it("extracts failed patch paths for focused implementation repair", () => {
     expect(
       selectImplementationPatchPaths([
@@ -109,6 +126,29 @@ describe("workflow modules", () => {
     ).toEqual(["src/app.ts", "tests/app.test.ts"]);
   });
 
+  it("extracts direct edit paths for focused implementation repair", () => {
+    expect(
+      selectImplementationPatchPaths([
+        { toolName: "repo.replace_text", input: { path: "src/app.ts", search: "old", replace: "new" } },
+        { toolName: "repo.write_file", input: { path: "tests/app.test.ts", content: "test('ok', () => {});\n" } }
+      ])
+    ).toEqual(["src/app.ts", "tests/app.test.ts"]);
+  });
+
+  it("formats PRD comments for GitHub issue review", () => {
+    const body = createPrdIssueComment({
+      task: createTask(issue),
+      prd: highComplexityPrd,
+      requiresHumanReview: true,
+      mention: "@codeZero",
+      locale: "zh"
+    });
+
+    expect(body).toContain("## CodeZero PRD");
+    expect(body).toContain("@codeZero approve prd");
+    expect(body).toContain("验收标准");
+  });
+
   it("compacts implementation context and prioritizes plan files", () => {
     const contextPack = compactableContextPack();
     const task = {
@@ -133,6 +173,12 @@ describe("workflow modules", () => {
       summary: "Relevant graph",
       relatedFiles: ["src/change.ts"],
       stats: { nodeCount: 1 }
+    });
+    expect(compact.knowledgeGraphContext).toEqual({
+      provider: "Understand-Anything",
+      graph: { nodes: 2, edges: 1 },
+      files: ["src/change.ts"],
+      highlights: [{ path: "src/change.ts", label: "Change" }]
     });
   });
 
@@ -266,6 +312,12 @@ function compactableContextPack(): ContextPack {
       relatedFiles: ["src/change.ts"],
       stats: { nodeCount: 1 },
       codeBlocks: [{ content: "large code block" }]
+    },
+    knowledgeGraphContext: {
+      provider: "Understand-Anything",
+      graph: { nodes: 2, edges: 1 },
+      files: ["src/change.ts"],
+      highlights: [{ path: "src/change.ts", label: "Change" }]
     },
     relevantFiles: [
       { path: "src/change.ts", reason: "plan", evidence: [], readMode: "full" },

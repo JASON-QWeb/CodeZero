@@ -94,6 +94,41 @@ describe("GitHub async sync", () => {
     expect(updated?.issue.comments[0]?.body).toContain("继续调整");
   });
 
+  it("imports PRD approval issue comments and resumes the same task", async () => {
+    const dir = await createConfigFixture("agent-github-prd-approval-");
+    const storePath = path.join(dir, "tasks.json");
+    const repository = new FileTaskRepository(storePath);
+    const task = {
+      ...createTask(issue(29, "Approve PRD"), new Date("2026-05-27T02:00:00Z")),
+      status: "PRD_REVIEW_REQUIRED"
+    } satisfies Task;
+    await repository.createTask(task);
+    process.env.PROJECT_ROOT = dir;
+    process.env.TASK_STORE_FILE = storePath;
+    const enqueue = vi.fn(async () => undefined);
+    const github = fakeGitHub({
+      issueThreads: [
+        {
+          ...issue(29, "Approve PRD"),
+          author: "alice",
+          updatedAt: "2026-05-27T02:10:00Z",
+          isPullRequest: false,
+          comments: [{ author: "alice", body: "@agent-prd approve prd", createdAt: "2026-05-27T02:10:00Z" }]
+        }
+      ]
+    });
+
+    const result = await runGitHubRepositorySync("example-web", { github, enqueue });
+    const updated = await repository.getTask(task.id);
+
+    expect(result).toMatchObject({
+      importedIssueComments: 1,
+      queuedPrdApprovals: 1
+    });
+    expect(updated?.status).toBe("PRD_APPROVED");
+    expect(enqueue).toHaveBeenCalledWith(task.id, expect.stringContaining(`${task.id}-prd-approved-`));
+  });
+
   it("marks sync failed when imported PR feedback cannot be queued", async () => {
     const dir = await createConfigFixture("agent-github-pr-sync-fail-");
     const storePath = path.join(dir, "tasks.json");

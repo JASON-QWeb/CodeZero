@@ -11,6 +11,8 @@ export type GitHubSyncResult = {
   fullName: string;
   scannedIssues: number;
   importedIssues: number;
+  importedIssueComments: number;
+  queuedPrdApprovals: number;
   skippedIssues: number;
   scannedFeedbackPullRequests: number;
   importedFeedbackComments: number;
@@ -165,6 +167,8 @@ async function collectGitHubUpdates(
     fullName: `${repository.github_owner}/${repository.github_repo}`,
     scannedIssues: 0,
     importedIssues: 0,
+    importedIssueComments: 0,
+    queuedPrdApprovals: 0,
     skippedIssues: 0,
     scannedFeedbackPullRequests: 0,
     importedFeedbackComments: 0,
@@ -181,7 +185,11 @@ async function collectGitHubUpdates(
   for (const issue of issueThreads) {
     result.scannedIssues += 1;
 
-    if (hasTrackedIssueTask(tasks, issue)) {
+    const trackedTask = findTrackedIssueTask(tasks, issue);
+    if (trackedTask) {
+      const issueCommentResult = await syncTrackedIssueComments(services, repository, trackedTask, issue.comments, options);
+      result.importedIssueComments += issueCommentResult.importedComments;
+      result.queuedPrdApprovals += issueCommentResult.queuedPrdApprovals;
       result.skippedIssues += 1;
       continue;
     }
@@ -221,7 +229,7 @@ async function collectGitHubUpdates(
 
     result.scannedFeedbackPullRequests += 1;
     const comments = await github.listPullRequestFeedback(repository.github_owner, repository.github_repo, pullNumber);
-    const humanComments = comments.filter((comment) => !isBotActor(comment.author));
+    const humanComments = comments.filter((comment) => !isBotActor(comment.author) && !isGeneratedCodeZeroComment(comment.body));
     const newComments = humanComments.filter((comment) => !hasKnownComment(task.issue.comments, comment));
     result.skippedFeedbackComments += humanComments.length - newComments.length;
 
@@ -333,8 +341,62 @@ function createGitHubSyncClient(token?: string): GitHubSyncClient {
   return new GitHubClient({ token });
 }
 
-function hasTrackedIssueTask(tasks: Task[], issue: Pick<GitHubIssueThread, "owner" | "repo" | "number">): boolean {
-  return tasks.some((task) => task.issue.owner === issue.owner && task.issue.repo === issue.repo && task.issue.number === issue.number);
+async function syncTrackedIssueComments(
+  services: ApiServices,
+  repository: RepositoryConfig,
+  task: Task,
+  comments: IssueComment[],
+  options: GitHubSyncOptions
+): Promise<{ importedComments: number; queuedPrdApprovals: number }> {
+  const humanComments = comments.filter((comment) => !isBotActor(comment.author) && !isGeneratedCodeZeroComment(comment.body));
+  const newComments = humanComments.filter((comment) => !hasKnownIssueComment(task.issue.comments, comment));
+
+  if (newComments.length === 0) {
+    return { importedComments: 0, queuedPrdApprovals: 0 };
+  }
+
+  let updated = await services.tasks.updateTask(task.id, {
+    issue: {
+      ...task.issue,
+      comments: [...task.issue.comments, ...newComments]
+    }
+  });
+
+  for (const comment of newComments) {
+    await services.tasks.appendEvent(
+      createTaskEvent({
+        taskId: updated.id,
+        type: "ISSUE_COMMENT_RECEIVED",
+        message: `Issue comment received from ${comment.author}`,
+        metadata: {
+          source: "github-sync"
+        }
+      })
+    );
+  }
+
+  const approvalComment = newComments.find((comment) => isPrdApprovalComment(repository, comment));
+  if (approvalComment && updated.status === "PRD_REVIEW_REQUIRED") {
+    updated = await services.tasks.updateTask(updated.id, { status: "PRD_APPROVED" });
+    await services.tasks.appendEvent(
+      createTaskEvent({
+        taskId: updated.id,
+        type: "PRD_APPROVED",
+        message: `PRD approved from GitHub issue comment by ${approvalComment.author}`,
+        metadata: {
+          source: "github-sync"
+        }
+      })
+    );
+    await (options.enqueue ?? enqueueIssueWorkflow)(updated.id, `${updated.id}-prd-approved-${Date.now()}`);
+    return { importedComments: newComments.length, queuedPrdApprovals: 1 };
+  }
+
+  return { importedComments: newComments.length, queuedPrdApprovals: 0 };
+}
+
+function findTrackedIssueTask(tasks: Task[], issue: Pick<GitHubIssueThread, "owner" | "repo" | "number">): Task | undefined {
+  return tasks.find((task) => task.issue.owner === issue.owner && task.issue.repo === issue.repo && task.issue.number === issue.number);
 }
 
 function isFeedbackTaskForRepository(task: Task, repository: RepositoryConfig): boolean {
@@ -355,12 +417,41 @@ function hasKnownComment(existing: IssueComment[], comment: GitHubIssueComment):
   return existing.some((entry) => entry.author === comment.author && entry.body === comment.body && entry.createdAt === comment.createdAt);
 }
 
+function hasKnownIssueComment(existing: IssueComment[], comment: IssueComment): boolean {
+  return existing.some((entry) => entry.author === comment.author && entry.body === comment.body && entry.createdAt === comment.createdAt);
+}
+
 function toIssueComment(comment: GitHubIssueComment): IssueComment {
   return {
     author: comment.author,
     body: comment.body,
     createdAt: comment.createdAt
   };
+}
+
+function isPrdApprovalComment(repository: RepositoryConfig, comment: Pick<IssueComment, "body">): boolean {
+  const body = comment.body.toLowerCase();
+  const mention = repository.trigger.mention.toLowerCase();
+
+  if (isGeneratedCodeZeroComment(comment.body)) {
+    return false;
+  }
+
+  if (!body.includes(mention)) {
+    return false;
+  }
+
+  return /\bapprove\s+prd\b|\bprd\s+approved\b|\/approve-prd|批准\s*prd|同意执行|可以执行/.test(body);
+}
+
+function isGeneratedCodeZeroComment(body: string): boolean {
+  return (
+    body.includes("## CodeZero PRD") ||
+    body.includes("机器人自检已完成并创建 PR") ||
+    body.includes("Agent self-checks completed and created the PR") ||
+    body.includes("已根据最新 PR 评论更新同一个分支") ||
+    body.includes("Updated the same PR branch from the latest PR comment")
+  );
 }
 
 function isBotActor(actor: string): boolean {
