@@ -193,10 +193,27 @@ export async function readContextFileSnippets(
 
   for (const file of files.slice(0, options.maxFiles ?? files.length)) {
     const content = await readFile(path.join(repoDir, file.path), "utf8").catch(() => "");
-    snippets[file.path] = content.slice(0, maxCharsPerFile);
+    snippets[file.path] = createContextSnippet(content, maxCharsPerFile);
   }
 
   return snippets;
+}
+
+export function createContextSnippet(content: string, maxChars: number): string {
+  if (content.length <= maxChars) {
+    return content;
+  }
+
+  if (maxChars < 120) {
+    return content.slice(0, maxChars);
+  }
+
+  const marker = `\n\n[... omitted ${content.length - maxChars} chars from the middle ...]\n\n`;
+  const available = Math.max(0, maxChars - marker.length);
+  const headChars = Math.ceil(available * 0.55);
+  const tailChars = available - headChars;
+
+  return `${content.slice(0, headChars)}${marker}${tailChars > 0 ? content.slice(-tailChars) : ""}`;
 }
 
 function normalizeSnippetPath(value: string): string {

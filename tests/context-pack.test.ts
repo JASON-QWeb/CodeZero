@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { readContextFileSnippets } from "@agent/codebase-intelligence";
+import { createContextSnippet, readContextFileSnippets } from "@agent/codebase-intelligence";
 import type { ContextPack } from "@agent/shared";
 
 describe("context pack snippets", () => {
@@ -37,6 +37,17 @@ describe("context pack snippets", () => {
     expect(snippets).toEqual({
       "src/planned.ts": "planned file\n"
     });
+  });
+
+  it("keeps both head and tail context for long implementation files", async () => {
+    const content = `${"a".repeat(320)}TAIL_ANCHOR\n${"z".repeat(20)}`;
+    const snippet = createContextSnippet(content, 180);
+
+    expect(snippet).toContain("aaa");
+    expect(snippet).toContain("[... omitted");
+    expect(snippet).toContain("TAIL_ANCHOR");
+    expect(snippet).toContain("zzz");
+    expect(snippet.length).toBeLessThanOrEqual(180);
   });
 });
 

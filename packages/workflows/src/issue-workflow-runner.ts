@@ -7,6 +7,7 @@ import {
   buildNavigationRoute,
   buildRepoNavigationGraph,
   buildCodeGraphTaskContext,
+  createContextSnippet,
   indexFiles,
   indexRepositoryWithCodeGraph,
   indexSymbols,
@@ -628,7 +629,7 @@ export class IssueWorkflowRunner {
     const contextPack = task.contextPack ?? this.missing<ContextPack>("ContextPack");
     const snippets = await readContextFileSnippets(sandbox.repoDir, contextPack, {
       includePaths: selectImplementationSnippetPaths(task),
-      maxCharsPerFile: 6_000,
+      maxCharsPerFile: 16_000,
       maxFiles: 8
     });
     const implementationContextPack = compactContextPackForImplementation(contextPack);
@@ -1432,7 +1433,7 @@ async function createImplementationRepairContext(
   return {
     editFiles,
     editPreview: createEditPreview(actions, 12_000),
-    fileSnippets: await readFreshFileSnippets(repoDir, editFiles, 8_000, 8)
+    fileSnippets: await readFreshFileSnippets(repoDir, editFiles, 24_000, 8)
   };
 }
 
@@ -1452,7 +1453,7 @@ async function readFreshFileSnippets(repoDir: string, paths: string[], maxCharsP
     }
 
     const content = await readFile(absolutePath, "utf8").catch(() => "");
-    snippets[normalized] = content.slice(0, maxCharsPerFile);
+    snippets[normalized] = createContextSnippet(content, maxCharsPerFile);
   }
 
   return snippets;
