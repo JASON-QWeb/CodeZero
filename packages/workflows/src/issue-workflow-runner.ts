@@ -709,8 +709,10 @@ export class IssueWorkflowRunner {
           maxAttempts: 5,
           error: message
         });
-        if (attempt < 5 && agentJsonFailureLooksRecoverable(message)) {
-          previousApplyError = `Implementation agent returned invalid JSON. Return valid JSON only. Parser error: ${message}`;
+        if (attempt < 5 && agentRunFailureLooksRecoverable(message)) {
+          previousApplyError = agentJsonFailureLooksRecoverable(message)
+            ? `Implementation agent returned invalid JSON. Return valid JSON only. Parser error: ${message}`
+            : `Implementation agent provider call failed transiently. Retry with the same task context. Error: ${message}`;
           previousEditActions = [];
           continue;
         }
@@ -809,7 +811,7 @@ export class IssueWorkflowRunner {
         continue;
       }
 
-      const reviewResult = await this.review(updated, sandbox, runner, reviewAgent, implementationFeedback);
+      const reviewResult = await this.review(updated, sandbox, runner, reviewAgent, initialFeedback);
       updated = await this.updateStatus(updated.id, "SUBAGENT_REVIEWING", { reviewResult });
 
       if (reviewAllowsPr(reviewResult)) {
@@ -1465,6 +1467,13 @@ function isJsonObject(value: JsonValue | undefined): value is JsonObject {
 
 function agentJsonFailureLooksRecoverable(message: string): boolean {
   return /json|property name|unexpected token|unexpected end|bad control character|unterminated string/i.test(message);
+}
+
+function agentRunFailureLooksRecoverable(message: string): boolean {
+  return (
+    agentJsonFailureLooksRecoverable(message) ||
+    /network request failed|fetch failed|headers timeout|timed out|timeout error|econnreset|etimedout|und_err_headers_timeout/i.test(message)
+  );
 }
 
 function parseGitHubIssueNumber(url: string): number | undefined {
