@@ -34,6 +34,21 @@ describe("agent runtime", () => {
     });
   });
 
+  it("repairs common trailing commas in JSON-like agent responses", () => {
+    expect(parseJsonObject('{"summary":"ok","actions":[{"tool":"repo.write_file","input":{"path":"src/a.ts","content":"a,b",},}],}')).toEqual({
+      summary: "ok",
+      actions: [
+        {
+          tool: "repo.write_file",
+          input: {
+            path: "src/a.ts",
+            content: "a,b"
+          }
+        }
+      ]
+    });
+  });
+
   it("calls OpenAI-compatible chat completions and extracts assistant content", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

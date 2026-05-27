@@ -163,15 +163,20 @@ export function parseJsonObject(content: string): JsonObject {
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
   const candidate = fenced ?? trimmed;
   let parsed: unknown;
+  let lastError: unknown;
 
-  try {
-    parsed = JSON.parse(candidate) as unknown;
-  } catch (error) {
-    const repaired = escapeControlCharactersInJsonStrings(candidate);
-    if (repaired === candidate) {
-      throw error;
+  for (const parseCandidate of jsonParseCandidates(candidate)) {
+    try {
+      parsed = JSON.parse(parseCandidate) as unknown;
+      lastError = undefined;
+      break;
+    } catch (error) {
+      lastError = error;
     }
-    parsed = JSON.parse(repaired) as unknown;
+  }
+
+  if (lastError) {
+    throw lastError;
   }
 
   if (!isObject(parsed) || Array.isArray(parsed)) {
@@ -179,6 +184,67 @@ export function parseJsonObject(content: string): JsonObject {
   }
 
   return asJsonValue(parsed) as JsonObject;
+}
+
+function jsonParseCandidates(candidate: string): string[] {
+  const candidates: string[] = [];
+  const push = (value: string) => {
+    if (!candidates.includes(value)) {
+      candidates.push(value);
+    }
+  };
+
+  push(candidate);
+  const escaped = escapeControlCharactersInJsonStrings(candidate);
+  push(escaped);
+  push(stripTrailingCommasOutsideStrings(escaped));
+
+  return candidates;
+}
+
+function stripTrailingCommasOutsideStrings(content: string): string {
+  let repaired = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+
+    if (!inString && char === ",") {
+      let cursor = index + 1;
+      while (cursor < content.length && /\s/.test(content[cursor] ?? "")) {
+        cursor += 1;
+      }
+      if (content[cursor] === "}" || content[cursor] === "]") {
+        continue;
+      }
+    }
+
+    repaired += char;
+
+    if (!inString) {
+      if (char === "\"") {
+        inString = true;
+      }
+      continue;
+    }
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = false;
+    }
+  }
+
+  return repaired;
 }
 
 function escapeControlCharactersInJsonStrings(content: string): string {
