@@ -66,6 +66,11 @@ export type AgentPrBodyInput = {
   updateReason?: string;
 };
 
+export type PrBodyCompletenessResult = {
+  passed: boolean;
+  errors: string[];
+};
+
 const installCommandCandidates = [
   { file: "pnpm-lock.yaml", command: "pnpm install --frozen-lockfile" },
   { file: "package-lock.json", command: "npm ci" },
@@ -147,6 +152,9 @@ export function createAgentPrBody(input: AgentPrBodyInput): string {
     "",
     formatPrLocalVerificationMarkdown(input.verification, locale),
     "",
+    `## ${copy(locale).prContentCompleteness}`,
+    ...formatPrContentChecklist(input, locale),
+    "",
     `## ${copy(locale).qualityGates}`,
     ...qualityGateLines,
     "",
@@ -164,15 +172,7 @@ export function formatPrLocalVerificationMarkdown(plan: PrLocalVerificationPlan,
       ? plan.commands.qualityGates.map((gate) => `- ${gate.kind}: ${gate.passed ? text.passed : text.failed} (${gate.command})`)
       : [`- ${text.noQualityGateCommands}`];
   const screenshots =
-    plan.screenshots.length > 0
-      ? plan.screenshots.map((screenshot) => {
-          const target = screenshot.url ? `${screenshot.url}${screenshot.viewport ? ` ${screenshot.viewport}` : ""}` : "screenshot";
-          if (isEmbeddableImageUrl(screenshot.artifact)) {
-            return `![${target}](${screenshot.artifact})`;
-          }
-          return `- ${target}: ${screenshot.artifact}`;
-        })
-      : [`- ${text.none}`];
+    plan.screenshots.length > 0 ? plan.screenshots.flatMap((screenshot) => formatScreenshotMarkdown(screenshot)) : [`- ${text.none}`];
 
   return [
     `## ${text.localVerification}`,
@@ -198,14 +198,21 @@ export function formatPrLocalVerificationMarkdown(plan: PrLocalVerificationPlan,
     `- ${text.sandboxImage}: ${plan.sandbox.image ?? text.notRecorded}`,
     `- ${text.commandsRunByAgent}:`,
     ...commandSummary,
-    `- ${text.screenshotArtifacts}:`,
+    "",
+    `### ${text.frontendScreenshotVerification}`,
+    "",
     ...screenshots
   ].join("\n");
 }
 
 export function detectIssueLocale(issue: IssueContext): ConversationLocale {
-  const text = [issue.title, issue.body, ...issue.comments.map((comment) => comment.body)].join("\n");
-  return /[\u3400-\u9fff]/.test(text) ? "zh" : "en";
+  const text = [issue.title, issue.body, ...issue.comments.map((comment) => comment.body)].join("\n").trim();
+  if (/[\u3400-\u9fff]/.test(text)) {
+    return "zh";
+  }
+
+  const latinLetters = text.match(/[A-Za-z]/g)?.length ?? 0;
+  return latinLetters >= 8 ? "en" : "zh";
 }
 
 export function languageInstruction(locale: ConversationLocale): string {
@@ -214,12 +221,137 @@ export function languageInstruction(locale: ConversationLocale): string {
     : "The user is using English. Write all user-facing fields, notes, PR text, and GitHub replies in English; keep code identifiers and commands unchanged.";
 }
 
+export function validateAgentPrBodyCompleteness(input: AgentPrBodyInput & { body: string }): PrBodyCompletenessResult {
+  const locale = input.locale ?? detectIssueLocale(input.task.issue);
+  const text = copy(locale);
+  const errors: string[] = [];
+
+  const requiredSections = [text.summary, text.localVerification, text.prContentCompleteness, text.qualityGates, text.reviewSubagent];
+  for (const section of requiredSections) {
+    if (!input.body.includes(`## ${section}`)) {
+      errors.push(`${text.missingPrSection}: ${section}`);
+    }
+  }
+
+  if (!input.task.qualityGateResults || input.task.qualityGateResults.length === 0) {
+    errors.push(text.missingQualityGates);
+  } else if (input.task.qualityGateResults.some((result) => !result.passed)) {
+    errors.push(text.failedQualityGates);
+  }
+
+  if (!input.task.reviewResult?.approved) {
+    errors.push(text.reviewNotApproved);
+  }
+
+  const screenshotArtifacts = input.verification.screenshots;
+  if (screenshotArtifacts.length > 0) {
+    const missingEmbeddedScreenshots = screenshotArtifacts.filter(
+      (screenshot) => !isEmbeddableImageUrl(screenshot.artifact) || !input.body.includes(`](${screenshot.artifact})`)
+    );
+    if (missingEmbeddedScreenshots.length > 0) {
+      errors.push(text.screenshotNotEmbedded);
+    }
+  }
+
+  return {
+    passed: errors.length === 0,
+    errors
+  };
+}
+
+export function assertAgentPrBodyComplete(input: AgentPrBodyInput & { body: string }): void {
+  const result = validateAgentPrBodyCompleteness(input);
+  if (!result.passed) {
+    throw new Error(`PR content completeness check failed: ${result.errors.join("; ")}`);
+  }
+}
+
+export function createPrReadyIssueComment(input: {
+  task: Task;
+  verification: PrLocalVerificationPlan;
+  prUrl: string;
+  locale?: ConversationLocale;
+}): string {
+  const locale = input.locale ?? detectIssueLocale(input.task.issue);
+  const text = copy(locale);
+  return [
+    text.issueReady(input.prUrl),
+    "",
+    `- ${text.agentVerification}: ${text.passed}`,
+    `- ${text.qualityGates}: ${summarizeQualityGates(input.task.qualityGateResults ?? [], locale)}`,
+    `- ${text.reviewSubagent}: ${input.task.reviewResult?.approved ? text.passed : text.failed}`,
+    "",
+    `### ${text.frontendScreenshotVerification}`,
+    ...formatVisibleScreenshotMarkdown(input.verification, locale)
+  ].join("\n");
+}
+
+export function createPrFeedbackUpdateComment(input: {
+  task: Task;
+  verification: PrLocalVerificationPlan;
+  updateReason: string;
+  locale?: ConversationLocale;
+}): string {
+  const locale = input.locale ?? detectIssueLocale(input.task.issue);
+  const text = copy(locale);
+  return [
+    text.prFeedbackUpdated,
+    "",
+    `> ${input.updateReason.replace(/\n/g, "\n> ")}`,
+    "",
+    `- ${text.qualityGates}: ${summarizeQualityGates(input.task.qualityGateResults ?? [], locale)}`,
+    `- ${text.reviewSubagent}: ${input.task.reviewResult?.approved ? text.passed : text.failed}`,
+    "",
+    `### ${text.frontendScreenshotVerification}`,
+    ...formatVisibleScreenshotMarkdown(input.verification, locale)
+  ].join("\n");
+}
+
 function goalsToMarkdown(task: Task): string {
   if (!task.prd || task.prd.goals.length === 0) {
     return `- ${copy(detectIssueLocale(task.issue)).seePrdArtifact}`;
   }
 
   return task.prd.goals.map((goal) => `- ${goal}`).join("\n");
+}
+
+function formatPrContentChecklist(input: AgentPrBodyInput, locale: ConversationLocale): string[] {
+  const text = copy(locale);
+  const screenshotsEmbedded = input.verification.screenshots.length === 0 || input.verification.screenshots.every((screenshot) => isEmbeddableImageUrl(screenshot.artifact));
+  return [
+    `- ${text.languageMatched}: ${locale === "zh" ? "中文" : "English"}`,
+    `- ${text.selfChecksBeforePr}: ${allRecordedChecksPassed(input.task) ? text.passed : text.failed}`,
+    `- ${text.reviewSubagent}: ${input.task.reviewResult?.approved ? text.passed : text.failed}`,
+    `- ${text.screenshotArtifacts}: ${screenshotsEmbedded ? text.embeddedImages : text.needsEmbeddedImages}`
+  ];
+}
+
+function allRecordedChecksPassed(task: Task): boolean {
+  const results = task.qualityGateResults ?? [];
+  return results.length > 0 && results.every((result) => result.passed);
+}
+
+function formatScreenshotMarkdown(screenshot: PrLocalVerificationPlan["screenshots"][number]): string[] {
+  const target = screenshot.url ? `${screenshot.url}${screenshot.viewport ? ` ${screenshot.viewport}` : ""}` : "screenshot";
+  if (isEmbeddableImageUrl(screenshot.artifact)) {
+    return [`- ${target}`, `![${target}](${screenshot.artifact})`];
+  }
+  return [`- ${target}: ${screenshot.artifact}`];
+}
+
+function formatVisibleScreenshotMarkdown(plan: PrLocalVerificationPlan, locale: ConversationLocale): string[] {
+  const images = plan.screenshots.flatMap((screenshot) => formatScreenshotMarkdown(screenshot)).filter((line) => line.startsWith("![") || line.startsWith("- "));
+  return images.length > 0 ? images : [`- ${copy(locale).none}`];
+}
+
+function summarizeQualityGates(results: QualityGateResult[], locale: ConversationLocale): string {
+  const text = copy(locale);
+  if (results.length === 0) {
+    return text.notRecorded;
+  }
+
+  const passed = results.filter((result) => result.passed).length;
+  return `${passed}/${results.length} ${passed === results.length ? text.passed : text.failed}`;
 }
 
 function dedupeQualityGateResults(results: QualityGateResult[]): PrLocalVerificationPlan["commands"]["qualityGates"] {
@@ -263,25 +395,38 @@ function copy(locale: ConversationLocale) {
         baseCommit: "基线提交",
         closes: "关联",
         commandsRunByAgent: "机器人已运行命令",
+        embeddedImages: "已直接嵌入图片",
         failed: "失败",
+        failedQualityGates: "存在失败的质量门禁",
+        frontendScreenshotVerification: "前端截图验证",
         githubCliOption: "方式 A：GitHub CLI",
         latestFeedback: "本轮用户反馈",
+        languageMatched: "Issue/PR 语言匹配",
         localVerification: "本地验证",
+        missingPrSection: "PR 缺少章节",
+        missingQualityGates: "缺少质量门禁结果",
+        needsEmbeddedImages: "需要直接嵌入图片",
         noAdditionalNotes: "无额外说明。",
         noQualityGateCommands: "没有记录质量门禁命令。",
         none: "无。",
         notRecorded: "未记录",
         passed: "通过",
         plainGitOption: "方式 B：普通 Git",
+        prContentCompleteness: "PR 内容完整性检查",
+        prFeedbackUpdated: "已根据最新 PR 评论更新同一个分支，并重新完成机器人自检。PR 正文已刷新为最新验证结果和直接可见截图。",
         qualityGates: "质量门禁",
+        reviewNotApproved: "Review agent 尚未批准",
         reviewSubagent: "机器人自检 Review",
         risk: "风险",
         sandboxImage: "沙箱镜像",
         sandboxMode: "沙箱模式",
         screenshotArtifacts: "截图",
+        screenshotNotEmbedded: "截图没有以 Markdown 图片直接嵌入",
         seePrdArtifact: "见 PRD 产物。",
+        selfChecksBeforePr: "创建 PR 前自检",
         summary: "摘要",
-        unknown: "未知"
+        unknown: "未知",
+        issueReady: (prUrl: string) => `机器人自检已完成并创建 PR：${prUrl}`
       }
     : {
         agentVerification: "Agent Verification",
@@ -291,24 +436,37 @@ function copy(locale: ConversationLocale) {
         baseCommit: "Base commit",
         closes: "Closes",
         commandsRunByAgent: "Commands run by agent",
+        embeddedImages: "embedded as visible images",
         failed: "failed",
+        failedQualityGates: "One or more quality gates failed",
+        frontendScreenshotVerification: "Frontend Screenshot Verification",
         githubCliOption: "Option A: GitHub CLI",
         latestFeedback: "Latest User Feedback",
+        languageMatched: "Issue/PR language match",
         localVerification: "Local Verification",
+        missingPrSection: "PR body is missing section",
+        missingQualityGates: "Missing quality gate results",
+        needsEmbeddedImages: "needs embedded images",
         noAdditionalNotes: "No additional notes.",
         noQualityGateCommands: "No quality gate commands were recorded.",
         none: "None.",
         notRecorded: "not recorded",
         passed: "passed",
         plainGitOption: "Option B: Plain Git",
+        prContentCompleteness: "PR Content Completeness Check",
+        prFeedbackUpdated: "Updated the same PR branch from the latest PR comment and reran agent verification. The PR body now contains the latest checks and directly visible screenshots.",
         qualityGates: "Quality Gates",
+        reviewNotApproved: "Review agent has not approved the changes",
         reviewSubagent: "Review Subagent",
         risk: "risk",
         sandboxImage: "Sandbox image",
         sandboxMode: "Sandbox mode",
         screenshotArtifacts: "Screenshot artifacts",
+        screenshotNotEmbedded: "Screenshots are not embedded as Markdown images",
         seePrdArtifact: "See PRD artifact.",
+        selfChecksBeforePr: "Self-checks before PR creation",
         summary: "Summary",
-        unknown: "unknown"
+        unknown: "unknown",
+        issueReady: (prUrl: string) => `Agent self-checks completed and created the PR: ${prUrl}`
       };
 }

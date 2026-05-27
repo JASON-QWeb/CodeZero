@@ -1,11 +1,16 @@
 export { IssueWorkflowRunner, type IssueWorkflowResult } from "./issue-workflow-runner.js";
 export {
+  assertAgentPrBodyComplete,
   createAgentPrBody,
+  createPrFeedbackUpdateComment,
+  createPrReadyIssueComment,
   createPrLocalVerificationPlan,
   detectInstallCommand,
   formatPrLocalVerificationMarkdown,
+  validateAgentPrBodyCompleteness,
   type PrLocalVerificationInput,
-  type PrLocalVerificationPlan
+  type PrLocalVerificationPlan,
+  type PrBodyCompletenessResult
 } from "./pr-local-verification.js";
 export { createExecutionAgents, createWorkflowAgent, createWorkflowAgentRunner, selectProviderForComplexity } from "./agent-factory.js";
 export { createArtifactId, writeTaskArtifact } from "./artifacts.js";

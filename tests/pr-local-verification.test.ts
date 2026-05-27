@@ -6,7 +6,8 @@ import {
   createAgentPrBody,
   createPrLocalVerificationPlan,
   detectIssueLocale,
-  detectInstallCommand
+  detectInstallCommand,
+  validateAgentPrBodyCompleteness
 } from "../packages/workflows/src/pr-local-verification";
 import type { QualityGateResult, Task } from "@agent/shared";
 
@@ -87,6 +88,8 @@ describe("PR local verification", () => {
     expect(verification.commands.githubCli).toContain("gh pr checkout agent/issue-7-fix-refund-status-copy");
     expect(verification.commands.plainGit).toContain("git fetch origin agent/issue-7-fix-refund-status-copy");
     expect(body).toContain("## Local Verification");
+    expect(body).toContain("## PR Content Completeness Check");
+    expect(body).toContain("### Frontend Screenshot Verification");
     expect(body).toContain("pnpm install --frozen-lockfile");
     expect(body).toContain("pnpm build");
     expect(body).toContain("Base commit: abc123");
@@ -124,7 +127,34 @@ describe("PR local verification", () => {
 
     expect(detectIssueLocale(chineseTask.issue)).toBe("zh");
     expect(body).toContain("## 摘要");
+    expect(body).toContain("## PR 内容完整性检查");
     expect(body).toContain("## 质量门禁");
     expect(body).toContain("![http://localhost:3000 desktop](https://raw.githubusercontent.com/acme/shop/refs/heads/agent/issue-8-home-card/.agent/screenshots/issue-8/01-desktop.png)");
+    expect(validateAgentPrBodyCompleteness({ task: chineseTask, verification, body })).toEqual({ passed: true, errors: [] });
+  });
+
+  it("defaults unknown or empty issue language to Chinese but keeps English issues in English", () => {
+    expect(detectIssueLocale({ ...task.issue, title: "", body: "", comments: [] })).toBe("zh");
+    expect(detectIssueLocale(task.issue)).toBe("en");
+  });
+
+  it("fails PR content completeness when screenshot artifacts are not embedded images", () => {
+    const verification = createPrLocalVerificationPlan({
+      owner: "acme",
+      repo: "shop",
+      baseBranch: "main",
+      baseSha: "abc123",
+      agentBranch: "agent/issue-7-fix-refund-status-copy",
+      qualityGateResults,
+      screenshotArtifacts: [
+        {
+          path: "/tmp/order-detail-desktop.png",
+          metadata: { url: "http://localhost:3000/orders/7", viewport: "desktop" }
+        }
+      ]
+    });
+    const body = createAgentPrBody({ task, verification });
+
+    expect(validateAgentPrBodyCompleteness({ task, verification, body }).passed).toBe(false);
   });
 });

@@ -44,7 +44,10 @@ import { createQualityGateCommands, runFrontendScreenshotGate, runQualityGates }
 import { createExecutionAgents, createWorkflowAgent, createWorkflowAgentRunner } from "./agent-factory.js";
 import { createArtifactId, writeTaskArtifact } from "./artifacts.js";
 import {
+  assertAgentPrBodyComplete,
   createAgentPrBody,
+  createPrFeedbackUpdateComment,
+  createPrReadyIssueComment,
   createPrLocalVerificationPlan,
   detectInstallCommand,
   detectIssueLocale,
@@ -708,13 +711,21 @@ export class IssueWorkflowRunner {
 
     const github = new GitHubClient({ token: this.config.github.token });
     const locale = detectIssueLocale(task.issue);
+    const body = createAgentPrBody({ task, verification, locale });
+    assertAgentPrBodyComplete({ task, verification, locale, body });
     const prUrl = await github.createDraftPullRequest({
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
       title: `${locale === "zh" ? "机器人" : "Agent"}: ${task.issue.title}`,
-      body: createAgentPrBody({ task, verification, locale }),
+      body,
       head: agentBranch,
       base: repositoryConfig.default_branch
+    });
+    await github.createIssueComment({
+      owner: repositoryConfig.github_owner,
+      repo: repositoryConfig.github_repo,
+      issueNumber: task.issue.number,
+      body: createPrReadyIssueComment({ task, verification, prUrl, locale })
     });
     const memoryProposal = createTaskMemoryProposal({
       task: { ...task, prUrl },
@@ -779,6 +790,7 @@ export class IssueWorkflowRunner {
     const github = new GitHubClient({ token: this.config.github.token });
     const locale = detectIssueLocale(task.issue);
     const body = createAgentPrBody({ task, verification, locale, updateReason: reviewerFeedback });
+    assertAgentPrBodyComplete({ task, verification, locale, updateReason: reviewerFeedback, body });
     await github.updatePullRequest({
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
@@ -790,10 +802,7 @@ export class IssueWorkflowRunner {
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
       issueNumber: pullNumber,
-      body:
-        locale === "zh"
-          ? "已根据最新 PR 评论更新同一个分支，并重新通过机器人自检。PR 正文已刷新为最新验证结果和截图。"
-          : "Updated the same PR branch from the latest PR comment and reran agent verification. The PR body now contains the latest checks and screenshots."
+      body: createPrFeedbackUpdateComment({ task, verification, updateReason: reviewerFeedback, locale })
     });
     await this.event(task.id, "PR_UPDATED", `Draft PR updated after reviewer feedback: ${task.prUrl}`);
   }

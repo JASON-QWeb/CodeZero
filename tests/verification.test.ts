@@ -55,4 +55,18 @@ describe("verification", () => {
     expect(result.gate.output).toContain("Timed out waiting for screenshot URLs");
     expect(result.screenshots).toEqual([]);
   });
+
+  it("fails frontend screenshot gate when the dev command exits before capture", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-verification-"));
+    const result = await runFrontendScreenshotGate({
+      cwd,
+      devCommand: "node -e \"process.exit(2)\"",
+      targets: [{ url: "data:text/html,<h1>ready</h1>", name: "ready" }],
+      artifactDir: path.join(cwd, "screenshots"),
+      timeoutMs: 1_000
+    });
+
+    expect(result.gate.passed).toBe(false);
+    expect(result.gate.output).toContain("Frontend dev command exited before screenshot capture");
+  });
 });

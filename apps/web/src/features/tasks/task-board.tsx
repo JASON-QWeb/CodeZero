@@ -58,6 +58,10 @@ const text = {
     generatedArtifacts: "已生成产物",
     generateGraph: "生成知识图谱",
     generating: "生成中",
+    graphFailed: "失败",
+    graphMissing: "未生成",
+    graphOverview: "图谱总览",
+    graphReady: "已就绪",
     issue: "Issue",
     knowledgeGraph: "Knowledge Graph / 知识图谱",
     knowledgeGraphHint: "由 Understand-Anything 官方分析和 dashboard 驱动",
@@ -70,7 +74,9 @@ const text = {
     noTaskSelected: "未选择任务",
     officialDashboardViewer: "官方 dashboard 视图",
     openDashboard: "打开 Dashboard",
+    nextPage: "下一页",
     policies: "策略",
+    previousPage: "上一页",
     project: "项目",
     queued: "排队",
     regenerate: "重新生成",
@@ -87,6 +93,7 @@ const text = {
     tasks: "任务",
     tools: "工具",
     traceReplay: "Trace 回放",
+    tracePage: (page: number, pageCount: number) => `第 ${page}/${pageCount} 页`,
     trackedIssueWorkflows: (count: number) => `${count} 个已跟踪 Issue workflow`,
     unavailable: "不可用",
     unconfigured: "未配置",
@@ -112,6 +119,10 @@ const text = {
     generatedArtifacts: "Generated artifacts",
     generateGraph: "Generate Graph",
     generating: "Generating",
+    graphFailed: "Failed",
+    graphMissing: "Missing",
+    graphOverview: "Graph Overview",
+    graphReady: "Ready",
     issue: "Issue",
     knowledgeGraph: "Knowledge Graph",
     knowledgeGraphHint: "Powered by Understand-Anything official analysis and dashboard",
@@ -124,7 +135,9 @@ const text = {
     noTaskSelected: "No task selected",
     officialDashboardViewer: "Official dashboard viewer",
     openDashboard: "Open Dashboard",
+    nextPage: "Next",
     policies: "Policies",
+    previousPage: "Previous",
     project: "Project",
     queued: "Queued",
     regenerate: "Regenerate",
@@ -141,6 +154,7 @@ const text = {
     tasks: "Tasks",
     tools: "Tools",
     traceReplay: "Trace Replay",
+    tracePage: (page: number, pageCount: number) => `Page ${page} of ${pageCount}`,
     trackedIssueWorkflows: (count: number) => `${count} tracked issue workflows`,
     unavailable: "Unavailable",
     unconfigured: "Unconfigured",
@@ -279,6 +293,31 @@ export function TaskBoard() {
         <Metric icon={<Sparkles size={18} />} label={t.memoryInbox} value={stats.proposedMemory} />
       </section>
 
+      <section className="graphDeck" aria-label={t.graphOverview}>
+        {selectedTask ? <CodeGraphPanel locale={locale} task={selectedTask} trace={trace} /> : null}
+
+        {selectedRepository ? (
+          <KnowledgeGraphPanel
+            dashboardPending={dashboardMutation.isPending}
+            generateError={graphGenerationMutation.error}
+            generatePending={graphGenerationMutation.isPending}
+            knowledgeGraph={graphQuery.data}
+            locale={locale}
+            loading={graphQuery.isLoading}
+            onGenerate={(full) =>
+              graphGenerationMutation.mutate({
+                repositoryId: selectedRepository.id,
+                full
+              })
+            }
+            onOpen={() => dashboardMutation.mutate(selectedRepository.id)}
+            openError={dashboardMutation.error}
+            repository={selectedRepository}
+            unavailable={!hasLiveRepositories || !selectedRepository.configured || graphQuery.isError}
+          />
+        ) : null}
+      </section>
+
       <section className="repositoryBoard" aria-label={t.repositoryQueues}>
         <div className="sectionHeader">
           <div>
@@ -302,29 +341,6 @@ export function TaskBoard() {
           ))}
         </div>
       </section>
-
-      {selectedTask ? <CodeGraphPanel locale={locale} task={selectedTask} trace={trace} /> : null}
-
-      {selectedRepository ? (
-        <KnowledgeGraphPanel
-          dashboardPending={dashboardMutation.isPending}
-          generateError={graphGenerationMutation.error}
-          generatePending={graphGenerationMutation.isPending}
-          knowledgeGraph={graphQuery.data}
-          locale={locale}
-          loading={graphQuery.isLoading}
-          onGenerate={(full) =>
-            graphGenerationMutation.mutate({
-              repositoryId: selectedRepository.id,
-              full
-            })
-          }
-          onOpen={() => dashboardMutation.mutate(selectedRepository.id)}
-          openError={dashboardMutation.error}
-          repository={selectedRepository}
-          unavailable={!hasLiveRepositories || !selectedRepository.configured || graphQuery.isError}
-        />
-      ) : null}
 
       <section className="workspaceGrid" aria-label={t.agentWorkspace}>
         <section className="taskGrid" aria-label={t.tasks}>
@@ -501,6 +517,7 @@ function CodeGraphPanel({ locale, task, trace }: { locale: Locale; task: Task; t
   );
   const failed = graphSpans.some((span) => span.status === "failed" || span.status === "blocked");
   const status = graphArtifacts.length > 0 ? "ready" : failed ? "failed" : "missing";
+  const statusLabel = status === "ready" ? t.graphReady : status === "failed" ? t.graphFailed : t.graphMissing;
 
   return (
     <section className="knowledgeGraphPanel" aria-label={t.codeGraph}>
@@ -513,7 +530,7 @@ function CodeGraphPanel({ locale, task, trace }: { locale: Locale; task: Task; t
       </div>
       <div className="codeGraphBody">
         <div className="knowledgeGraphInfo">
-          <div className={`graphStatus graphStatus-${status}`}>{status}</div>
+          <div className={`graphStatus graphStatus-${status}`}>{statusLabel}</div>
           <div className="graphStats">
             <span>
               <strong>{graphArtifacts.length}</strong>
@@ -521,11 +538,11 @@ function CodeGraphPanel({ locale, task, trace }: { locale: Locale; task: Task; t
             </span>
             <span>
               <strong>{task.contextPack?.relevantFiles.length ?? "-"}</strong>
-              ContextPack files
+              ContextPack
             </span>
             <span>
               <strong>{graphSpans.length}</strong>
-              Graph spans
+              Trace spans
             </span>
           </div>
         </div>
@@ -574,6 +591,17 @@ function KnowledgeGraphPanel({
   const t = text[locale];
   const busy = generatePending || knowledgeGraph?.status === "generating";
   const ready = Boolean(knowledgeGraph?.graphAvailable);
+  const knowledgeStatus = loading ? t.loading : (knowledgeGraph?.status ?? "missing");
+  const knowledgeStatusLabel =
+    knowledgeStatus === "ready"
+      ? t.graphReady
+      : knowledgeStatus === "failed"
+        ? t.graphFailed
+        : knowledgeStatus === "missing"
+          ? t.graphMissing
+          : knowledgeStatus === "generating"
+            ? t.generating
+            : knowledgeStatus;
 
   return (
     <section className="knowledgeGraphPanel" aria-label={t.knowledgeGraph}>
@@ -591,7 +619,7 @@ function KnowledgeGraphPanel({
       </div>
       <div className="knowledgeGraphBody">
         <div className="knowledgeGraphInfo">
-          <div className={`graphStatus graphStatus-${knowledgeGraph?.status ?? "missing"}`}>{loading ? t.loading : (knowledgeGraph?.status ?? t.unavailable)}</div>
+          <div className={`graphStatus graphStatus-${knowledgeGraph?.status ?? "missing"}`}>{knowledgeStatusLabel}</div>
           {knowledgeGraph?.graph ? (
             <div className="graphStats">
               <span>
@@ -644,6 +672,16 @@ function KnowledgeGraphPanel({
 
 function TaskDetail({ locale, task, trace, traceLoading }: { locale: Locale; task: Task; trace: TaskTrace; traceLoading: boolean }) {
   const t = text[locale];
+  const tracePageSize = 12;
+  const [tracePage, setTracePage] = useState(0);
+  const tracePageCount = Math.max(1, Math.ceil(trace.spans.length / tracePageSize));
+  const safeTracePage = Math.min(tracePage, tracePageCount - 1);
+  const visibleSpans = trace.spans.slice(safeTracePage * tracePageSize, safeTracePage * tracePageSize + tracePageSize);
+
+  useEffect(() => {
+    setTracePage(0);
+  }, [task.id, trace.spans.length]);
+
   return (
     <>
       <div className="detailHeader">
@@ -686,8 +724,24 @@ function TaskDetail({ locale, task, trace, traceLoading }: { locale: Locale; tas
         <Clock3 size={18} aria-hidden />
       </div>
 
+      {trace.spans.length > tracePageSize ? (
+        <div className="paginationControls" aria-label={t.traceReplay}>
+          <button disabled={safeTracePage === 0} onClick={() => setTracePage((page) => Math.max(0, page - 1))} type="button">
+            {t.previousPage}
+          </button>
+          <span>{t.tracePage(safeTracePage + 1, tracePageCount)}</span>
+          <button
+            disabled={safeTracePage >= tracePageCount - 1}
+            onClick={() => setTracePage((page) => Math.min(tracePageCount - 1, page + 1))}
+            type="button"
+          >
+            {t.nextPage}
+          </button>
+        </div>
+      ) : null}
+
       <ol className="traceTimeline">
-        {trace.spans.map((span) => (
+        {visibleSpans.map((span) => (
           <TraceRow key={span.id} label={t.viewFullDetails} span={span} />
         ))}
       </ol>
@@ -725,14 +779,21 @@ function EmptyState({ label }: { label: string }) {
 }
 
 function LongText({ className, label, text: value }: { className?: string; label: string; text: string }) {
-  if (value.length < 220) {
-    return <p className={className}>{value}</p>;
+  const textValue = value.trim();
+
+  if (textValue.length < 220) {
+    return <p className={className}>{textValue}</p>;
   }
+
+  const preview = `${textValue.slice(0, 180)}...`;
 
   return (
     <details className={`longText ${className ?? ""}`}>
-      <summary>{label}</summary>
-      <pre>{value}</pre>
+      <summary>
+        <span>{label}</span>
+        <small>{preview}</small>
+      </summary>
+      <pre>{textValue}</pre>
     </details>
   );
 }
