@@ -195,13 +195,13 @@ export const sandboxFileSchema = z.object({
         max_runtime_minutes: z.number().default(90),
         max_diff_files: z.number().default(30),
         max_diff_lines: z.number().default(1200),
-        max_quality_gate_retries: z.number().default(3)
+        max_quality_gate_retries: z.number().default(6)
       })
       .default({
         max_runtime_minutes: 90,
         max_diff_files: 30,
         max_diff_lines: 1200,
-        max_quality_gate_retries: 3
+        max_quality_gate_retries: 6
       })
   })
 });

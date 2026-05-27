@@ -14,4 +14,4 @@ sandbox:
     max_runtime_minutes: 90
     max_diff_files: 30
     max_diff_lines: 1200
-    max_quality_gate_retries: 3
+    max_quality_gate_retries: 6

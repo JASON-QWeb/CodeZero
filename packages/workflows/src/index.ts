@@ -5,6 +5,8 @@ export {
   createImplementationCheckpoint,
   formatQualityGateRepairFeedback,
   formatReviewRepairFeedback,
+  getSelfCheckHardMaxAttempts,
+  qualityGateFailuresChanged,
   qualityGateFailureLooksEnvironmental,
   resetImplementationAttempt,
   restoreImplementationCheckpoint,
@@ -12,6 +14,8 @@ export {
   selectImplementationPatchActions,
   selectImplementationPatchPaths,
   selectImplementationSnippetPaths,
+  shouldExtendQualityGateSelfCheck,
+  shouldExtendReviewSelfCheck,
   type ImplementationCheckpoint,
   type IssueWorkflowResult
 } from "./issue-workflow-runner.js";

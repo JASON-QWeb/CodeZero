@@ -82,7 +82,7 @@ describe("verification", () => {
       devCommand: `node -e ${JSON.stringify(script)}`,
       targets: [{ url: "http://127.0.0.1:9/", name: "unreachable" }],
       artifactDir: path.join(cwd, "screenshots"),
-      timeoutMs: 1
+      timeoutMs: 100
     });
 
     const pid = Number(await readFile(pidFile, "utf8"));

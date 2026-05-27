@@ -791,7 +791,11 @@ export class IssueWorkflowRunner {
   ): Promise<{ task: Task; passed: boolean; reason: string }> {
     let updated = task;
     let implementationFeedback = initialFeedback;
-    const maxAttempts = Math.max(1, (this.config.sandbox.limits.max_quality_gate_retries ?? 0) + 1);
+    const configuredMaxAttempts = Math.max(1, (this.config.sandbox.limits.max_quality_gate_retries ?? 0) + 1);
+    const hardMaxAttempts = getSelfCheckHardMaxAttempts(configuredMaxAttempts);
+    let maxAttempts = configuredMaxAttempts;
+    let previousQualityGateResults: QualityGateResult[] | undefined;
+    let previousReviewResult: ReviewResult | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       if (updated.status !== "IMPLEMENTING") {
@@ -809,19 +813,27 @@ export class IssueWorkflowRunner {
           return { task: updated, passed: false, reason: "Quality gates failed because the verification environment is unavailable" };
         }
 
-        if (attempt >= maxAttempts) {
+        const shouldExtend = attempt >= maxAttempts && shouldExtendQualityGateSelfCheck(previousQualityGateResults, qualityGateResults, attempt, hardMaxAttempts);
+        if (attempt >= maxAttempts && !shouldExtend) {
           return { task: updated, passed: false, reason: "Quality gates failed after automated repair attempts" };
         }
 
+        if (shouldExtend) {
+          maxAttempts += 1;
+        }
         implementationFeedback = formatQualityGateRepairFeedback(qualityGateResults, attempt, maxAttempts);
-        await this.event(updated.id, "SELF_CHECK_REPAIR_STARTED", `Quality gates failed; starting automated repair attempt ${attempt + 1}/${maxAttempts}`, "warn", {
+        previousQualityGateResults = qualityGateResults;
+        await this.event(updated.id, "SELF_CHECK_REPAIR_STARTED", `${shouldExtend ? "Quality gates still failed but diagnostics changed; extending automated repair" : "Quality gates failed; starting automated repair"} attempt ${attempt + 1}/${maxAttempts}`, "warn", {
           attempt: attempt + 1,
           maxAttempts,
+          configuredMaxAttempts,
+          extended: shouldExtend,
           failedGates: qualityGateResults.filter((result) => !result.passed).map((result) => result.kind)
         });
         continue;
       }
 
+      previousQualityGateResults = undefined;
       const reviewResult = await this.review(updated, sandbox, runner, reviewAgent, initialFeedback);
       updated = await this.updateStatus(updated.id, "SUBAGENT_REVIEWING", { reviewResult });
 
@@ -829,14 +841,21 @@ export class IssueWorkflowRunner {
         return { task: updated, passed: true, reason: "Self-check passed" };
       }
 
-      if (attempt >= maxAttempts) {
+      const shouldExtend = attempt >= maxAttempts && shouldExtendReviewSelfCheck(previousReviewResult, reviewResult, attempt, hardMaxAttempts);
+      if (attempt >= maxAttempts && !shouldExtend) {
         return { task: updated, passed: false, reason: "Review subagent blocked PR creation after automated repair attempts" };
       }
 
+      if (shouldExtend) {
+        maxAttempts += 1;
+      }
       implementationFeedback = formatReviewRepairFeedback(reviewResult, attempt, maxAttempts);
-      await this.event(updated.id, "SELF_CHECK_REPAIR_STARTED", `Review subagent blocked changes; starting automated repair attempt ${attempt + 1}/${maxAttempts}`, "warn", {
+      previousReviewResult = reviewResult;
+      await this.event(updated.id, "SELF_CHECK_REPAIR_STARTED", `${shouldExtend ? "Review findings changed; extending automated repair" : "Review subagent blocked changes; starting automated repair"} attempt ${attempt + 1}/${maxAttempts}`, "warn", {
         attempt: attempt + 1,
         maxAttempts,
+        configuredMaxAttempts,
+        extended: shouldExtend,
         blockingFindings: reviewResult.blockingFindings.length,
         scopeViolations: reviewResult.scopeViolations.length
       });
@@ -1299,6 +1318,54 @@ export function formatReviewRepairFeedback(review: ReviewResult, attempt: number
   ].join("\n");
 }
 
+export function getSelfCheckHardMaxAttempts(configuredMaxAttempts: number): number {
+  return Math.min(10, Math.max(1, configuredMaxAttempts) + 3);
+}
+
+export function shouldExtendQualityGateSelfCheck(
+  previousResults: QualityGateResult[] | undefined,
+  currentResults: QualityGateResult[],
+  attempt: number,
+  hardMaxAttempts: number
+): boolean {
+  return attempt < hardMaxAttempts && qualityGateFailuresChanged(previousResults, currentResults);
+}
+
+export function qualityGateFailuresChanged(previousResults: QualityGateResult[] | undefined, currentResults: QualityGateResult[]): boolean {
+  if (!previousResults) {
+    return false;
+  }
+
+  const previousFailed = previousResults.filter((result) => !result.passed);
+  const currentFailed = currentResults.filter((result) => !result.passed);
+  if (previousFailed.length === 0 || currentFailed.length === 0) {
+    return previousFailed.length !== currentFailed.length;
+  }
+
+  if (previousResults.filter((result) => result.passed).length !== currentResults.filter((result) => result.passed).length) {
+    return true;
+  }
+
+  return qualityGateFailureSignature(previousFailed) !== qualityGateFailureSignature(currentFailed);
+}
+
+export function shouldExtendReviewSelfCheck(
+  previousReview: ReviewResult | undefined,
+  currentReview: ReviewResult,
+  attempt: number,
+  hardMaxAttempts: number
+): boolean {
+  return attempt < hardMaxAttempts && reviewFailuresChanged(previousReview, currentReview);
+}
+
+export function reviewFailuresChanged(previousReview: ReviewResult | undefined, currentReview: ReviewResult): boolean {
+  if (!previousReview) {
+    return false;
+  }
+
+  return reviewFailureSignature(previousReview) !== reviewFailureSignature(currentReview);
+}
+
 export function qualityGateFailureLooksEnvironmental(results: QualityGateResult[]): boolean {
   const failedResults = results.filter((result) => !result.passed);
   const failedOutput = failedResults.map((result) => `${result.command}\n${result.output}`).join("\n").toLowerCase();
@@ -1322,6 +1389,34 @@ export function qualityGateFailureLooksEnvironmental(results: QualityGateResult[
       (result) => result.kind === "setup" && setupEnvironmentMarkers.some((marker) => `${result.command}\n${result.output}`.toLowerCase().includes(marker))
     )
   );
+}
+
+function qualityGateFailureSignature(results: QualityGateResult[]): string {
+  return results
+    .map((result) => [result.kind, result.command, result.exitCode ?? "unknown", diagnosticOutputSignature(result.output)].join("|"))
+    .sort()
+    .join("\n");
+}
+
+function diagnosticOutputSignature(output: string): string {
+  const diagnosticLines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => /error|fail|failed|cannot|undefined|missing|expected|received|exception|panic|fatal|assert/i.test(line));
+
+  const lines = diagnosticLines.length > 0 ? diagnosticLines : output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return lines.slice(-30).join("\n").slice(-4000);
+}
+
+function reviewFailureSignature(review: ReviewResult): string {
+  return [
+    ...review.blockingFindings.map((finding) => `blocking:${finding.title}:${finding.file ?? ""}:${finding.body}`),
+    ...review.scopeViolations.map((violation) => `scope:${violation}`),
+    ...review.missingTests.map((missingTest) => `missing-test:${missingTest}`)
+  ]
+    .sort()
+    .join("\n");
 }
 
 export async function resetImplementationAttempt(repoDir: string): Promise<void> {

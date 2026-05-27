@@ -6,7 +6,7 @@ import type { AppConfig, RepositoryConfig } from "@agent/config";
 import { createTask } from "@agent/orchestrator";
 import type { TaskRepository } from "@agent/persistence";
 import { runCommand } from "@agent/sandbox";
-import type { Artifact, ContextPack, IssueContext, PrdDocument, Task, TaskEvent } from "@agent/shared";
+import type { Artifact, ContextPack, IssueContext, PrdDocument, QualityGateResult, Task, TaskEvent } from "@agent/shared";
 import {
   compactContextPackForImplementation,
   cleanupImplementationCheckpoint,
@@ -17,8 +17,10 @@ import {
   createWorkflowAgentRunner,
   formatQualityGateRepairFeedback,
   formatReviewRepairFeedback,
+  getSelfCheckHardMaxAttempts,
   implementationToToolActions,
   IssueWorkflowRunner,
+  qualityGateFailuresChanged,
   qualityGateFailureLooksEnvironmental,
   resetImplementationAttempt,
   restoreImplementationCheckpoint,
@@ -27,6 +29,7 @@ import {
   selectImplementationPatchPaths,
   selectImplementationSnippetPaths,
   selectProviderForComplexity,
+  shouldExtendQualityGateSelfCheck,
   summarizeToolFailure,
   writeTaskArtifact
 } from "@agent/workflows";
@@ -327,6 +330,34 @@ describe("workflow modules", () => {
         }
       ])
     ).toBe(true);
+  });
+
+  it("extends self-check repair when quality diagnostics keep changing", () => {
+    const firstFailure: QualityGateResult[] = [
+      {
+        kind: "build",
+        command: "go test ./...",
+        passed: false,
+        exitCode: 1,
+        durationMs: 10,
+        output: "undefined: fakeGitHubClient"
+      }
+    ];
+    const nextFailure: QualityGateResult[] = [
+      {
+        kind: "build",
+        command: "go test ./...",
+        passed: false,
+        exitCode: 1,
+        durationMs: 10,
+        output: "*fakeGitHubClient does not implement service.GitHubContentClient (missing method DeleteFile)"
+      }
+    ];
+
+    expect(getSelfCheckHardMaxAttempts(4)).toBe(7);
+    expect(qualityGateFailuresChanged(firstFailure, nextFailure)).toBe(true);
+    expect(shouldExtendQualityGateSelfCheck(firstFailure, nextFailure, 4, 7)).toBe(true);
+    expect(shouldExtendQualityGateSelfCheck(nextFailure, nextFailure, 7, 7)).toBe(false);
   });
 
   it("formats PRD comments for GitHub issue review", () => {
