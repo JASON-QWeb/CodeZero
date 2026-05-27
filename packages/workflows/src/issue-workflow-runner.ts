@@ -1,5 +1,5 @@
 import path from "node:path";
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { runJsonAgent, type AgentDefinition, type AgentRunner } from "@agent/agent-runtime";
 import {
   buildContextPack,
@@ -34,6 +34,7 @@ import type { Artifact, ContextPack, JsonObject, JsonValue, MinimalChangePlan, P
 import { loadPlatformSkills } from "@agent/skills";
 import {
   createBuiltInToolRegistry,
+  extractDiffPaths,
   ToolGateway,
   type JsonToolAction,
   type PolicyDefinition,
@@ -491,9 +492,14 @@ export class IssueWorkflowRunner {
     });
     const implementationContextPack = compactContextPackForImplementation(contextPack);
     let previousApplyError = "";
+    let previousPatchActions: JsonToolAction[] = [];
     const locale = detectIssueLocale(task.issue);
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const repairContext =
+        attempt === 1
+          ? undefined
+          : await createImplementationRepairContext(sandbox.repoDir, previousPatchActions.length > 0 ? previousPatchActions : []);
       const firstAttemptPrompt = reviewerFeedback
         ? [
             "Implement the latest PR reviewer feedback on the existing PR branch. Return only JSON.",
@@ -521,6 +527,9 @@ export class IssueWorkflowRunner {
             : [
                 "Repair the implementation so it applies cleanly. Return only JSON.",
                 `Previous tool/apply error:\n${previousApplyError}`,
+                "The repair context contains exact current file snippets for the files touched by the failed patch.",
+                "Base every hunk on those exact current lines; do not reuse old or imagined file context.",
+                "Prefer smaller per-file patches over one large patch when that makes the hunks more reliable.",
                 "Return corrected repo.apply_patch action(s) only. Do not call repo.read_file, repo.search, or other read-only tools.",
                 "Each unified diff must include diff --git, ---/+++ file headers, and valid @@ hunk headers.",
                 "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.apply_patch\",\"input\":{\"unifiedDiff\":\"...\"}}]}",
@@ -533,7 +542,10 @@ export class IssueWorkflowRunner {
           contextPack: implementationContextPack,
           minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
           reviewerFeedback,
-          fileSnippets: snippets as JsonObject,
+          previousApplyError,
+          previousPatchFiles: repairContext?.patchFiles ?? [],
+          previousPatchPreview: repairContext?.patchPreview ?? "",
+          fileSnippets: (repairContext?.fileSnippets ?? snippets) as JsonObject,
           availableTools: this.getImplementationTools(repositoryConfig) as unknown as JsonObject,
           policies: this.config.policies as unknown as JsonObject,
           repositoryPermissions: repositoryConfig.permissions as unknown as JsonObject
@@ -564,6 +576,7 @@ export class IssueWorkflowRunner {
       }
 
       previousApplyError = summarizeToolFailure(failedToolCall);
+      previousPatchActions = patchActions;
     }
 
     throw new Error(`Implementation diff did not apply after 5 attempts: ${previousApplyError}`);
@@ -969,6 +982,76 @@ export function selectImplementationSnippetPaths(task: Pick<Task, "contextPack" 
 
 export function selectImplementationPatchActions(actions: JsonToolAction[]): JsonToolAction[] {
   return actions.filter((action) => action.toolName === "repo.apply_patch");
+}
+
+export function selectImplementationPatchPaths(actions: JsonToolAction[]): string[] {
+  const paths = actions.flatMap((action) => {
+    const diff = extractPatchDiff(action);
+    return diff ? extractDiffPaths(diff) : [];
+  });
+
+  return paths.filter((value, index) => value.length > 0 && paths.indexOf(value) === index);
+}
+
+async function createImplementationRepairContext(
+  repoDir: string,
+  actions: JsonToolAction[]
+): Promise<{ patchFiles: string[]; patchPreview: string; fileSnippets: Record<string, string> }> {
+  const patchFiles = selectImplementationPatchPaths(actions).slice(0, 8);
+  return {
+    patchFiles,
+    patchPreview: createPatchPreview(actions, 12_000),
+    fileSnippets: await readFreshFileSnippets(repoDir, patchFiles, 8_000, 8)
+  };
+}
+
+async function readFreshFileSnippets(repoDir: string, paths: string[], maxCharsPerFile: number, maxFiles: number): Promise<Record<string, string>> {
+  const snippets: Record<string, string> = {};
+
+  for (const filePath of paths.slice(0, maxFiles)) {
+    const normalized = normalizeRepairPath(filePath);
+    if (!normalized) {
+      continue;
+    }
+
+    const absolutePath = path.resolve(repoDir, normalized);
+    const repoRoot = path.resolve(repoDir);
+    if (!absolutePath.startsWith(`${repoRoot}${path.sep}`)) {
+      continue;
+    }
+
+    const content = await readFile(absolutePath, "utf8").catch(() => "");
+    snippets[normalized] = content.slice(0, maxCharsPerFile);
+  }
+
+  return snippets;
+}
+
+function createPatchPreview(actions: JsonToolAction[], maxChars: number): string {
+  const preview = actions
+    .map(extractPatchDiff)
+    .filter(Boolean)
+    .join("\n\n--- next patch action ---\n\n");
+  return preview.length > maxChars ? `${preview.slice(0, maxChars)}\n... (truncated)` : preview;
+}
+
+function extractPatchDiff(action: JsonToolAction): string {
+  const input = action.input;
+  const unifiedDiff = input.unifiedDiff;
+  if (typeof unifiedDiff === "string") {
+    return unifiedDiff;
+  }
+
+  const patch = input.patch;
+  return typeof patch === "string" ? patch : "";
+}
+
+function normalizeRepairPath(value: string): string {
+  const normalized = value.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!normalized || normalized.startsWith("../") || normalized.includes("/../") || path.isAbsolute(normalized)) {
+    return "";
+  }
+  return normalized;
 }
 
 export function compactContextPackForImplementation(contextPack: ContextPack): JsonObject {
