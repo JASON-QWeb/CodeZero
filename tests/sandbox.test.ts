@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import {
   DockerSandboxManager,
   WorktreeSandboxManager,
   applyUnifiedDiff,
+  cloneRepository,
   commitAll,
   getCurrentCommitSha,
   getGitDiff,
@@ -58,6 +59,33 @@ describe("sandbox command runner", () => {
     expect(result.stdout).toBe("hello");
   });
 
+  it("clears stale clone targets before cloning a repository", async () => {
+    const sourceRepo = await createGitRepo();
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "agent-sandbox-root-"));
+    const manager = new DockerSandboxManager({
+      mode: "docker",
+      rootDir,
+      dockerImage: "agent-sandbox-node:test",
+      networkAllowlist: [],
+      maxRuntimeMinutes: 10
+    });
+    const sandbox = await manager.create({ taskId: "task-retry", issue });
+    await mkdir(sandbox.repoDir, { recursive: true });
+    const stalePath = path.join(sandbox.repoDir, "stale.txt");
+    await writeFile(stalePath, "old clone\n");
+
+    const results = await cloneRepository({
+      sandbox,
+      remoteUrl: sourceRepo,
+      baseBranch: "main",
+      issueBranch: "agent/issue-1"
+    });
+
+    expect(results.every((result) => result.exitCode === 0)).toBe(true);
+    await expect(access(stalePath)).rejects.toThrow();
+    await expect(getCurrentCommitSha(sandbox.repoDir)).resolves.toMatch(/[a-f0-9]{40}/);
+  });
+
   it("supports git diff, changed-files, patch, commit, and ref helpers", async () => {
     const dir = await createGitRepo();
     const initialSha = await getCurrentCommitSha(dir);
@@ -93,7 +121,7 @@ describe("sandbox command runner", () => {
 
 async function createGitRepo(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "agent-git-"));
-  await runCommand({ cwd: dir, command: "git init" });
+  await runCommand({ cwd: dir, command: "git init -b main" });
   await runCommand({ cwd: dir, command: "git config user.email test@example.com && git config user.name Test" });
   await writeFile(path.join(dir, "a.txt"), "a\n");
   await runCommand({ cwd: dir, command: "git add a.txt && git commit -m init" });
