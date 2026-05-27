@@ -156,13 +156,79 @@ export function parseJsonObject(content: string): JsonObject {
   const trimmed = content.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
   const candidate = fenced ?? trimmed;
-  const parsed = JSON.parse(candidate) as unknown;
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(candidate) as unknown;
+  } catch (error) {
+    const repaired = escapeControlCharactersInJsonStrings(candidate);
+    if (repaired === candidate) {
+      throw error;
+    }
+    parsed = JSON.parse(repaired) as unknown;
+  }
 
   if (!isObject(parsed) || Array.isArray(parsed)) {
     throw new Error("Agent response was not a JSON object");
   }
 
   return asJsonValue(parsed) as JsonObject;
+}
+
+function escapeControlCharactersInJsonStrings(content: string): string {
+  let repaired = "";
+  let inString = false;
+  let escaped = false;
+
+  for (const char of content) {
+    if (!inString) {
+      repaired += char;
+      if (char === "\"") {
+        inString = true;
+      }
+      continue;
+    }
+
+    if (escaped) {
+      repaired += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      repaired += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      repaired += char;
+      inString = false;
+      continue;
+    }
+
+    const code = char.charCodeAt(0);
+    repaired += code < 0x20 ? escapeJsonControlCharacter(char, code) : char;
+  }
+
+  return repaired;
+}
+
+function escapeJsonControlCharacter(char: string, code: number): string {
+  switch (char) {
+    case "\b":
+      return "\\b";
+    case "\f":
+      return "\\f";
+    case "\n":
+      return "\\n";
+    case "\r":
+      return "\\r";
+    case "\t":
+      return "\\t";
+    default:
+      return `\\u${code.toString(16).padStart(4, "0")}`;
+  }
 }
 
 export async function runJsonAgent(input: AgentRunInput & { runner: AgentRunner }): Promise<JsonObject> {
