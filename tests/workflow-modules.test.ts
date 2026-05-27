@@ -14,6 +14,7 @@ import {
   implementationToToolActions,
   IssueWorkflowRunner,
   selectImplementationPatchActions,
+  selectImplementationPatchPaths,
   selectImplementationSnippetPaths,
   selectProviderForComplexity,
   summarizeToolFailure,
@@ -71,6 +72,41 @@ describe("workflow modules", () => {
         { toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }
       ])
     ).toEqual([{ toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }]);
+  });
+
+  it("extracts failed patch paths for focused implementation repair", () => {
+    expect(
+      selectImplementationPatchPaths([
+        {
+          toolName: "repo.apply_patch",
+          input: {
+            unifiedDiff: [
+              "diff --git a/src/app.ts b/src/app.ts",
+              "--- a/src/app.ts",
+              "+++ b/src/app.ts",
+              "@@ -1 +1 @@",
+              "-old",
+              "+new",
+              ""
+            ].join("\n")
+          }
+        },
+        {
+          toolName: "repo.apply_patch",
+          input: {
+            patch: [
+              "diff --git a/tests/app.test.ts b/tests/app.test.ts",
+              "--- a/tests/app.test.ts",
+              "+++ b/tests/app.test.ts",
+              "@@ -1 +1 @@",
+              "-old",
+              "+new",
+              ""
+            ].join("\n")
+          }
+        }
+      ])
+    ).toEqual(["src/app.ts", "tests/app.test.ts"]);
   });
 
   it("compacts implementation context and prioritizes plan files", () => {
