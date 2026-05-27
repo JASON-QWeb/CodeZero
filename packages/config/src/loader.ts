@@ -64,17 +64,21 @@ export async function loadAppConfig(rootDir?: string): Promise<AppConfig> {
     tools: tools.tools,
     storage: {
       driver: process.env.STORAGE_DRIVER === "postgres" && databaseUrl ? "postgres" : "file",
-      filePath: process.env.TASK_STORE_FILE ?? path.join(resolvedRootDir, "data", "tasks.json"),
+      filePath: resolveFromRoot(resolvedRootDir, process.env.TASK_STORE_FILE ?? path.join("data", "tasks.json")),
       databaseUrl
     },
     memory: {
-      filePath: process.env.MEMORY_STORE_FILE ?? path.join(resolvedRootDir, "data", "memory.json")
+      filePath: resolveFromRoot(resolvedRootDir, process.env.MEMORY_STORE_FILE ?? path.join("data", "memory.json"))
     },
     github: {
       token: process.env.GITHUB_TOKEN,
       webhookSecret: process.env.GITHUB_WEBHOOK_SECRET
     }
   };
+}
+
+function resolveFromRoot(rootDir: string, value: string): string {
+  return path.isAbsolute(value) ? value : path.join(rootDir, value);
 }
 
 export async function findWorkspaceRoot(startDir: string): Promise<string> {
