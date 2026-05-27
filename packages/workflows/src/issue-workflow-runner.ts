@@ -85,10 +85,16 @@ export class IssueWorkflowRunner {
       let updated = task.prd ? task : await this.updateStatus(task.id, "PRD_DRAFTED", { prd });
       const agents = await createExecutionAgents(this.config, prd.complexity.score);
 
-      if (updated.status !== "PRD_APPROVED" && shouldRequirePrdReview(prd.complexity)) {
+      const requirePrdReview = repositoryConfig.workflow?.require_prd_review ?? true;
+      if (updated.status !== "PRD_APPROVED" && requirePrdReview && shouldRequirePrdReview(prd.complexity)) {
         updated = await this.updateStatus(updated.id, "PRD_REVIEW_REQUIRED");
         await this.event(updated.id, "HUMAN_REVIEW_REQUIRED", "PRD requires human approval before implementation");
         return { taskId: updated.id, status: updated.status };
+      }
+
+      if (updated.status === "PRD_REVIEW_REQUIRED" && !requirePrdReview) {
+        updated = await this.updateStatus(updated.id, "PRD_APPROVED");
+        await this.event(updated.id, "PRD_APPROVED", "PRD auto-approved by repository workflow policy");
       }
 
       const sandbox = await this.prepareSandbox(updated, repositoryConfig);

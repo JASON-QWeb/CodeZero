@@ -31,6 +31,8 @@ repositories:
         max_depth: 4
     queue:
       max_concurrent_issues: 2
+    workflow:
+      require_prd_review: false
     permissions:
       allowed_tools:
         - repo.search
@@ -93,6 +95,8 @@ repositories:
         max_depth: 4
     queue:
       max_concurrent_issues: 1
+    workflow:
+      require_prd_review: false
     permissions:
       allowed_tools:
         - repo.search
