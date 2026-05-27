@@ -1,5 +1,6 @@
+import os from "node:os";
 import path from "node:path";
-import { access, copyFile, mkdir, readFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { runJsonAgent, type AgentDefinition, type AgentRunner } from "@agent/agent-runtime";
 import {
   buildContextPack,
@@ -644,7 +645,9 @@ export class IssueWorkflowRunner {
         ? [
             "Implement the latest PR reviewer feedback on the existing PR branch. Return only JSON.",
             `Latest reviewer feedback:\n${reviewerFeedback}`,
-            "Return one or more repository edit actions. Prefer repo.replace_text or repo.write_file; repo.apply_patch is only a compatibility fallback.",
+            "Return one or more repository edit actions. Prefer repo.replace_text for existing files and repo.write_file for new files.",
+            "Use repo.apply_patch for multi-location existing-file edits when exact snippets are available.",
+            "Do not rewrite a large existing file with repo.write_file to work around a narrow failed edit.",
             "Do not call read-only tools during implementation; use the provided fileSnippets and error feedback.",
             "Preferred targeted edit format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
             "Preferred file creation format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.write_file\",\"input\":{\"path\":\"src/file.ts\",\"content\":\"complete file contents\"}}]}",
@@ -652,118 +655,125 @@ export class IssueWorkflowRunner {
           ].join("\n")
         : [
             "Implement the minimal change plan. Return only JSON.",
-            "Return one or more repository edit actions. Prefer repo.replace_text or repo.write_file; repo.apply_patch is only a compatibility fallback.",
+            "Return one or more repository edit actions. Prefer repo.replace_text for existing files and repo.write_file for new files.",
             "Do not call read-only tools during implementation; use the provided fileSnippets and plan.",
-            "Use repo.replace_text for targeted edits based on exact current snippets; use repo.write_file when creating a file or replacing a whole file is clearer.",
-            "If you use repo.apply_patch, every diff must include diff --git, ---/+++ file headers, and valid @@ hunk headers.",
+            "Use repo.replace_text for targeted edits based on exact current snippets.",
+            "Use repo.write_file only for new files or tiny full-file replacements where every existing export and behavior is intentionally preserved.",
+            "Use repo.apply_patch for multi-location existing-file edits; every diff must include diff --git, ---/+++ file headers, and valid @@ hunk headers.",
             "Use only the provided tool names and do not include unrelated changes."
           ].join("\n");
-      await this.event(task.id, "AGENT_RUN_STARTED", `Implementation agent started attempt ${attempt}/5`, "info", {
-        agentId: agent.id,
-        agentRole: agent.role,
-        phase: "implementation",
-        attempt,
-        maxAttempts: 5
-      });
-      let result: JsonObject;
+      const checkpoint = await createImplementationCheckpoint(sandbox.repoDir);
       try {
-        result = await runJsonAgent({
-          runner,
-          agent,
-          userPrompt:
-            attempt === 1
-              ? [firstAttemptPrompt, languageInstruction(locale)].join("\n")
-              : [
-                  "Repair the implementation so it applies cleanly. Return only JSON.",
-                  `Previous tool/edit error:\n${previousApplyError}`,
-                  "The failed edit attempt was rolled back before this retry; fileSnippets reflect the current clean worktree.",
-                  "The repair context contains exact current file snippets for the files touched by the failed edit.",
-                  "For repo.replace_text, search must exactly match current file text.",
-                  "If exact replacement is brittle, use repo.write_file with complete file contents.",
-                  "Return corrected repository edit action(s) only. Do not call repo.read_file, repo.search, or other read-only tools.",
-                  "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
-                  languageInstruction(locale)
-                ].join("\n"),
-          context: {
-            issue: task.issue as unknown as JsonObject,
-            prd: task.prd as unknown as JsonObject,
-            contextPack: implementationContextPack,
-            minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
-            reviewerFeedback,
-            previousApplyError,
-            previousEditFiles: repairContext?.editFiles ?? [],
-            previousEditPreview: repairContext?.editPreview ?? "",
-            fileSnippets: (repairContext?.fileSnippets ?? snippets) as JsonObject,
-            availableTools: this.getImplementationTools(repositoryConfig) as unknown as JsonObject,
-            policies: this.config.policies as unknown as JsonObject,
-            repositoryPermissions: repositoryConfig.permissions as unknown as JsonObject
-          }
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent failed attempt ${attempt}/5: ${message}`, "error", {
+        await this.event(task.id, "AGENT_RUN_STARTED", `Implementation agent started attempt ${attempt}/5`, "info", {
           agentId: agent.id,
           agentRole: agent.role,
           phase: "implementation",
           attempt,
-          maxAttempts: 5,
-          error: message
+          maxAttempts: 5
         });
-        if (attempt < 5 && agentRunFailureLooksRecoverable(message)) {
-          previousApplyError = agentJsonFailureLooksRecoverable(message)
-            ? `Implementation agent returned invalid JSON. Return valid JSON only. Parser error: ${message}`
-            : `Implementation agent provider call failed transiently. Retry with the same task context. Error: ${message}`;
-          previousEditActions = [];
-          continue;
+        let result: JsonObject;
+        try {
+          result = await runJsonAgent({
+            runner,
+            agent,
+            userPrompt:
+              attempt === 1
+                ? [firstAttemptPrompt, languageInstruction(locale)].join("\n")
+                : [
+                    "Repair the implementation so it applies cleanly. Return only JSON.",
+                    `Previous tool/edit error:\n${previousApplyError}`,
+                    "The failed edit attempt was restored to the checkpoint from before that attempt; fileSnippets reflect the current worktree.",
+                    "The repair context contains exact current file snippets for the files touched by the failed edit.",
+                    "For repo.replace_text, search must exactly match current file text.",
+                    "If exact replacement is brittle, use repo.apply_patch with valid hunks or a smaller repo.replace_text.",
+                    "Use repo.write_file only for new files; do not rewrite large existing files during repair.",
+                    "Return corrected repository edit action(s) only. Do not call repo.read_file, repo.search, or other read-only tools.",
+                    "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
+                    languageInstruction(locale)
+                  ].join("\n"),
+            context: {
+              issue: task.issue as unknown as JsonObject,
+              prd: task.prd as unknown as JsonObject,
+              contextPack: implementationContextPack,
+              minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
+              reviewerFeedback,
+              previousApplyError,
+              previousEditFiles: repairContext?.editFiles ?? [],
+              previousEditPreview: repairContext?.editPreview ?? "",
+              fileSnippets: (repairContext?.fileSnippets ?? snippets) as JsonObject,
+              availableTools: this.getImplementationTools(repositoryConfig) as unknown as JsonObject,
+              policies: this.config.policies as unknown as JsonObject,
+              repositoryPermissions: repositoryConfig.permissions as unknown as JsonObject
+            }
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent failed attempt ${attempt}/5: ${message}`, "error", {
+            agentId: agent.id,
+            agentRole: agent.role,
+            phase: "implementation",
+            attempt,
+            maxAttempts: 5,
+            error: message
+          });
+          if (attempt < 5 && agentRunFailureLooksRecoverable(message)) {
+            previousApplyError = agentJsonFailureLooksRecoverable(message)
+              ? `Implementation agent returned invalid JSON. Return valid JSON only. Parser error: ${message}`
+              : `Implementation agent provider call failed transiently. Retry with the same task context. Error: ${message}`;
+            previousEditActions = [];
+            continue;
+          }
+          throw error;
         }
-        throw error;
-      }
-      await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent returned JSON for attempt ${attempt}/5`, "info", {
-        agentId: agent.id,
-        agentRole: agent.role,
-        phase: "implementation",
-        attempt,
-        maxAttempts: 5
-      });
-      let implementation: ReturnType<typeof implementationSchema.parse>;
-      try {
-        implementation = implementationSchema.parse(result);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        previousApplyError = `Implementation JSON failed schema validation. Return JSON matching the implementation schema. Schema error: ${message}`;
-        await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
-        continue;
-      }
-      const actions = implementationToToolActions(implementation);
-      await this.writeArtifact(task.id, "tool-call", `implementation-attempt-${attempt}.json`, JSON.stringify(implementation, null, 2));
-      const editActions = selectImplementationEditActions(actions);
-      if (editActions.length === 0) {
-        previousApplyError = "Implementation attempt did not include a repository edit action; read-only actions are not a valid implementation.";
-        await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
-        continue;
-      }
-      const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, editActions, attempt);
-      const failedToolCall = toolResults.find((toolResult) => toolResult.status !== "success");
-
-      if (!failedToolCall) {
-        const diff = await getGitDiff(sandbox.repoDir);
-        if (!diff) {
-          previousApplyError = "Implementation tool actions succeeded but produced no diff";
+        await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent returned JSON for attempt ${attempt}/5`, "info", {
+          agentId: agent.id,
+          agentRole: agent.role,
+          phase: "implementation",
+          attempt,
+          maxAttempts: 5
+        });
+        let implementation: ReturnType<typeof implementationSchema.parse>;
+        try {
+          implementation = implementationSchema.parse(result);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          previousApplyError = `Implementation JSON failed schema validation. Return JSON matching the implementation schema. Schema error: ${message}`;
           await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
           continue;
         }
-        await this.writeArtifact(task.id, "diff", "implementation.diff", diff);
-        await this.event(task.id, "FILE_CHANGED", implementation.summary);
-        return;
-      }
+        const actions = implementationToToolActions(implementation);
+        await this.writeArtifact(task.id, "tool-call", `implementation-attempt-${attempt}.json`, JSON.stringify(implementation, null, 2));
+        const editActions = selectImplementationEditActions(actions);
+        if (editActions.length === 0) {
+          previousApplyError = "Implementation attempt did not include a repository edit action; read-only actions are not a valid implementation.";
+          await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
+          continue;
+        }
+        const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, editActions, attempt);
+        const failedToolCall = toolResults.find((toolResult) => toolResult.status !== "success");
 
-      previousApplyError = summarizeToolFailure(failedToolCall);
-      previousEditActions = editActions;
-      await resetImplementationAttempt(sandbox.repoDir);
-      await this.event(task.id, "TOOL_CALL_FINISHED", "Rolled back failed implementation attempt before retry", "warn", {
-        attempt,
-        failedTool: failedToolCall.toolName
-      });
+        if (!failedToolCall) {
+          const diff = await getGitDiff(sandbox.repoDir);
+          if (!diff) {
+            previousApplyError = "Implementation tool actions succeeded but produced no diff";
+            await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
+            continue;
+          }
+          await this.writeArtifact(task.id, "diff", "implementation.diff", diff);
+          await this.event(task.id, "FILE_CHANGED", implementation.summary);
+          return;
+        }
+
+        previousApplyError = summarizeToolFailure(failedToolCall);
+        previousEditActions = editActions;
+        await restoreImplementationCheckpoint(sandbox.repoDir, checkpoint);
+        await this.event(task.id, "TOOL_CALL_FINISHED", "Restored failed implementation attempt to the pre-attempt checkpoint before retry", "warn", {
+          attempt,
+          failedTool: failedToolCall.toolName
+        });
+      } finally {
+        await cleanupImplementationCheckpoint(checkpoint);
+      }
     }
 
     throw new Error(`Implementation edits did not apply after 5 attempts: ${previousApplyError}`);
@@ -1321,6 +1331,92 @@ export async function resetImplementationAttempt(repoDir: string): Promise<void>
   if (failed) {
     throw new Error(`Failed to reset implementation attempt: ${failed.command}\n${failed.stderr || failed.stdout}`);
   }
+}
+
+export type ImplementationCheckpoint = {
+  rootDir: string;
+  patchPath: string;
+  untrackedDir: string;
+  untrackedFiles: string[];
+};
+
+export async function createImplementationCheckpoint(repoDir: string): Promise<ImplementationCheckpoint> {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "agent-implementation-checkpoint-"));
+  const patchPath = path.join(rootDir, "tracked.patch");
+  const untrackedDir = path.join(rootDir, "untracked");
+  await mkdir(untrackedDir, { recursive: true });
+
+  const diff = await runCommand({
+    cwd: repoDir,
+    command: `git diff --binary HEAD -- > ${shellQuote(patchPath)}`,
+    timeoutMs: 60_000
+  });
+  if (diff.exitCode !== 0) {
+    await rm(rootDir, { recursive: true, force: true });
+    throw new Error(`Failed to create implementation checkpoint diff: ${diff.stderr || diff.stdout}`);
+  }
+
+  const untracked = await runCommand({
+    cwd: repoDir,
+    command: "git ls-files --others --exclude-standard -z",
+    timeoutMs: 60_000
+  });
+  if (untracked.exitCode !== 0) {
+    await rm(rootDir, { recursive: true, force: true });
+    throw new Error(`Failed to list untracked files for implementation checkpoint: ${untracked.stderr || untracked.stdout}`);
+  }
+
+  const untrackedFiles = untracked.stdout.split("\0").map(normalizeRepairPath).filter(Boolean);
+  const repoRoot = path.resolve(repoDir);
+  for (const relativePath of untrackedFiles) {
+    const sourcePath = path.resolve(repoDir, relativePath);
+    if (!sourcePath.startsWith(`${repoRoot}${path.sep}`)) {
+      continue;
+    }
+
+    const destinationPath = path.join(untrackedDir, relativePath);
+    await mkdir(path.dirname(destinationPath), { recursive: true });
+    await copyFile(sourcePath, destinationPath);
+  }
+
+  return { rootDir, patchPath, untrackedDir, untrackedFiles };
+}
+
+export async function restoreImplementationCheckpoint(repoDir: string, checkpoint: ImplementationCheckpoint): Promise<void> {
+  await resetImplementationAttempt(repoDir);
+
+  const patchStat = await stat(checkpoint.patchPath).catch(() => undefined);
+  if (patchStat && patchStat.size > 0) {
+    const apply = await runCommand({
+      cwd: repoDir,
+      command: `git apply --binary --whitespace=nowarn ${shellQuote(checkpoint.patchPath)}`,
+      timeoutMs: 60_000
+    });
+    if (apply.exitCode !== 0) {
+      throw new Error(`Failed to restore implementation checkpoint patch: ${apply.stderr || apply.stdout}`);
+    }
+  }
+
+  for (const relativePath of checkpoint.untrackedFiles) {
+    const normalized = normalizeRepairPath(relativePath);
+    if (!normalized) {
+      continue;
+    }
+
+    const sourcePath = path.join(checkpoint.untrackedDir, normalized);
+    const destinationPath = path.resolve(repoDir, normalized);
+    const repoRoot = path.resolve(repoDir);
+    if (!destinationPath.startsWith(`${repoRoot}${path.sep}`)) {
+      continue;
+    }
+
+    await mkdir(path.dirname(destinationPath), { recursive: true });
+    await copyFile(sourcePath, destinationPath);
+  }
+}
+
+export async function cleanupImplementationCheckpoint(checkpoint: ImplementationCheckpoint): Promise<void> {
+  await rm(checkpoint.rootDir, { recursive: true, force: true });
 }
 
 function truncateForFeedback(output: string): string {

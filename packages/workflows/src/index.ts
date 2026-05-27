@@ -1,14 +1,18 @@
 export {
   IssueWorkflowRunner,
+  cleanupImplementationCheckpoint,
   compactContextPackForImplementation,
+  createImplementationCheckpoint,
   formatQualityGateRepairFeedback,
   formatReviewRepairFeedback,
   qualityGateFailureLooksEnvironmental,
   resetImplementationAttempt,
+  restoreImplementationCheckpoint,
   selectImplementationEditActions,
   selectImplementationPatchActions,
   selectImplementationPatchPaths,
   selectImplementationSnippetPaths,
+  type ImplementationCheckpoint,
   type IssueWorkflowResult
 } from "./issue-workflow-runner.js";
 export {

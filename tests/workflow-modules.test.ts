@@ -9,7 +9,9 @@ import { runCommand } from "@agent/sandbox";
 import type { Artifact, ContextPack, IssueContext, PrdDocument, Task, TaskEvent } from "@agent/shared";
 import {
   compactContextPackForImplementation,
+  cleanupImplementationCheckpoint,
   createArtifactId,
+  createImplementationCheckpoint,
   createPrdIssueComment,
   createWorkflowAgent,
   createWorkflowAgentRunner,
@@ -19,6 +21,7 @@ import {
   IssueWorkflowRunner,
   qualityGateFailureLooksEnvironmental,
   resetImplementationAttempt,
+  restoreImplementationCheckpoint,
   selectImplementationEditActions,
   selectImplementationPatchActions,
   selectImplementationPatchPaths,
@@ -212,6 +215,36 @@ describe("workflow modules", () => {
     const status = await runCommand({ cwd: repoDir, command: "git status --short" });
     await expect(readFile(path.join(repoDir, "app.ts"), "utf8")).resolves.toBe("old\n");
     expect(status.stdout.trim()).toBe("");
+  });
+
+  it("restores a failed retry to the checkpoint without losing previous edits", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-workflow-checkpoint-"));
+    await runCommand({ cwd: repoDir, command: "git init" });
+    await runCommand({ cwd: repoDir, command: "git config user.email test@example.com && git config user.name Test" });
+    await writeFile(path.join(repoDir, "app.ts"), "old\n");
+    await runCommand({ cwd: repoDir, command: "git add app.ts && git commit -m init" });
+
+    await writeFile(path.join(repoDir, "app.ts"), "implemented\n");
+    await writeFile(path.join(repoDir, "new-file.ts"), "created\n");
+
+    const checkpoint = await createImplementationCheckpoint(repoDir);
+    try {
+      await writeFile(path.join(repoDir, "app.ts"), "partial broken\n");
+      await writeFile(path.join(repoDir, "new-file.ts"), "broken\n");
+      await writeFile(path.join(repoDir, "scratch.ts"), "bad\n");
+
+      await restoreImplementationCheckpoint(repoDir, checkpoint);
+    } finally {
+      await cleanupImplementationCheckpoint(checkpoint);
+    }
+
+    const status = await runCommand({ cwd: repoDir, command: "git status --short" });
+    await expect(readFile(path.join(repoDir, "app.ts"), "utf8")).resolves.toBe("implemented\n");
+    await expect(readFile(path.join(repoDir, "new-file.ts"), "utf8")).resolves.toBe("created\n");
+    await expect(readFile(path.join(repoDir, "scratch.ts"), "utf8")).rejects.toThrow();
+    expect(status.stdout).toContain(" M app.ts");
+    expect(status.stdout).toContain("?? new-file.ts");
+    expect(status.stdout).not.toContain("scratch.ts");
   });
 
   it("formats self-check repair feedback for the implementation agent", () => {
