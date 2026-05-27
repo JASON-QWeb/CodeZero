@@ -137,4 +137,28 @@ describe("agent runtime", () => {
 
     await expect(provider.generate({ messages: [] })).rejects.toThrow("Provider test-provider timed out after 123000ms while calling model test-model");
   });
+
+  it("retries transient provider network failures once", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "{\"summary\":\"retried\"}" } }]
+        })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenAICompatibleProvider({
+      id: "test-provider",
+      baseUrl: "https://models.example.test",
+      apiKey: "secret",
+      model: "test-model",
+      supportsTools: true,
+      supportsStructuredOutput: true
+    });
+
+    await expect(provider.generate({ messages: [] })).resolves.toMatchObject({ content: "{\"summary\":\"retried\"}" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

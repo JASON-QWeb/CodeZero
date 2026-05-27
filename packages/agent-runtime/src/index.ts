@@ -75,45 +75,95 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const controller = new AbortController();
     const timeoutMs = this.config.timeoutMs ?? 120_000;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const maxAttempts = 2;
+    const body = JSON.stringify({
+      model: this.config.model,
+      messages: request.messages,
+      temperature: this.config.temperature,
+      max_tokens: this.config.maxTokens,
+      response_format: request.responseFormat,
+      metadata: request.metadata
+    });
 
     try {
-      const response = await fetch(`${this.config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          authorization: `Bearer ${this.config.apiKey}`,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          model: this.config.model,
-          messages: request.messages,
-          temperature: this.config.temperature,
-          max_tokens: this.config.maxTokens,
-          response_format: request.responseFormat,
-          metadata: request.metadata
-        })
-      });
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const response = await fetch(`${this.config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+              authorization: `Bearer ${this.config.apiKey}`,
+              "content-type": "application/json"
+            },
+            body
+          });
 
-      if (!response.ok) {
-        const body = await response.text();
-        throw new Error(`Provider ${this.id} failed with ${response.status}: ${body}`);
+          if (!response.ok) {
+            const responseBody = await response.text();
+            throw new Error(`Provider ${this.id} failed with ${response.status}: ${responseBody}`);
+          }
+
+          const rawUnknown = (await response.json()) as unknown;
+          const raw = asJsonValue(rawUnknown);
+          const chatResponse = rawUnknown as OpenAiChatResponse;
+          const content = chatResponse.choices?.[0]?.message?.content ?? "";
+
+          return { content, raw };
+        } catch (error) {
+          if (isObject(error) && error.name === "AbortError") {
+            throw new Error(`Provider ${this.id} timed out after ${timeoutMs}ms while calling model ${this.config.model}`);
+          }
+
+          if (attempt < maxAttempts && isTransientFetchError(error)) {
+            await yieldToEventLoop();
+            continue;
+          }
+
+          if (isTransientFetchError(error)) {
+            throw new Error(`Provider ${this.id} network request failed after ${maxAttempts} attempts while calling model ${this.config.model}: ${errorMessage(error)}`);
+          }
+
+          throw error;
+        }
       }
 
-      const rawUnknown = (await response.json()) as unknown;
-      const raw = asJsonValue(rawUnknown);
-      const chatResponse = rawUnknown as OpenAiChatResponse;
-      const content = chatResponse.choices?.[0]?.message?.content ?? "";
-
-      return { content, raw };
-    } catch (error) {
-      if (isObject(error) && error.name === "AbortError") {
-        throw new Error(`Provider ${this.id} timed out after ${timeoutMs}ms while calling model ${this.config.model}`);
-      }
-      throw error;
+      throw new Error(`Provider ${this.id} did not return a response`);
     } finally {
       clearTimeout(timeout);
     }
   }
+}
+
+function isTransientFetchError(error: unknown): boolean {
+  const message = errorMessage(error).toLowerCase();
+  const code = errorCode(error);
+  return message.includes("fetch failed") || message.includes("network") || code === "ECONNRESET" || code === "ETIMEDOUT" || code === "UND_ERR_HEADERS_TIMEOUT";
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = isObject(error.cause) && typeof error.cause.message === "string" ? `: ${error.cause.message}` : "";
+    return `${error.message}${cause}`;
+  }
+  return String(error);
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (isObject(error) && typeof error.code === "string") {
+    return error.code;
+  }
+
+  if (error instanceof Error && isObject(error.cause) && typeof error.cause.code === "string") {
+    return error.cause.code;
+  }
+
+  return undefined;
+}
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 export type AgentDefinition = {
