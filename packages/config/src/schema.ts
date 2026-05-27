@@ -156,6 +156,7 @@ export const repositorySchema = z.object({
   permissions: repositoryPermissionsSchema,
   quality_gates: z
     .object({
+      setup: z.string().optional(),
       build: z.string().optional(),
       lint: z.string().optional(),
       typecheck: z.string().optional(),

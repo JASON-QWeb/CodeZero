@@ -12,8 +12,11 @@ import {
   createPrdIssueComment,
   createWorkflowAgent,
   createWorkflowAgentRunner,
+  formatQualityGateRepairFeedback,
+  formatReviewRepairFeedback,
   implementationToToolActions,
   IssueWorkflowRunner,
+  qualityGateFailureLooksEnvironmental,
   selectImplementationEditActions,
   selectImplementationPatchActions,
   selectImplementationPatchPaths,
@@ -133,6 +136,75 @@ describe("workflow modules", () => {
         { toolName: "repo.write_file", input: { path: "tests/app.test.ts", content: "test('ok', () => {});\n" } }
       ])
     ).toEqual(["src/app.ts", "tests/app.test.ts"]);
+  });
+
+  it("formats self-check repair feedback for the implementation agent", () => {
+    const feedback = formatQualityGateRepairFeedback(
+      [
+        {
+          kind: "unit_test",
+          command: "pnpm test",
+          passed: false,
+          exitCode: 1,
+          durationMs: 10,
+          output: "Expected async sync status to be success"
+        }
+      ],
+      1,
+      4
+    );
+
+    expect(feedback).toContain("Automated self-check failed");
+    expect(feedback).toContain("unit_test");
+    expect(feedback).toContain("Expected async sync status");
+  });
+
+  it("formats review repair feedback for the implementation agent", () => {
+    const feedback = formatReviewRepairFeedback(
+      {
+        approved: false,
+        blockingFindings: [{ title: "Missing retry", body: "The failed state has no retry path.", blocking: true, file: "src/sync.ts" }],
+        nonBlockingFindings: [],
+        missingTests: ["Add failed sync coverage"],
+        scopeViolations: [],
+        riskLevel: "medium",
+        prDescriptionNotes: []
+      },
+      2,
+      4
+    );
+
+    expect(feedback).toContain("Review subagent blocked");
+    expect(feedback).toContain("Missing retry");
+    expect(feedback).toContain("Add failed sync coverage");
+  });
+
+  it("distinguishes missing Docker from code-level quality gate failures", () => {
+    expect(
+      qualityGateFailureLooksEnvironmental([
+        {
+          kind: "setup",
+          command: "docker compose up -d",
+          passed: false,
+          exitCode: 1,
+          durationMs: 10,
+          output: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"
+        }
+      ])
+    ).toBe(true);
+
+    expect(
+      qualityGateFailureLooksEnvironmental([
+        {
+          kind: "unit_test",
+          command: "pnpm test",
+          passed: false,
+          exitCode: 1,
+          durationMs: 10,
+          output: "AssertionError: expected false to be true"
+        }
+      ])
+    ).toBe(false);
   });
 
   it("formats PRD comments for GitHub issue review", () => {

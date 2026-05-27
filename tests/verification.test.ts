@@ -8,11 +8,13 @@ describe("verification", () => {
   it("creates quality gate commands from configured gates only", () => {
     expect(
       createQualityGateCommands({
+        setup: "npm install",
         build: "pnpm build",
         typecheck: "pnpm typecheck",
         unitTest: "pnpm test"
       })
     ).toEqual([
+      { kind: "setup", command: "npm install", required: true },
       { kind: "build", command: "pnpm build", required: true },
       { kind: "typecheck", command: "pnpm typecheck", required: true },
       { kind: "unit_test", command: "pnpm test", required: true }

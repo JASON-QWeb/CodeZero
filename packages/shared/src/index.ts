@@ -44,7 +44,7 @@ export type AgentRole = (typeof agentRoles)[number];
 
 export type TaskType = "frontend" | "backend" | "fullstack" | "docs" | "unknown";
 export type RiskLevel = "low" | "medium" | "high";
-export type QualityGateKind = "build" | "lint" | "typecheck" | "unit_test" | "frontend_screenshot";
+export type QualityGateKind = "setup" | "build" | "lint" | "typecheck" | "unit_test" | "frontend_screenshot";
 
 export type IssueContext = {
   provider: "github";
@@ -131,6 +131,7 @@ export type TaskEventType =
   | "FILE_CHANGED"
   | "QUALITY_GATE_STARTED"
   | "QUALITY_GATE_FINISHED"
+  | "SELF_CHECK_REPAIR_STARTED"
   | "SCREENSHOT_CAPTURED"
   | "SUBAGENT_REVIEW_FINISHED"
   | "PR_VERIFICATION_CREATED"

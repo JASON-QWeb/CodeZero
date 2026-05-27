@@ -1,6 +1,9 @@
 export {
   IssueWorkflowRunner,
   compactContextPackForImplementation,
+  formatQualityGateRepairFeedback,
+  formatReviewRepairFeedback,
+  qualityGateFailureLooksEnvironmental,
   selectImplementationEditActions,
   selectImplementationPatchActions,
   selectImplementationPatchPaths,

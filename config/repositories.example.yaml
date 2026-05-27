@@ -60,6 +60,7 @@ repositories:
       blocked_permissions:
         - dangerous
     quality_gates:
+      setup: "npm install"
       build: "npm run build"
       lint: "npm run lint"
       typecheck: "npm run typecheck"

@@ -121,11 +121,12 @@ repositories:
       blocked_permissions:
         - dangerous
     quality_gates:
+      setup: "export REDIS_PORT=6380 REDIS_ADDR=localhost:6380; ./scripts/local.sh db up && ./scripts/local.sh migrate"
       build: "cd frontend && npm ci && npm run build && cd ../backend && go test ./..."
       typecheck: "cd frontend && npx tsc -b"
       unit_test: "cd frontend && npm run test:node && cd ../backend && go test ./..."
     frontend:
-      dev_command: "cd frontend && npm run dev -- --host 127.0.0.1 --port 5173"
+      dev_command: "export REDIS_PORT=6380 REDIS_ADDR=localhost:6380 SEED_LOCAL=0; ./scripts/local.sh dev"
       screenshot_urls:
         - "http://127.0.0.1:5173/"
     pr:

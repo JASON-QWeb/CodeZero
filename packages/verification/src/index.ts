@@ -11,6 +11,7 @@ export type QualityGateCommand = {
 };
 
 export type QualityGateConfig = {
+  setup?: string;
   build?: string;
   lint?: string;
   typecheck?: string;
@@ -20,6 +21,7 @@ export type QualityGateConfig = {
 
 export function createQualityGateCommands(config: QualityGateConfig): QualityGateCommand[] {
   return [
+    config.setup ? { kind: "setup", command: config.setup, required: true } : undefined,
     config.build ? { kind: "build", command: config.build, required: true } : undefined,
     config.lint ? { kind: "lint", command: config.lint, required: true } : undefined,
     config.typecheck ? { kind: "typecheck", command: config.typecheck, required: true } : undefined,

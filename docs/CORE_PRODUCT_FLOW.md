@@ -23,6 +23,7 @@ CodeZero is a GitHub Issue/PR automation product. A user should be able to menti
 8. The implementation agent creates an internal Execution Plan. This is not a second PRD; it is the implementation checklist for files, tests, commands, and risk notes.
 9. The implementation agent edits the sandbox working tree through audited repository edit tools. Direct file edits are preferred; unified patches are only a compatibility fallback.
 10. CodeZero runs self-checks before creating or updating a PR:
+    - Repository setup gate, when configured, to start local dependencies such as databases, caches, migrations, or seeded services.
     - Review agent.
     - Unit tests.
     - Typecheck.
@@ -113,6 +114,13 @@ The implementation agent should edit sandbox files directly through audited tool
 Tool Gateway still matters. It provides path isolation, policy checks, event logging, and reproducibility. The product behavior, however, should feel like an agent directly modifying the sandbox, not like a model handing CodeZero a fragile patch to paste.
 
 Failed self-checks should feed back into the implementation loop. A failed patch or edit should not be treated as user action required unless the same blocking condition repeats and the task cannot progress safely.
+
+Quality gates are part of the implementation loop, not the end of the conversation. If tests, lint, typecheck, build, screenshots, or review-agent checks fail because of the agent's code, CodeZero should provide the failure output back to the implementation agent and retry up to the repository sandbox retry budget. If the failure is clearly environmental, such as Docker not being available for a configured setup gate, CodeZero should block with an explicit environment reason instead of making unrelated code changes.
+
+Repositories that need local infrastructure should define both:
+
+- A repository `.agent` skill explaining the local environment and verification commands.
+- A `quality_gates.setup` command that prepares the sandbox before tests and screenshots.
 
 ## PR Contract
 

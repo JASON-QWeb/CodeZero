@@ -119,24 +119,12 @@ export class IssueWorkflowRunner {
       const plan = await this.createMinimalChangePlan(updated, runner, agents.implementation);
       updated = await this.updateStatus(updated.id, "IMPLEMENTING", { minimalChangePlan: plan });
 
-      await this.applyImplementation(updated, sandbox, repositoryConfig, runner, agents.implementation);
-      await this.syncCodeGraphAfterImplementation(updated, sandbox, repositoryConfig);
+      const selfCheckResult = await this.runImplementationSelfCheckLoop(updated, sandbox, repositoryConfig, runner, agents.implementation, agents.review);
+      updated = selfCheckResult.task;
 
-      const qualityGateResults = await this.runQualityGates(updated, sandbox, repositoryConfig);
-      updated = await this.updateStatus(updated.id, "QUALITY_GATES_RUNNING", { qualityGateResults });
-
-      if (!allQualityGatesPassed(qualityGateResults)) {
+      if (!selfCheckResult.passed) {
         updated = await this.updateStatus(updated.id, "BLOCKED");
-        await this.event(updated.id, "TASK_BLOCKED", "Quality gates failed", "warn");
-        return { taskId: updated.id, status: updated.status };
-      }
-
-      const reviewResult = await this.review(updated, sandbox, runner, agents.review);
-      updated = await this.updateStatus(updated.id, "SUBAGENT_REVIEWING", { reviewResult });
-
-      if (!reviewAllowsPr(reviewResult)) {
-        updated = await this.updateStatus(updated.id, "BLOCKED");
-        await this.event(updated.id, "TASK_BLOCKED", "Review subagent blocked PR creation", "warn");
+        await this.event(updated.id, "TASK_BLOCKED", selfCheckResult.reason, "warn");
         return { taskId: updated.id, status: updated.status };
       }
 
@@ -167,24 +155,12 @@ export class IssueWorkflowRunner {
     let updated = await this.updateStatus(task.id, "IMPLEMENTING", { sandbox });
     const feedback = this.latestReviewerFeedback(updated);
 
-    await this.applyImplementation(updated, sandbox, repositoryConfig, runner, agents.implementation, feedback);
-    await this.syncCodeGraphAfterImplementation(updated, sandbox, repositoryConfig);
+    const selfCheckResult = await this.runImplementationSelfCheckLoop(updated, sandbox, repositoryConfig, runner, agents.implementation, agents.review, feedback);
+    updated = selfCheckResult.task;
 
-    const qualityGateResults = await this.runQualityGates(updated, sandbox, repositoryConfig);
-    updated = await this.updateStatus(updated.id, "QUALITY_GATES_RUNNING", { qualityGateResults });
-
-    if (!allQualityGatesPassed(qualityGateResults)) {
+    if (!selfCheckResult.passed) {
       updated = await this.updateStatus(updated.id, "BLOCKED");
-      await this.event(updated.id, "TASK_BLOCKED", "PR feedback iteration quality gates failed", "warn");
-      return { taskId: updated.id, status: updated.status, prUrl: updated.prUrl };
-    }
-
-    const reviewResult = await this.review(updated, sandbox, runner, agents.review, feedback);
-    updated = await this.updateStatus(updated.id, "SUBAGENT_REVIEWING", { reviewResult });
-
-    if (!reviewAllowsPr(reviewResult)) {
-      updated = await this.updateStatus(updated.id, "BLOCKED");
-      await this.event(updated.id, "TASK_BLOCKED", "Review subagent blocked PR update", "warn");
+      await this.event(updated.id, "TASK_BLOCKED", selfCheckResult.reason, "warn");
       return { taskId: updated.id, status: updated.status, prUrl: updated.prUrl };
     }
 
@@ -744,6 +720,71 @@ export class IssueWorkflowRunner {
     throw new Error(`Implementation edits did not apply after 5 attempts: ${previousApplyError}`);
   }
 
+  private async runImplementationSelfCheckLoop(
+    task: Task,
+    sandbox: Sandbox,
+    repositoryConfig: RepositoryConfig,
+    runner: AgentRunner,
+    implementationAgent: AgentDefinition,
+    reviewAgent: AgentDefinition,
+    initialFeedback = ""
+  ): Promise<{ task: Task; passed: boolean; reason: string }> {
+    let updated = task;
+    let implementationFeedback = initialFeedback;
+    const maxAttempts = Math.max(1, (this.config.sandbox.limits.max_quality_gate_retries ?? 0) + 1);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      if (updated.status !== "IMPLEMENTING") {
+        updated = await this.updateStatus(updated.id, "IMPLEMENTING");
+      }
+
+      await this.applyImplementation(updated, sandbox, repositoryConfig, runner, implementationAgent, implementationFeedback);
+      await this.syncCodeGraphAfterImplementation(updated, sandbox, repositoryConfig);
+
+      const qualityGateResults = await this.runQualityGates(updated, sandbox, repositoryConfig);
+      updated = await this.updateStatus(updated.id, "QUALITY_GATES_RUNNING", { qualityGateResults });
+
+      if (!allQualityGatesPassed(qualityGateResults)) {
+        if (qualityGateFailureLooksEnvironmental(qualityGateResults)) {
+          return { task: updated, passed: false, reason: "Quality gates failed because the verification environment is unavailable" };
+        }
+
+        if (attempt >= maxAttempts) {
+          return { task: updated, passed: false, reason: "Quality gates failed after automated repair attempts" };
+        }
+
+        implementationFeedback = formatQualityGateRepairFeedback(qualityGateResults, attempt, maxAttempts);
+        await this.event(updated.id, "SELF_CHECK_REPAIR_STARTED", `Quality gates failed; starting automated repair attempt ${attempt + 1}/${maxAttempts}`, "warn", {
+          attempt: attempt + 1,
+          maxAttempts,
+          failedGates: qualityGateResults.filter((result) => !result.passed).map((result) => result.kind)
+        });
+        continue;
+      }
+
+      const reviewResult = await this.review(updated, sandbox, runner, reviewAgent, implementationFeedback);
+      updated = await this.updateStatus(updated.id, "SUBAGENT_REVIEWING", { reviewResult });
+
+      if (reviewAllowsPr(reviewResult)) {
+        return { task: updated, passed: true, reason: "Self-check passed" };
+      }
+
+      if (attempt >= maxAttempts) {
+        return { task: updated, passed: false, reason: "Review subagent blocked PR creation after automated repair attempts" };
+      }
+
+      implementationFeedback = formatReviewRepairFeedback(reviewResult, attempt, maxAttempts);
+      await this.event(updated.id, "SELF_CHECK_REPAIR_STARTED", `Review subagent blocked changes; starting automated repair attempt ${attempt + 1}/${maxAttempts}`, "warn", {
+        attempt: attempt + 1,
+        maxAttempts,
+        blockingFindings: reviewResult.blockingFindings.length,
+        scopeViolations: reviewResult.scopeViolations.length
+      });
+    }
+
+    return { task: updated, passed: false, reason: "Self-check did not complete" };
+  }
+
   private getImplementationTools(repositoryConfig: RepositoryConfig): ToolDefinition[] {
     const implementationToolNames = new Set(["repo.replace_text", "repo.write_file", "repo.apply_patch"]);
     return this.getAvailableTools(repositoryConfig).filter((tool) => implementationToolNames.has(tool.name));
@@ -803,6 +844,7 @@ export class IssueWorkflowRunner {
 
   private async runQualityGates(task: Task, sandbox: Sandbox, repositoryConfig: RepositoryConfig): Promise<QualityGateResult[]> {
     const gates = createQualityGateCommands({
+      setup: repositoryConfig.quality_gates.setup,
       build: repositoryConfig.quality_gates.build,
       lint: repositoryConfig.quality_gates.lint,
       typecheck: repositoryConfig.quality_gates.typecheck,
@@ -1164,6 +1206,58 @@ export function selectImplementationPatchPaths(actions: JsonToolAction[]): strin
   });
 
   return paths.filter((value, index) => value.length > 0 && paths.indexOf(value) === index);
+}
+
+export function formatQualityGateRepairFeedback(results: QualityGateResult[], attempt: number, maxAttempts: number): string {
+  const failed = results.filter((result) => !result.passed);
+  return [
+    `Automated self-check failed after implementation attempt ${attempt}/${maxAttempts}.`,
+    "Repair the repository changes so all required quality gates pass. Do not remove meaningful tests or weaken product behavior.",
+    "Failed quality gates:",
+    ...failed.map((result) =>
+      [
+        `- ${result.kind}: ${result.command}`,
+        `  exitCode: ${result.exitCode ?? "unknown"}`,
+        `  output:\n${truncateForFeedback(result.output)}`
+      ].join("\n")
+    )
+  ].join("\n");
+}
+
+export function formatReviewRepairFeedback(review: ReviewResult, attempt: number, maxAttempts: number): string {
+  const findings = [
+    ...review.blockingFindings.map((finding) => `- BLOCKING: ${finding.title}${finding.file ? ` (${finding.file})` : ""}\n${finding.body}`),
+    ...review.scopeViolations.map((violation) => `- SCOPE: ${violation}`),
+    ...review.missingTests.map((missingTest) => `- MISSING TEST: ${missingTest}`)
+  ];
+  return [
+    `Review subagent blocked the change after implementation attempt ${attempt}/${maxAttempts}.`,
+    "Repair the repository changes so the review subagent can approve the PR. Keep the same issue scope.",
+    `Risk level: ${review.riskLevel}`,
+    "Findings:",
+    findings.length > 0 ? findings.join("\n") : "- No detailed finding was provided; inspect the diff and make it safer."
+  ].join("\n");
+}
+
+export function qualityGateFailureLooksEnvironmental(results: QualityGateResult[]): boolean {
+  const failedOutput = results
+    .filter((result) => !result.passed)
+    .map((result) => `${result.command}\n${result.output}`)
+    .join("\n")
+    .toLowerCase();
+
+  return [
+    "cannot connect to the docker daemon",
+    "docker daemon is not running",
+    "docker: command not found",
+    "no such file or directory: docker",
+    "orbstack is not running"
+  ].some((marker) => failedOutput.includes(marker));
+}
+
+function truncateForFeedback(output: string): string {
+  const trimmed = output.trim();
+  return trimmed.length > 3_000 ? `${trimmed.slice(-3_000)}\n[truncated]` : trimmed || "(no output)";
 }
 
 async function createImplementationRepairContext(
