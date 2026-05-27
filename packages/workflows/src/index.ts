@@ -4,6 +4,7 @@ export {
   formatQualityGateRepairFeedback,
   formatReviewRepairFeedback,
   qualityGateFailureLooksEnvironmental,
+  resetImplementationAttempt,
   selectImplementationEditActions,
   selectImplementationPatchActions,
   selectImplementationPatchPaths,

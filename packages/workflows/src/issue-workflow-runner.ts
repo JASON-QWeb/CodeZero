@@ -676,6 +676,7 @@ export class IssueWorkflowRunner {
               : [
                   "Repair the implementation so it applies cleanly. Return only JSON.",
                   `Previous tool/edit error:\n${previousApplyError}`,
+                  "The failed edit attempt was rolled back before this retry; fileSnippets reflect the current clean worktree.",
                   "The repair context contains exact current file snippets for the files touched by the failed edit.",
                   "For repo.replace_text, search must exactly match current file text.",
                   "If exact replacement is brittle, use repo.write_file with complete file contents.",
@@ -756,6 +757,11 @@ export class IssueWorkflowRunner {
 
       previousApplyError = summarizeToolFailure(failedToolCall);
       previousEditActions = editActions;
+      await resetImplementationAttempt(sandbox.repoDir);
+      await this.event(task.id, "TOOL_CALL_FINISHED", "Rolled back failed implementation attempt before retry", "warn", {
+        attempt,
+        failedTool: failedToolCall.toolName
+      });
     }
 
     throw new Error(`Implementation edits did not apply after 5 attempts: ${previousApplyError}`);
@@ -1303,6 +1309,16 @@ export function qualityGateFailureLooksEnvironmental(results: QualityGateResult[
       (result) => result.kind === "setup" && setupEnvironmentMarkers.some((marker) => `${result.command}\n${result.output}`.toLowerCase().includes(marker))
     )
   );
+}
+
+export async function resetImplementationAttempt(repoDir: string): Promise<void> {
+  const reset = await runCommand({ cwd: repoDir, command: "git reset --hard HEAD", timeoutMs: 60_000 });
+  const clean = await runCommand({ cwd: repoDir, command: "git clean -fd", timeoutMs: 60_000 });
+  const failed = [reset, clean].find((result) => result.exitCode !== 0);
+
+  if (failed) {
+    throw new Error(`Failed to reset implementation attempt: ${failed.command}\n${failed.stderr || failed.stdout}`);
+  }
 }
 
 function truncateForFeedback(output: string): string {

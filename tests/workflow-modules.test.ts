@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AppConfig, RepositoryConfig } from "@agent/config";
 import { createTask } from "@agent/orchestrator";
 import type { TaskRepository } from "@agent/persistence";
+import { runCommand } from "@agent/sandbox";
 import type { Artifact, ContextPack, IssueContext, PrdDocument, Task, TaskEvent } from "@agent/shared";
 import {
   compactContextPackForImplementation,
@@ -17,6 +18,7 @@ import {
   implementationToToolActions,
   IssueWorkflowRunner,
   qualityGateFailureLooksEnvironmental,
+  resetImplementationAttempt,
   selectImplementationEditActions,
   selectImplementationPatchActions,
   selectImplementationPatchPaths,
@@ -193,6 +195,23 @@ describe("workflow modules", () => {
         { toolName: "repo.write_file", input: { path: "tests/app.test.ts", content: "test('ok', () => {});\n" } }
       ])
     ).toEqual(["src/app.ts", "tests/app.test.ts"]);
+  });
+
+  it("rolls back partial implementation edits before a retry", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-workflow-reset-"));
+    await runCommand({ cwd: repoDir, command: "git init" });
+    await runCommand({ cwd: repoDir, command: "git config user.email test@example.com && git config user.name Test" });
+    await writeFile(path.join(repoDir, "app.ts"), "old\n");
+    await runCommand({ cwd: repoDir, command: "git add app.ts && git commit -m init" });
+
+    await writeFile(path.join(repoDir, "app.ts"), "partial\n");
+    await writeFile(path.join(repoDir, "new-file.ts"), "new\n");
+
+    await resetImplementationAttempt(repoDir);
+
+    const status = await runCommand({ cwd: repoDir, command: "git status --short" });
+    await expect(readFile(path.join(repoDir, "app.ts"), "utf8")).resolves.toBe("old\n");
+    expect(status.stdout.trim()).toBe("");
   });
 
   it("formats self-check repair feedback for the implementation agent", () => {
