@@ -106,4 +106,20 @@ describe("agent runtime", () => {
 
     await expect(provider.generate({ messages: [] })).rejects.toThrow("Provider test-provider failed with 429: rate limited");
   });
+
+  it("surfaces provider timeouts with model context", async () => {
+    const abortError = Object.assign(new Error("aborted"), { name: "AbortError" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abortError));
+    const provider = new OpenAICompatibleProvider({
+      id: "test-provider",
+      baseUrl: "https://models.example.test",
+      apiKey: "secret",
+      model: "test-model",
+      supportsTools: true,
+      supportsStructuredOutput: true,
+      timeoutMs: 123_000
+    });
+
+    await expect(provider.generate({ messages: [] })).rejects.toThrow("Provider test-provider timed out after 123000ms while calling model test-model");
+  });
 });

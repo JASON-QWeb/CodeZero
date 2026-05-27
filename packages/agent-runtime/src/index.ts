@@ -73,7 +73,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 120_000);
+    const timeoutMs = this.config.timeoutMs ?? 120_000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(`${this.config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
@@ -104,6 +105,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
       const content = chatResponse.choices?.[0]?.message?.content ?? "";
 
       return { content, raw };
+    } catch (error) {
+      if (isObject(error) && error.name === "AbortError") {
+        throw new Error(`Provider ${this.id} timed out after ${timeoutMs}ms while calling model ${this.config.model}`);
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }

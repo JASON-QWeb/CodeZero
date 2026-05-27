@@ -658,36 +658,64 @@ export class IssueWorkflowRunner {
             "If you use repo.apply_patch, every diff must include diff --git, ---/+++ file headers, and valid @@ hunk headers.",
             "Use only the provided tool names and do not include unrelated changes."
           ].join("\n");
-      const result = await runJsonAgent({
-        runner,
-        agent,
-        userPrompt:
-          attempt === 1
-            ? [firstAttemptPrompt, languageInstruction(locale)].join("\n")
-            : [
-                "Repair the implementation so it applies cleanly. Return only JSON.",
-                `Previous tool/edit error:\n${previousApplyError}`,
-                "The repair context contains exact current file snippets for the files touched by the failed edit.",
-                "For repo.replace_text, search must exactly match current file text.",
-                "If exact replacement is brittle, use repo.write_file with complete file contents.",
-                "Return corrected repository edit action(s) only. Do not call repo.read_file, repo.search, or other read-only tools.",
-                "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
-                languageInstruction(locale)
-              ].join("\n"),
-        context: {
-          issue: task.issue as unknown as JsonObject,
-          prd: task.prd as unknown as JsonObject,
-          contextPack: implementationContextPack,
-          minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
-          reviewerFeedback,
-          previousApplyError,
-          previousEditFiles: repairContext?.editFiles ?? [],
-          previousEditPreview: repairContext?.editPreview ?? "",
-          fileSnippets: (repairContext?.fileSnippets ?? snippets) as JsonObject,
-          availableTools: this.getImplementationTools(repositoryConfig) as unknown as JsonObject,
-          policies: this.config.policies as unknown as JsonObject,
-          repositoryPermissions: repositoryConfig.permissions as unknown as JsonObject
-        }
+      await this.event(task.id, "AGENT_RUN_STARTED", `Implementation agent started attempt ${attempt}/5`, "info", {
+        agentId: agent.id,
+        agentRole: agent.role,
+        phase: "implementation",
+        attempt,
+        maxAttempts: 5
+      });
+      let result: JsonObject;
+      try {
+        result = await runJsonAgent({
+          runner,
+          agent,
+          userPrompt:
+            attempt === 1
+              ? [firstAttemptPrompt, languageInstruction(locale)].join("\n")
+              : [
+                  "Repair the implementation so it applies cleanly. Return only JSON.",
+                  `Previous tool/edit error:\n${previousApplyError}`,
+                  "The repair context contains exact current file snippets for the files touched by the failed edit.",
+                  "For repo.replace_text, search must exactly match current file text.",
+                  "If exact replacement is brittle, use repo.write_file with complete file contents.",
+                  "Return corrected repository edit action(s) only. Do not call repo.read_file, repo.search, or other read-only tools.",
+                  "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
+                  languageInstruction(locale)
+                ].join("\n"),
+          context: {
+            issue: task.issue as unknown as JsonObject,
+            prd: task.prd as unknown as JsonObject,
+            contextPack: implementationContextPack,
+            minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
+            reviewerFeedback,
+            previousApplyError,
+            previousEditFiles: repairContext?.editFiles ?? [],
+            previousEditPreview: repairContext?.editPreview ?? "",
+            fileSnippets: (repairContext?.fileSnippets ?? snippets) as JsonObject,
+            availableTools: this.getImplementationTools(repositoryConfig) as unknown as JsonObject,
+            policies: this.config.policies as unknown as JsonObject,
+            repositoryPermissions: repositoryConfig.permissions as unknown as JsonObject
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent failed attempt ${attempt}/5: ${message}`, "error", {
+          agentId: agent.id,
+          agentRole: agent.role,
+          phase: "implementation",
+          attempt,
+          maxAttempts: 5,
+          error: message
+        });
+        throw error;
+      }
+      await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent returned JSON for attempt ${attempt}/5`, "info", {
+        agentId: agent.id,
+        agentRole: agent.role,
+        phase: "implementation",
+        attempt,
+        maxAttempts: 5
       });
       const implementation = implementationSchema.parse(result);
       const actions = implementationToToolActions(implementation);
