@@ -631,10 +631,11 @@ export class IssueWorkflowRunner {
     reviewerFeedback = ""
   ): Promise<void> {
     const contextPack = task.contextPack ?? this.missing<ContextPack>("ContextPack");
+    const feedbackSnippetPaths = await extractImplementationFeedbackPaths(sandbox.repoDir, reviewerFeedback);
     const snippets = await readContextFileSnippets(sandbox.repoDir, contextPack, {
-      includePaths: selectImplementationSnippetPaths(task),
+      includePaths: uniquePaths([...feedbackSnippetPaths, ...selectImplementationSnippetPaths(task)]),
       maxCharsPerFile: 16_000,
-      maxFiles: 8
+      maxFiles: 12
     });
     const implementationContextPack = compactContextPackForImplementation(contextPack);
     let previousApplyError = "";
@@ -1321,6 +1322,7 @@ export function formatQualityGateRepairFeedback(results: QualityGateResult[], at
   return [
     `Automated self-check failed after implementation attempt ${attempt}/${maxAttempts}.`,
     "Repair the repository changes so all required quality gates pass. Do not remove meaningful tests or weaken product behavior.",
+    "Use existing test helpers shown in fileSnippets; do not invent helper functions when failures mention undefined test utilities.",
     "Failed quality gates:",
     ...failed.map((result) =>
       [
@@ -1348,7 +1350,7 @@ export function formatReviewRepairFeedback(review: ReviewResult, attempt: number
 }
 
 export function getSelfCheckHardMaxAttempts(configuredMaxAttempts: number): number {
-  return Math.min(10, Math.max(1, configuredMaxAttempts) + 3);
+  return Math.min(14, Math.max(1, configuredMaxAttempts) + 6);
 }
 
 export function shouldExtendQualityGateSelfCheck(
@@ -1602,6 +1604,68 @@ function truncateForFeedback(output: string): string {
   return trimmed.length > 3_000 ? `${trimmed.slice(-3_000)}\n[truncated]` : trimmed || "(no output)";
 }
 
+export async function extractImplementationFeedbackPaths(repoDir: string, feedback: string): Promise<string[]> {
+  if (!feedback.trim()) {
+    return [];
+  }
+
+  const rawPaths = new Set<string>();
+  const pathPattern = /(?:^|[\s"'`(])([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+\.(?:go|ts|tsx|js|jsx|mjs|cjs|json|sql|css|scss|md|yml|yaml))(?:[:)"'`\s]|$)/gm;
+  for (const match of feedback.matchAll(pathPattern)) {
+    if (match[1]) {
+      rawPaths.add(match[1]);
+    }
+  }
+
+  if (/\btestutil\./.test(feedback)) {
+    rawPaths.add("backend/internal/testutil/postgres.go");
+  }
+
+  const resolved: string[] = [];
+  for (const rawPath of rawPaths) {
+    const normalized = normalizeRepairPath(rawPath);
+    if (!normalized) {
+      continue;
+    }
+
+    for (const candidate of expandFeedbackPathCandidates(normalized)) {
+      if (await repositoryFileExists(repoDir, candidate)) {
+        resolved.push(candidate);
+        break;
+      }
+    }
+  }
+
+  return uniquePaths(resolved);
+}
+
+function expandFeedbackPathCandidates(filePath: string): string[] {
+  const candidates = [filePath];
+  if (!filePath.startsWith("backend/")) {
+    candidates.push(`backend/${filePath}`);
+  }
+  if (!filePath.startsWith("frontend/")) {
+    candidates.push(`frontend/${filePath}`);
+  }
+  return uniquePaths(candidates);
+}
+
+async function repositoryFileExists(repoDir: string, filePath: string): Promise<boolean> {
+  const normalized = normalizeRepairPath(filePath);
+  if (!normalized) {
+    return false;
+  }
+
+  const absolutePath = path.resolve(repoDir, normalized);
+  const repoRoot = path.resolve(repoDir);
+  if (!absolutePath.startsWith(`${repoRoot}${path.sep}`)) {
+    return false;
+  }
+
+  const fileStat = await stat(absolutePath).catch(() => undefined);
+  return fileStat?.isFile() ?? false;
+}
+
 async function createImplementationRepairContext(
   repoDir: string,
   actions: JsonToolAction[]
@@ -1733,6 +1797,10 @@ function extractPlanPath(value: string): string {
 
 function normalizePlanPath(value: string): string {
   return value.trim().replace(/^`|`$/g, "").replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function uniquePaths(paths: string[]): string[] {
+  return paths.filter((value, index) => value.length > 0 && paths.indexOf(value) === index);
 }
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {

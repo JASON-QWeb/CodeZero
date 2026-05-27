@@ -3,6 +3,7 @@ export {
   cleanupImplementationCheckpoint,
   compactContextPackForImplementation,
   createImplementationCheckpoint,
+  extractImplementationFeedbackPaths,
   formatQualityGateRepairFeedback,
   formatReviewRepairFeedback,
   getSelfCheckHardMaxAttempts,

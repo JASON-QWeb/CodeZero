@@ -15,6 +15,7 @@ import {
   createPrdIssueComment,
   createWorkflowAgent,
   createWorkflowAgentRunner,
+  extractImplementationFeedbackPaths,
   formatQualityGateRepairFeedback,
   formatReviewRepairFeedback,
   getSelfCheckHardMaxAttempts,
@@ -295,6 +296,7 @@ describe("workflow modules", () => {
     expect(feedback).toContain("Automated self-check failed");
     expect(feedback).toContain("unit_test");
     expect(feedback).toContain("Expected async sync status");
+    expect(feedback).toContain("do not invent helper functions");
   });
 
   it("formats review repair feedback for the implementation agent", () => {
@@ -380,13 +382,31 @@ describe("workflow modules", () => {
       }
     ];
 
-    expect(getSelfCheckHardMaxAttempts(4)).toBe(7);
+    expect(getSelfCheckHardMaxAttempts(4)).toBe(10);
     expect(qualityGateFailuresChanged(firstFailure, nextFailure)).toBe(true);
     expect(shouldExtendQualityGateSelfCheck(firstFailure, nextFailure, 4, 7)).toBe(true);
     expect(shouldExtendQualityGateSelfCheck(nextFailure, nextFailure, 7, 7)).toBe(false);
     expect(shouldExtendSelfCheckAfterFailureKindChange("review", "quality", 7, 10)).toBe(true);
     expect(shouldExtendSelfCheckAfterFailureKindChange("quality", "quality", 7, 10)).toBe(false);
     expect(shouldExtendSelfCheckAfterFailureKindChange("review", "quality", 10, 10)).toBe(false);
+  });
+
+  it("extracts quality-gate failure files for focused repair snippets", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-feedback-paths-"));
+    await mkdir(path.join(repoDir, "backend/internal/handler"), { recursive: true });
+    await mkdir(path.join(repoDir, "backend/internal/testutil"), { recursive: true });
+    await writeFile(path.join(repoDir, "backend/internal/handler/main_test.go"), "package handler\n");
+    await writeFile(path.join(repoDir, "backend/internal/testutil/postgres.go"), "package testutil\n");
+
+    await expect(
+      extractImplementationFeedbackPaths(
+        repoDir,
+        [
+          "internal/handler/main_test.go:12:11: undefined: testutil.SetupTestDB",
+          "frontend/src/missing.ts:1:1: ignored because it does not exist"
+        ].join("\n")
+      )
+    ).resolves.toEqual(["backend/internal/handler/main_test.go", "backend/internal/testutil/postgres.go"]);
   });
 
   it("formats PRD comments for GitHub issue review", () => {
