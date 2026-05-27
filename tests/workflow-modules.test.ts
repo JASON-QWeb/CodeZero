@@ -51,6 +51,63 @@ describe("workflow modules", () => {
         actions: [{ id: "search", tool: "repo.search", input: { query: "refund" } }]
       })
     ).toEqual([{ id: "search", toolName: "repo.search", input: { query: "refund" } }]);
+
+    expect(
+      implementationToToolActions({
+        summary: "edit aliases",
+        actions: [
+          {
+            tool: "replace_text",
+            input: {
+              file_path: "src/app.ts",
+              oldText: "old",
+              new_text: "new"
+            }
+          },
+          {
+            tool: "write_file",
+            input: {
+              filePath: "src/new.ts",
+              contents: "export {};\n"
+            }
+          },
+          {
+            tool: "apply_patch",
+            input: {
+              unified_diff: "diff --git a/a b/a\n"
+            }
+          }
+        ]
+      })
+    ).toEqual([
+      {
+        toolName: "repo.replace_text",
+        input: {
+          file_path: "src/app.ts",
+          oldText: "old",
+          new_text: "new",
+          path: "src/app.ts",
+          search: "old",
+          replace: "new"
+        }
+      },
+      {
+        toolName: "repo.write_file",
+        input: {
+          filePath: "src/new.ts",
+          contents: "export {};\n",
+          path: "src/new.ts",
+          content: "export {};\n"
+        }
+      },
+      {
+        toolName: "repo.apply_patch",
+        input: {
+          unified_diff: "diff --git a/a b/a\n",
+          unifiedDiff: "diff --git a/a b/a\n"
+        }
+      }
+    ]);
   });
 
   it("summarizes failed tool calls with useful diagnostics", () => {

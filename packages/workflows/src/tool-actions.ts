@@ -5,7 +5,7 @@ import type { ImplementationResponse } from "./schemas.js";
 export function implementationToToolActions(implementation: ImplementationResponse): JsonToolAction[] {
   if (implementation.actions?.length) {
     return implementation.actions.map((action) => {
-      const toolName = action.toolName ?? action.tool;
+      const toolName = normalizeImplementationToolName(action.toolName ?? action.tool);
 
       if (!toolName) {
         throw new Error("Implementation action requires toolName or tool");
@@ -14,7 +14,7 @@ export function implementationToToolActions(implementation: ImplementationRespon
       return {
         id: action.id,
         toolName,
-        input: action.input as JsonObject
+        input: normalizeImplementationToolInput(toolName, action.input as JsonObject)
       };
     });
   }
@@ -29,6 +29,64 @@ export function implementationToToolActions(implementation: ImplementationRespon
       input: { unifiedDiff: implementation.unifiedDiff }
     }
   ];
+}
+
+function normalizeImplementationToolName(toolName: string | undefined): string | undefined {
+  switch (toolName) {
+    case "apply_patch":
+      return "repo.apply_patch";
+    case "replace_text":
+      return "repo.replace_text";
+    case "write_file":
+      return "repo.write_file";
+    default:
+      return toolName;
+  }
+}
+
+function normalizeImplementationToolInput(toolName: string, input: JsonObject): JsonObject {
+  if (toolName === "repo.apply_patch") {
+    return normalizeKeyAliases(input, {
+      unifiedDiff: ["unified_diff", "diff", "patch"]
+    });
+  }
+
+  if (toolName === "repo.write_file") {
+    return normalizeKeyAliases(input, {
+      path: ["file_path", "filePath", "filename", "file"],
+      content: ["contents", "text", "body"]
+    });
+  }
+
+  if (toolName === "repo.replace_text") {
+    return normalizeKeyAliases(input, {
+      path: ["file_path", "filePath", "filename", "file"],
+      search: ["oldText", "old_text", "searchText", "search_text", "find"],
+      replace: ["newText", "new_text", "replacement", "replaceText", "replace_text"]
+    });
+  }
+
+  return input;
+}
+
+function normalizeKeyAliases(input: JsonObject, aliasesByCanonicalKey: Record<string, string[]>): JsonObject {
+  const normalized: JsonObject = { ...input };
+
+  for (const [canonicalKey, aliases] of Object.entries(aliasesByCanonicalKey)) {
+    if (normalized[canonicalKey] !== undefined) {
+      continue;
+    }
+
+    const alias = aliases.find((candidate) => normalized[candidate] !== undefined);
+    if (alias) {
+      const value = normalized[alias];
+      if (value !== undefined) {
+        normalized[canonicalKey] = value;
+      }
+    }
+  }
+
+  return normalized;
 }
 
 export function summarizeToolFailure(result: ToolCallResult): string {
