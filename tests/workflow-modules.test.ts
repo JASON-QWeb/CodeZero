@@ -205,6 +205,19 @@ describe("workflow modules", () => {
         }
       ])
     ).toBe(false);
+
+    expect(
+      qualityGateFailureLooksEnvironmental([
+        {
+          kind: "setup",
+          command: "./scripts/local.sh migrate",
+          passed: false,
+          exitCode: 1,
+          durationMs: 10,
+          output: "create migrate instance: failed to open database: pq: SSL is not enabled on the server"
+        }
+      ])
+    ).toBe(true);
   });
 
   it("formats PRD comments for GitHub issue review", () => {

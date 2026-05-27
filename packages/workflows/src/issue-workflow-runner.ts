@@ -1240,19 +1240,28 @@ export function formatReviewRepairFeedback(review: ReviewResult, attempt: number
 }
 
 export function qualityGateFailureLooksEnvironmental(results: QualityGateResult[]): boolean {
-  const failedOutput = results
-    .filter((result) => !result.passed)
-    .map((result) => `${result.command}\n${result.output}`)
-    .join("\n")
-    .toLowerCase();
-
-  return [
+  const failedResults = results.filter((result) => !result.passed);
+  const failedOutput = failedResults.map((result) => `${result.command}\n${result.output}`).join("\n").toLowerCase();
+  const generalEnvironmentMarkers = [
     "cannot connect to the docker daemon",
     "docker daemon is not running",
     "docker: command not found",
     "no such file or directory: docker",
     "orbstack is not running"
-  ].some((marker) => failedOutput.includes(marker));
+  ];
+  const setupEnvironmentMarkers = [
+    "ssl is not enabled on the server",
+    "failed to open database",
+    "failed to connect to",
+    "connection refused"
+  ];
+
+  return (
+    generalEnvironmentMarkers.some((marker) => failedOutput.includes(marker)) ||
+    failedResults.some(
+      (result) => result.kind === "setup" && setupEnvironmentMarkers.some((marker) => `${result.command}\n${result.output}`.toLowerCase().includes(marker))
+    )
+  );
 }
 
 function truncateForFeedback(output: string): string {
