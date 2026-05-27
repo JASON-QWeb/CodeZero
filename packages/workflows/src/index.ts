@@ -1,4 +1,9 @@
-export { IssueWorkflowRunner, type IssueWorkflowResult } from "./issue-workflow-runner.js";
+export {
+  IssueWorkflowRunner,
+  compactContextPackForImplementation,
+  selectImplementationSnippetPaths,
+  type IssueWorkflowResult
+} from "./issue-workflow-runner.js";
 export {
   assertAgentPrBodyComplete,
   createAgentPrBody,

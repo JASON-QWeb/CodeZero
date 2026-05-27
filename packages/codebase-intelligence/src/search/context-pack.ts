@@ -135,15 +135,41 @@ function asStringArray(value: JsonValue | undefined): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
-export async function readContextFileSnippets(repoDir: string, contextPack: ContextPack, maxCharsPerFile = 12_000): Promise<Record<string, string>> {
+export type ReadContextFileSnippetOptions = {
+  maxCharsPerFile?: number;
+  maxFiles?: number;
+  includePaths?: string[];
+};
+
+export async function readContextFileSnippets(
+  repoDir: string,
+  contextPack: ContextPack,
+  optionsOrMaxChars: number | ReadContextFileSnippetOptions = 12_000
+): Promise<Record<string, string>> {
+  const options = typeof optionsOrMaxChars === "number" ? { maxCharsPerFile: optionsOrMaxChars } : optionsOrMaxChars;
+  const maxCharsPerFile = options.maxCharsPerFile ?? 12_000;
+  const includePaths = uniquePaths((options.includePaths ?? []).map(normalizeSnippetPath).filter(Boolean));
+  const relevantByPath = new Map(contextPack.relevantFiles.map((file) => [normalizeSnippetPath(file.path), file]));
+  const files =
+    includePaths.length > 0
+      ? includePaths.map((filePath) => relevantByPath.get(filePath)).filter((file): file is ContextPack["relevantFiles"][number] => Boolean(file))
+      : contextPack.relevantFiles;
   const snippets: Record<string, string> = {};
 
-  for (const file of contextPack.relevantFiles) {
+  for (const file of files.slice(0, options.maxFiles ?? files.length)) {
     const content = await readFile(path.join(repoDir, file.path), "utf8").catch(() => "");
     snippets[file.path] = content.slice(0, maxCharsPerFile);
   }
 
   return snippets;
+}
+
+function normalizeSnippetPath(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function uniquePaths(paths: string[]): string[] {
+  return paths.filter((value, index) => value.length > 0 && paths.indexOf(value) === index);
 }
 
 function relatedTestCandidates(filePath: string, files: FileIndexEntry[]): string[] {
