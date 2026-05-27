@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -71,4 +71,42 @@ describe("verification", () => {
     expect(result.gate.passed).toBe(false);
     expect(result.gate.output).toContain("Frontend dev command exited before screenshot capture");
   });
+
+  it("terminates the full frontend dev process group after screenshot gate failure", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-verification-"));
+    const pidFile = path.join(cwd, "dev.pid");
+    const script = `const fs = require("fs"); fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+
+    const result = await runFrontendScreenshotGate({
+      cwd,
+      devCommand: `node -e ${JSON.stringify(script)}`,
+      targets: [{ url: "http://127.0.0.1:9/", name: "unreachable" }],
+      artifactDir: path.join(cwd, "screenshots"),
+      timeoutMs: 1
+    });
+
+    const pid = Number(await readFile(pidFile, "utf8"));
+    expect(result.gate.passed).toBe(false);
+    await expectProcessToExit(pid);
+  });
 });
+
+async function expectProcessToExit(pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!isProcessRunning(pid)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  expect(isProcessRunning(pid)).toBe(false);
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}

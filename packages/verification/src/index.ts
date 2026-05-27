@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright-core";
@@ -93,7 +93,8 @@ export async function runFrontendScreenshotGate(input: {
   const child = spawn(input.devCommand, {
     cwd: input.cwd,
     shell: true,
-    env: process.env
+    env: process.env,
+    detached: process.platform !== "win32"
   });
 
   child.stdout.on("data", (chunk: Buffer) => output.push(chunk.toString("utf8")));
@@ -174,8 +175,57 @@ export async function runFrontendScreenshotGate(input: {
       screenshots
     };
   } finally {
-    child.kill("SIGTERM");
+    await terminateDevProcess(child);
   }
+}
+
+async function terminateDevProcess(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null || !child.pid) {
+    return;
+  }
+
+  sendSignal(child, "SIGTERM");
+  if (await waitForProcessClose(child, 5_000)) {
+    return;
+  }
+
+  sendSignal(child, "SIGKILL");
+  await waitForProcessClose(child, 1_000);
+}
+
+function sendSignal(child: ChildProcess, signal: NodeJS.Signals): void {
+  try {
+    if (process.platform !== "win32" && child.pid) {
+      process.kill(-child.pid, signal);
+      return;
+    }
+  } catch {
+    // Fall back to killing the shell process if process-group termination fails.
+  }
+
+  try {
+    child.kill(signal);
+  } catch {
+    // The process may have already exited between checks.
+  }
+}
+
+function waitForProcessClose(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.off("close", onClose);
+      resolve(false);
+    }, timeoutMs);
+    const onClose = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    child.once("close", onClose);
+  });
 }
 
 async function waitForTargets(urls: string[], timeoutMs: number): Promise<void> {
