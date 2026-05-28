@@ -184,7 +184,12 @@ type ToolDefinition = {
   description: string;
   inputSchema: JsonObject;
   outputSchema?: JsonObject;
-  permission: "read" | "safe_write" | "repo_write" | "external_write" | "dangerous";
+  permission:
+    | "read"
+    | "safe_write"
+    | "repo_write"
+    | "external_write"
+    | "dangerous";
   timeoutMs: number;
   requiresApproval?: boolean;
 };
@@ -230,8 +235,7 @@ PR 前强制执行 `review` subagent。
 
 输入：
 
-- PRD。
-- 最小修改计划。
+- 已批准 PRD/Plan 文档。
 - ContextPack。
 - git diff。
 - 测试输出。
@@ -286,7 +290,6 @@ PR 前强制执行 `review` subagent。
 - `POLICY_DECISION_RECORDED`
 - `SECURITY_SCAN_FINISHED`
 - `EVAL_RUN_FINISHED`
-- `PLAN_CREATED`
 - `FILE_CHANGED`
 - `TEST_STARTED`
 - `TEST_FINISHED`

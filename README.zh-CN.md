@@ -8,26 +8,26 @@
 
 </div>
 
-CodeZero 是一个面向 GitHub 的工程 Agent 平台，用来把产品意图推进成可审核、可验证的 Pull Request。你可以创建 Issue、评论里 `@agent`，也可以交给仓库策略自动触发。CodeZero 会生成 PRD，阅读仓库，构建聚焦的上下文包，把实现交给沙箱里的 coding agent，实时把执行进度显示到看板，跑完验证、复审 diff，最后创建带本地验证指令的 draft PR。
+CodeZero 是一个面向 GitHub 的工程 Agent 平台，用来把产品意图推进成可审核、可验证的 Pull Request。你可以创建 Issue、评论里 `@agent`，也可以交给仓库策略自动触发。CodeZero 会创建一个持续复用的 task sandbox，阅读仓库，构建聚焦的上下文包，生成一份 PRD/Plan 文档；批准后把实现交给同一个沙箱里的 coding agent，实时把执行进度显示到看板，跑完验证、复审 diff，最后创建带本地验证指令的 draft PR。
 
 它处理的是从“我有个想法”到“这份 PR 可以让人 review 了”之间那段最容易卡住的工程过程。CodeZero 不把代码生成当成一次性 prompt，而是把它放进 durable workflow、仓库智能理解、隔离执行、质量门禁、可追踪事件和必要的人审节点里。
 
 ## 用起来是什么感觉
 
 - 在 GitHub Issue 里用自然语言描述产品意图。
-- CodeZero 把意图整理成 PRD、验收标准、风险说明和最小改动计划。
+- CodeZero 把意图和代码上下文整理成同一份 PRD/Plan 文档：验收标准、风险、文件、测试和命令都在里面。
 - Implementation Agent 通过 OpenCode 在隔离沙箱里改代码，stdout/stderr 和结构化进度会流式进入 Run Console。
 - 看板能看到任务卡在哪一步：同步中、索引中、规划中、实现中、Review 中、阻塞、失败或待合并。
 - 最终得到一个 draft PR，里面有 diff、验证证据、风险说明，以及维护者本地复现用的命令。
 
 ## 项目亮点
 
-- **Issue 到 PRD 到 PR**：把 GitHub Issue 转成结构化 PRD、实现计划、验证后的 diff 和 draft PR。
+- **Issue 到 PRD/Plan 到 PR**：把 GitHub Issue 转成一份结构化执行文档、验证后的 diff 和 draft PR。
 - **异步 GitHub 同步**：仓库同步和 Issue 接入走队列 worker，不再阻塞页面。
 - **实时 Agent 进度**：OpenCode 输出会被捕获成 task events，看板能显示 coding executor 正在做什么。
 - **OpenCode-first 实现路径**：主实现流程交给 coding CLI executor，不再依赖旧的 JSON 文件写入动作。
 - **仓库智能理解**：CodeGraph、Repo Navigation Graph、approved memory 和 ContextPack 会在改代码前收敛修改范围。
-- **隔离执行**：每个 Issue 都有独立沙箱、独立分支、独立产物、日志和验证轨迹。
+- **持续 task sandbox**：每个 Issue 都有一个贯穿审批和反馈迭代的沙箱、分支、产物、日志和验证轨迹。
 - **人可控**：PRD 审批、Policy 门禁、Review subagent 和 memory proposal 让关键步骤可检查。
 - **模型供应商灵活**：支持 OpenAI-compatible 网关，也可以按 agent 路由不同 provider 和 model。
 - **操作台完整**：包含 Run Console、Settings Console、Memory Inbox、Trace Replay API 和 Golden Issue Eval CLI。
@@ -40,18 +40,17 @@ flowchart TD
   TP --> API["Fastify Webhook API"]
   API --> Q["Queue-backed sync and workflow jobs"]
   Q --> WF["Durable Workflow Orchestrator"]
-  WF --> PRD["PRD Agent"]
-  PRD --> GATE{"Human approval required?"}
-  GATE -->|Yes| UI["Run Console / Review Board"]
-  UI --> WF
-  GATE -->|No| SB["Per-Issue Sandbox"]
-  WF --> SB
+  WF --> SB["Persistent Task Sandbox"]
   SB --> IDX["Codebase Intelligence"]
   IDX --> GRAPH["Repo Navigation Graph"]
   GRAPH --> MEM["Approved Memory Retrieval"]
   MEM --> CP["Evidence-backed ContextPack"]
-  CP --> PLAN["Minimal Change Planner"]
-  PLAN --> IMPL["OpenCode Coding Executor"]
+  CP --> PRD["PRD/Plan Agent"]
+  PRD --> GATE{"Human approval required?"}
+  GATE -->|Yes| UI["Run Console / Review Board"]
+  UI --> WF
+  GATE -->|No| IMPL["OpenCode Coding Executor"]
+  WF --> IMPL
   IMPL --> STREAM["Live Progress Events"]
   STREAM --> UI
   IMPL --> QA["Quality Gates"]
@@ -64,10 +63,10 @@ flowchart TD
 ## 工作流程
 
 1. **触发任务**：GitHub webhook、`@agent` 评论、标签或手动导入创建任务。
-2. **理解需求**：PRD Agent 提取目标、风险、验收标准和复杂度。
+2. **打开工作区**：CodeZero 创建或复用 task sandbox 和 issue 分支。
 3. **定位上下文**：仓库索引、导航图、approved memory 和 ContextPack 找到最相关的文件。
-4. **规划改动**：workflow 先写出 minimal change plan，再交给 coding executor。
-5. **实现代码**：OpenCode 使用生成的 prompt file 和模型配置，在沙箱仓库内编辑。
+4. **制定计划**：一次 planning pass 生成 PRD/Plan 文档，用于审批和后续实现。
+5. **实现代码**：批准后，OpenCode 使用生成的 prompt file 和模型配置，在同一个沙箱仓库内编辑。
 6. **流式观测**：executor 的 stdout/stderr 和结构化 JSON 行会变成看板事件，包括进度、文件活动、命令和错误。
 7. **验证结果**：运行 build、lint、test、typecheck、截图 hook、policy check 和 Review subagent。
 8. **创建 PR**：CodeZero 推送分支并创建 draft PR，附带证据、风险说明和本地验证命令。
@@ -200,6 +199,6 @@ pnpm eval:golden
 
 ## 当前状态
 
-MVP 已可本地运行，包含 GitHub Issue 接入、异步仓库同步、仓库触发策略、队列与并发限制、PRD 生成、条件式人工审批、Repo Navigation Graph MVP、ContextPack 生成、Understand-Anything 官方项目知识图入口、基于 OpenCode 的沙箱实现、Agent 进度流式事件、Trace Replay API、Run Console、Settings Console、Memory Inbox、Golden Issue Eval CLI/CI、Repository Onboarding、质量门禁、Review subagent 和 draft PR 创建。
+MVP 已可本地运行，包含 GitHub Issue 接入、异步仓库同步、仓库触发策略、队列与并发限制、单份 PRD/Plan 规划文档、条件式人工审批、Repo Navigation Graph MVP、ContextPack 生成、Understand-Anything 官方项目知识图入口、基于 OpenCode 的沙箱实现、Agent 进度流式事件、Trace Replay API、Run Console、Settings Console、Memory Inbox、Golden Issue Eval CLI/CI、Repository Onboarding、质量门禁、Review subagent 和 draft PR 创建。
 
 下一步重点是审批恢复、更强的 provider 健康诊断、更严格的命令与工具 schema、安全扫描、更丰富的 eval assertion，以及面向大仓库的更深层图适配器。

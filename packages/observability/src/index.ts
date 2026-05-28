@@ -1,4 +1,13 @@
-import type { Artifact, Task, TaskEvent, TaskEventType, TaskTrace, TraceSpan, TraceSpanKind, TraceSpanStatus } from "@agent/shared";
+import type {
+  Artifact,
+  Task,
+  TaskEvent,
+  TaskEventType,
+  TaskTrace,
+  TraceSpan,
+  TraceSpanKind,
+  TraceSpanStatus,
+} from "@agent/shared";
 
 export type BuildTaskTraceInput = {
   task: Task;
@@ -7,25 +16,36 @@ export type BuildTaskTraceInput = {
 };
 
 export function buildTaskTrace(input: BuildTaskTraceInput): TaskTrace {
-  const sortedEvents = [...input.events].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const sortedEvents = [...input.events].sort((left, right) =>
+    left.createdAt.localeCompare(right.createdAt),
+  );
   const rootSpan: TraceSpan = {
     id: `${input.task.id}:root`,
     taskId: input.task.id,
     name: `Task ${input.task.issue.owner}/${input.task.issue.repo}#${input.task.issue.number}`,
     kind: "workflow",
     status: taskStatusToTraceStatus(input.task.status),
-    level: input.task.status === "FAILED" ? "error" : input.task.status === "BLOCKED" ? "warn" : "info",
+    level:
+      input.task.status === "FAILED"
+        ? "error"
+        : input.task.status === "BLOCKED"
+          ? "warn"
+          : "info",
     message: input.task.issue.title,
     startedAt: input.task.createdAt,
     endedAt: input.task.updatedAt,
-    durationMs: durationMs(input.task.createdAt, input.task.updatedAt)
+    durationMs: durationMs(input.task.createdAt, input.task.updatedAt),
   };
   const spans = [
     rootSpan,
     ...sortedEvents.map((event) => eventToSpan(event, rootSpan.id)),
-    ...input.artifacts.map((artifact) => artifactToSpan(input.task, artifact, rootSpan.id))
+    ...input.artifacts.map((artifact) =>
+      artifactToSpan(input.task, artifact, rootSpan.id),
+    ),
   ].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
-  const failedOrBlocked = spans.filter((span) => span.status === "failed" || span.status === "blocked").length;
+  const failedOrBlocked = spans.filter(
+    (span) => span.status === "failed" || span.status === "blocked",
+  ).length;
 
   return {
     taskId: input.task.id,
@@ -38,8 +58,8 @@ export function buildTaskTrace(input: BuildTaskTraceInput): TaskTrace {
       totalSpans: spans.length,
       toolCalls: spans.filter((span) => span.kind === "tool").length,
       policyDecisions: spans.filter((span) => span.kind === "policy").length,
-      failedOrBlocked
-    }
+      failedOrBlocked,
+    },
   };
 }
 
@@ -56,11 +76,15 @@ function eventToSpan(event: TaskEvent, parentId: string): TraceSpan {
     startedAt: event.createdAt,
     endedAt: event.createdAt,
     durationMs: 0,
-    metadata: event.metadata
+    metadata: event.metadata,
   };
 }
 
-function artifactToSpan(task: Task, artifact: Artifact, parentId: string): TraceSpan {
+function artifactToSpan(
+  task: Task,
+  artifact: Artifact,
+  parentId: string,
+): TraceSpan {
   return {
     id: artifact.id,
     taskId: task.id,
@@ -73,7 +97,7 @@ function artifactToSpan(task: Task, artifact: Artifact, parentId: string): Trace
     startedAt: artifact.createdAt,
     endedAt: artifact.createdAt,
     durationMs: 0,
-    metadata: artifact.metadata
+    metadata: artifact.metadata,
   };
 }
 
@@ -82,7 +106,11 @@ function eventKind(type: TaskEventType): TraceSpanKind {
     return "tool";
   }
 
-  if (type.startsWith("AGENT_RUN") || type === "PLAN_CREATED" || type === "PRD_DRAFTED" || type === "SUBAGENT_REVIEW_FINISHED") {
+  if (
+    type.startsWith("AGENT_RUN") ||
+    type === "PRD_DRAFTED" ||
+    type === "SUBAGENT_REVIEW_FINISHED"
+  ) {
     return "model";
   }
 
@@ -94,7 +122,11 @@ function eventKind(type: TaskEventType): TraceSpanKind {
     return "quality_gate";
   }
 
-  if (type === "REPO_NAVIGATION_GRAPH_CREATED" || type === "NAVIGATION_ROUTE_CREATED" || type === "AGENTIC_SEARCH_FINISHED") {
+  if (
+    type === "REPO_NAVIGATION_GRAPH_CREATED" ||
+    type === "NAVIGATION_ROUTE_CREATED" ||
+    type === "AGENTIC_SEARCH_FINISHED"
+  ) {
     return "navigation";
   }
 
@@ -102,7 +134,13 @@ function eventKind(type: TaskEventType): TraceSpanKind {
     return "memory";
   }
 
-  if (type === "PR_CREATED" || type === "PR_UPDATED" || type === "PR_REVIEW_COMMENT_RECEIVED" || type === "REPO_CLONED" || type === "ISSUE_BRANCH_CREATED") {
+  if (
+    type === "PR_CREATED" ||
+    type === "PR_UPDATED" ||
+    type === "PR_REVIEW_COMMENT_RECEIVED" ||
+    type === "REPO_CLONED" ||
+    type === "ISSUE_BRANCH_CREATED"
+  ) {
     return "github";
   }
 
@@ -122,7 +160,11 @@ function eventStatus(event: TaskEvent): TraceSpanStatus {
     return "failed";
   }
 
-  if (event.level === "warn" || event.type === "TASK_BLOCKED" || event.type === "HUMAN_REVIEW_REQUIRED") {
+  if (
+    event.level === "warn" ||
+    event.type === "TASK_BLOCKED" ||
+    event.type === "HUMAN_REVIEW_REQUIRED"
+  ) {
     return "blocked";
   }
 
@@ -134,7 +176,11 @@ function taskStatusToTraceStatus(status: Task["status"]): TraceSpanStatus {
     return "failed";
   }
 
-  if (status === "BLOCKED" || status === "PRD_REVIEW_REQUIRED" || status === "HUMAN_REVIEW") {
+  if (
+    status === "BLOCKED" ||
+    status === "PRD_REVIEW_REQUIRED" ||
+    status === "HUMAN_REVIEW"
+  ) {
     return "blocked";
   }
 

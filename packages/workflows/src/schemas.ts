@@ -28,6 +28,10 @@ export const planSchema = z.object({
   riskNotes: z.array(z.string()).default([])
 });
 
+export const planningDocumentSchema = prdSchema.extend({
+  implementationPlan: planSchema
+});
+
 const reviewFindingSchema = z.object({
   title: z.string(),
   body: z.string(),

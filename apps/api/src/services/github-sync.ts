@@ -1,9 +1,21 @@
-import { evaluateRepositoryTrigger, type RepositoryConfig } from "@agent/config";
-import { GitHubClient, type GitHubIssueComment, type GitHubIssueThread } from "@agent/github";
+import {
+  evaluateRepositoryTrigger,
+  type RepositoryConfig,
+} from "@agent/config";
+import {
+  GitHubClient,
+  type GitHubIssueComment,
+  type GitHubIssueThread,
+} from "@agent/github";
 import { isComputeActiveStatus } from "@agent/orchestrator";
 import { createTaskEvent } from "@agent/persistence";
 import type { IssueComment, Task, TaskStatus } from "@agent/shared";
-import { createAndEnqueueTask, enqueueIssueWorkflow, getServices, type ApiServices } from "./task-services.js";
+import {
+  createAndEnqueueTask,
+  enqueueIssueWorkflow,
+  getServices,
+  type ApiServices,
+} from "./task-services.js";
 
 export type GitHubSyncStatus = "idle" | "running" | "finished" | "failed";
 
@@ -32,7 +44,10 @@ export type GitHubSyncState = {
   lastResult?: GitHubSyncResult;
 };
 
-export type GitHubSyncClient = Pick<GitHubClient, "listOpenIssueThreads" | "listPullRequestFeedback">;
+export type GitHubSyncClient = Pick<
+  GitHubClient,
+  "listOpenIssueThreads" | "listPullRequestFeedback"
+>;
 
 export type GitHubSyncOptions = {
   github?: GitHubSyncClient;
@@ -49,7 +64,7 @@ export class GitHubSyncRepositoryNotFoundError extends Error {
 export class GitHubSyncRunError extends Error {
   constructor(
     message: string,
-    readonly result: GitHubSyncResult
+    readonly result: GitHubSyncResult,
   ) {
     super(message);
   }
@@ -63,13 +78,15 @@ type SyncLogger = {
 const syncStates = new Map<string, GitHubSyncState>();
 const runningSyncs = new Map<string, Promise<GitHubSyncResult>>();
 
-export function getGitHubRepositorySyncState(repositoryId: string): GitHubSyncState {
+export function getGitHubRepositorySyncState(
+  repositoryId: string,
+): GitHubSyncState {
   return syncStates.get(repositoryId) ?? { repositoryId, status: "idle" };
 }
 
 export async function triggerGitHubRepositorySync(
   repositoryId: string,
-  options: GitHubSyncOptions = {}
+  options: GitHubSyncOptions = {},
 ): Promise<{ started: boolean; sync: GitHubSyncState }> {
   const services = await getServices();
   findRepositoryById(services.config.repositories, repositoryId);
@@ -88,31 +105,49 @@ export async function triggerGitHubRepositorySync(
   return { started: true, sync: getGitHubRepositorySyncState(repositoryId) };
 }
 
-export async function triggerAllGitHubRepositorySyncs(options: GitHubSyncOptions = {}): Promise<GitHubSyncState[]> {
+export async function triggerAllGitHubRepositorySyncs(
+  options: GitHubSyncOptions = {},
+): Promise<GitHubSyncState[]> {
   const services = await getServices();
-  const states = await Promise.all(services.config.repositories.map((repository) => triggerGitHubRepositorySync(repository.id, options)));
+  const states = await Promise.all(
+    services.config.repositories.map((repository) =>
+      triggerGitHubRepositorySync(repository.id, options),
+    ),
+  );
   return states.map((state) => state.sync);
 }
 
-export async function runGitHubRepositorySync(repositoryId: string, options: GitHubSyncOptions = {}): Promise<GitHubSyncResult> {
+export async function runGitHubRepositorySync(
+  repositoryId: string,
+  options: GitHubSyncOptions = {},
+): Promise<GitHubSyncResult> {
   const startedAt = new Date().toISOString();
   syncStates.set(repositoryId, {
     repositoryId,
     status: "running",
-    lastStartedAt: startedAt
+    lastStartedAt: startedAt,
   });
 
   try {
     const services = await getServices();
-    const repository = findRepositoryById(services.config.repositories, repositoryId);
-    const github = options.github ?? createGitHubSyncClient(services.config.github.token);
-    const result = await collectGitHubUpdates(services, repository, github, options);
+    const repository = findRepositoryById(
+      services.config.repositories,
+      repositoryId,
+    );
+    const github =
+      options.github ?? createGitHubSyncClient(services.config.github.token);
+    const result = await collectGitHubUpdates(
+      services,
+      repository,
+      github,
+      options,
+    );
     syncStates.set(repositoryId, {
       repositoryId,
       status: "finished",
       lastStartedAt: startedAt,
       lastFinishedAt: new Date().toISOString(),
-      lastResult: result
+      lastResult: result,
     });
     return result;
   } catch (error) {
@@ -122,7 +157,8 @@ export async function runGitHubRepositorySync(repositoryId: string, options: Git
       lastStartedAt: startedAt,
       lastFinishedAt: new Date().toISOString(),
       lastError: error instanceof Error ? error.message : String(error),
-      lastResult: error instanceof GitHubSyncRunError ? error.result : undefined
+      lastResult:
+        error instanceof GitHubSyncRunError ? error.result : undefined,
     });
     throw error;
   }
@@ -134,7 +170,10 @@ export function resetGitHubSyncStateForTests(): void {
 }
 
 export function startGitHubSyncScheduler(logger: SyncLogger): () => void {
-  const intervalMs = Number(process.env.GITHUB_SYNC_INTERVAL_MS ?? (process.env.NODE_ENV === "test" ? 0 : 60000));
+  const intervalMs = Number(
+    process.env.GITHUB_SYNC_INTERVAL_MS ??
+      (process.env.NODE_ENV === "test" ? 0 : 60000),
+  );
 
   if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
     return () => undefined;
@@ -143,7 +182,7 @@ export function startGitHubSyncScheduler(logger: SyncLogger): () => void {
   const run = () => {
     void triggerAllGitHubRepositorySyncs().catch((error) => {
       logger.error("GitHub sync scheduler failed", {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     });
   };
@@ -162,7 +201,7 @@ async function collectGitHubUpdates(
   services: ApiServices,
   repository: RepositoryConfig,
   github: GitHubSyncClient,
-  options: GitHubSyncOptions
+  options: GitHubSyncOptions,
 ): Promise<GitHubSyncResult> {
   const result: GitHubSyncResult = {
     repositoryId: repository.id,
@@ -177,20 +216,31 @@ async function collectGitHubUpdates(
     importedFeedbackComments: 0,
     queuedFeedbackTasks: 0,
     failedFeedbackQueues: 0,
-    skippedFeedbackComments: 0
+    skippedFeedbackComments: 0,
   };
   const tasks = await services.tasks.listTasks();
-  const issueThreads = await github.listOpenIssueThreads(repository.github_owner, repository.github_repo, {
-    baseBranch: repository.default_branch,
-    perPage: options.issueLimit ?? Number(process.env.GITHUB_SYNC_ISSUE_LIMIT ?? 50)
-  });
+  const issueThreads = await github.listOpenIssueThreads(
+    repository.github_owner,
+    repository.github_repo,
+    {
+      baseBranch: repository.default_branch,
+      perPage:
+        options.issueLimit ?? Number(process.env.GITHUB_SYNC_ISSUE_LIMIT ?? 50),
+    },
+  );
 
   for (const issue of issueThreads) {
     result.scannedIssues += 1;
 
     const trackedTask = findTrackedIssueTask(tasks, issue);
     if (trackedTask) {
-      const issueCommentResult = await syncTrackedIssueComments(services, repository, trackedTask, issue.comments, options);
+      const issueCommentResult = await syncTrackedIssueComments(
+        services,
+        repository,
+        trackedTask,
+        issue.comments,
+        options,
+      );
       result.importedIssueComments += issueCommentResult.importedComments;
       result.queuedPrdApprovals += issueCommentResult.queuedPrdApprovals;
       result.queuedIssueRetriggers += issueCommentResult.queuedIssueRetriggers;
@@ -215,15 +265,17 @@ async function collectGitHubUpdates(
         body: issue.body,
         labels: issue.labels,
         comments: issue.comments,
-        baseBranch: issue.baseBranch
+        baseBranch: issue.baseBranch,
       },
-      { enqueue: options.enqueue }
+      { enqueue: options.enqueue },
     );
     tasks.push(task);
     result.importedIssues += 1;
   }
 
-  const feedbackTasks = tasks.filter((task) => isFeedbackTaskForRepository(task, repository));
+  const feedbackTasks = tasks.filter((task) =>
+    isFeedbackTaskForRepository(task, repository),
+  );
   for (const task of feedbackTasks) {
     const pullNumber = parsePullNumber(task.prUrl);
 
@@ -232,9 +284,19 @@ async function collectGitHubUpdates(
     }
 
     result.scannedFeedbackPullRequests += 1;
-    const comments = await github.listPullRequestFeedback(repository.github_owner, repository.github_repo, pullNumber);
-    const humanComments = comments.filter((comment) => !isBotActor(comment.author) && !isGeneratedCodeZeroComment(comment.body));
-    const newComments = humanComments.filter((comment) => !hasKnownComment(task.issue.comments, comment));
+    const comments = await github.listPullRequestFeedback(
+      repository.github_owner,
+      repository.github_repo,
+      pullNumber,
+    );
+    const humanComments = comments.filter(
+      (comment) =>
+        !isBotActor(comment.author) &&
+        !isGeneratedCodeZeroComment(comment.body),
+    );
+    const newComments = humanComments.filter(
+      (comment) => !hasKnownComment(task.issue.comments, comment),
+    );
     result.skippedFeedbackComments += humanComments.length - newComments.length;
 
     if (newComments.length === 0) {
@@ -245,8 +307,8 @@ async function collectGitHubUpdates(
     const updated = await services.tasks.updateTask(task.id, {
       issue: {
         ...task.issue,
-        comments: [...task.issue.comments, ...appendedComments]
-      }
+        comments: [...task.issue.comments, ...appendedComments],
+      },
     });
 
     for (const comment of newComments) {
@@ -255,14 +317,14 @@ async function collectGitHubUpdates(
           taskId: updated.id,
           type: "PR_REVIEW_COMMENT_RECEIVED",
           message: `PR feedback received from ${comment.author}`,
-            metadata: {
-              commentUrl: comment.url ?? null,
-              commentId: comment.id ?? null,
-              prUrl: task.prUrl ?? null,
-              feedbackSource: comment.source,
-              source: "github-sync"
-            }
-          })
+          metadata: {
+            commentUrl: comment.url ?? null,
+            commentId: comment.id ?? null,
+            prUrl: task.prUrl ?? null,
+            feedbackSource: comment.source,
+            source: "github-sync",
+          },
+        }),
       );
     }
 
@@ -270,7 +332,10 @@ async function collectGitHubUpdates(
 
     try {
       const lastComment = newComments[newComments.length - 1];
-      await (options.enqueue ?? enqueueIssueWorkflow)(updated.id, `${updated.id}-pr-sync-${lastComment?.id ?? Date.now()}`);
+      await (options.enqueue ?? enqueueIssueWorkflow)(
+        updated.id,
+        `${updated.id}-pr-sync-${lastComment?.id ?? Date.now()}`,
+      );
       result.queuedFeedbackTasks += 1;
     } catch (error) {
       result.failedFeedbackQueues += 1;
@@ -281,8 +346,8 @@ async function collectGitHubUpdates(
           taskId: updated.id,
           type: "TASK_BLOCKED",
           level: "warn",
-          message
-        })
+          message,
+        }),
       );
       throw new GitHubSyncRunError(message, result);
     }
@@ -291,7 +356,10 @@ async function collectGitHubUpdates(
   return result;
 }
 
-function findTriggerDecision(repository: RepositoryConfig, issue: GitHubIssueThread): { shouldTrigger: boolean } {
+function findTriggerDecision(
+  repository: RepositoryConfig,
+  issue: GitHubIssueThread,
+): { shouldTrigger: boolean } {
   const issueActions = ["opened", "reopened", "labeled"];
 
   for (const action of issueActions) {
@@ -300,7 +368,7 @@ function findTriggerDecision(repository: RepositoryConfig, issue: GitHubIssueThr
       eventName: "issues",
       action,
       labels: issue.labels,
-      actor: issue.author
+      actor: issue.author,
     });
 
     if (decision.shouldTrigger) {
@@ -316,7 +384,7 @@ function findTriggerDecision(repository: RepositoryConfig, issue: GitHubIssueThr
       labels: issue.labels,
       commentBody: comment.body,
       actor: comment.author,
-      fallbackMention: process.env.AGENT_TRIGGER_MENTION ?? "@agent-prd"
+      fallbackMention: process.env.AGENT_TRIGGER_MENTION ?? "@agent-prd",
     });
 
     if (decision.shouldTrigger) {
@@ -327,7 +395,10 @@ function findTriggerDecision(repository: RepositoryConfig, issue: GitHubIssueThr
   return { shouldTrigger: false };
 }
 
-function findRepositoryById(repositories: RepositoryConfig[], repositoryId: string): RepositoryConfig {
+function findRepositoryById(
+  repositories: RepositoryConfig[],
+  repositoryId: string,
+): RepositoryConfig {
   const repository = repositories.find((entry) => entry.id === repositoryId);
 
   if (!repository) {
@@ -339,7 +410,9 @@ function findRepositoryById(repositories: RepositoryConfig[], repositoryId: stri
 
 function createGitHubSyncClient(token?: string): GitHubSyncClient {
   if (!token) {
-    throw new Error("GITHUB_TOKEN is required to sync GitHub issues and PR comments");
+    throw new Error(
+      "GITHUB_TOKEN is required to sync GitHub issues and PR comments",
+    );
   }
 
   return new GitHubClient({ token });
@@ -350,20 +423,33 @@ async function syncTrackedIssueComments(
   repository: RepositoryConfig,
   task: Task,
   comments: IssueComment[],
-  options: GitHubSyncOptions
-): Promise<{ importedComments: number; queuedPrdApprovals: number; queuedIssueRetriggers: number }> {
-  const humanComments = comments.filter((comment) => !isBotActor(comment.author) && !isGeneratedCodeZeroComment(comment.body));
-  const newComments = humanComments.filter((comment) => !hasKnownIssueComment(task.issue.comments, comment));
+  options: GitHubSyncOptions,
+): Promise<{
+  importedComments: number;
+  queuedPrdApprovals: number;
+  queuedIssueRetriggers: number;
+}> {
+  const humanComments = comments.filter(
+    (comment) =>
+      !isBotActor(comment.author) && !isGeneratedCodeZeroComment(comment.body),
+  );
+  const newComments = humanComments.filter(
+    (comment) => !hasKnownIssueComment(task.issue.comments, comment),
+  );
 
   if (newComments.length === 0) {
-    return { importedComments: 0, queuedPrdApprovals: 0, queuedIssueRetriggers: 0 };
+    return {
+      importedComments: 0,
+      queuedPrdApprovals: 0,
+      queuedIssueRetriggers: 0,
+    };
   }
 
   let updated = await services.tasks.updateTask(task.id, {
     issue: {
       ...task.issue,
-      comments: [...task.issue.comments, ...newComments]
-    }
+      comments: [...task.issue.comments, ...newComments],
+    },
   });
 
   for (const comment of newComments) {
@@ -373,33 +459,50 @@ async function syncTrackedIssueComments(
         type: "ISSUE_COMMENT_RECEIVED",
         message: `Issue comment received from ${comment.author}`,
         metadata: {
-          source: "github-sync"
-        }
-      })
+          source: "github-sync",
+        },
+      }),
     );
   }
 
-  const approvalComment = newComments.find((comment) => isPrdApprovalComment(repository, comment));
+  const approvalComment = newComments.find((comment) =>
+    isPrdApprovalComment(repository, comment),
+  );
   if (approvalComment && updated.status === "PRD_REVIEW_REQUIRED") {
-    updated = await services.tasks.updateTask(updated.id, { status: "PRD_APPROVED" });
+    updated = await services.tasks.updateTask(updated.id, {
+      status: "PRD_APPROVED",
+    });
     await services.tasks.appendEvent(
       createTaskEvent({
         taskId: updated.id,
         type: "PRD_APPROVED",
         message: `PRD approved from GitHub issue comment by ${approvalComment.author}`,
         metadata: {
-          source: "github-sync"
-        }
-      })
+          source: "github-sync",
+        },
+      }),
     );
-    await (options.enqueue ?? enqueueIssueWorkflow)(updated.id, `${updated.id}-prd-approved-${Date.now()}`);
-    return { importedComments: newComments.length, queuedPrdApprovals: 1, queuedIssueRetriggers: 0 };
+    await (options.enqueue ?? enqueueIssueWorkflow)(
+      updated.id,
+      `${updated.id}-prd-approved-${Date.now()}`,
+    );
+    return {
+      importedComments: newComments.length,
+      queuedPrdApprovals: 1,
+      queuedIssueRetriggers: 0,
+    };
   }
 
-  const retriggerComment = newComments.find((comment) => isIssueTriggerComment(repository, updated, comment));
-  const restartStatus = retriggerComment ? getIssueRetriggerRestartStatus(updated, retriggerComment) : undefined;
+  const retriggerComment = newComments.find((comment) =>
+    isIssueTriggerComment(repository, updated, comment),
+  );
+  const restartStatus = retriggerComment
+    ? getIssueRetriggerRestartStatus(updated, retriggerComment)
+    : undefined;
   if (retriggerComment && restartStatus) {
-    updated = await services.tasks.updateTask(updated.id, { status: restartStatus });
+    updated = await services.tasks.updateTask(updated.id, {
+      status: restartStatus,
+    });
     await services.tasks.appendEvent(
       createTaskEvent({
         taskId: updated.id,
@@ -408,22 +511,44 @@ async function syncTrackedIssueComments(
         metadata: {
           source: "github-sync",
           previousStatus: task.status,
-          restartStatus
-        }
-      })
+          restartStatus,
+        },
+      }),
     );
-    await (options.enqueue ?? enqueueIssueWorkflow)(updated.id, `${updated.id}-issue-retrigger-${Date.now()}`);
-    return { importedComments: newComments.length, queuedPrdApprovals: 0, queuedIssueRetriggers: 1 };
+    await (options.enqueue ?? enqueueIssueWorkflow)(
+      updated.id,
+      `${updated.id}-issue-retrigger-${Date.now()}`,
+    );
+    return {
+      importedComments: newComments.length,
+      queuedPrdApprovals: 0,
+      queuedIssueRetriggers: 1,
+    };
   }
 
-  return { importedComments: newComments.length, queuedPrdApprovals: 0, queuedIssueRetriggers: 0 };
+  return {
+    importedComments: newComments.length,
+    queuedPrdApprovals: 0,
+    queuedIssueRetriggers: 0,
+  };
 }
 
-function findTrackedIssueTask(tasks: Task[], issue: Pick<GitHubIssueThread, "owner" | "repo" | "number">): Task | undefined {
-  return tasks.find((task) => task.issue.owner === issue.owner && task.issue.repo === issue.repo && task.issue.number === issue.number);
+function findTrackedIssueTask(
+  tasks: Task[],
+  issue: Pick<GitHubIssueThread, "owner" | "repo" | "number">,
+): Task | undefined {
+  return tasks.find(
+    (task) =>
+      task.issue.owner === issue.owner &&
+      task.issue.repo === issue.repo &&
+      task.issue.number === issue.number,
+  );
 }
 
-function isFeedbackTaskForRepository(task: Task, repository: RepositoryConfig): boolean {
+function isFeedbackTaskForRepository(
+  task: Task,
+  repository: RepositoryConfig,
+): boolean {
   return (
     task.issue.owner === repository.github_owner &&
     task.issue.repo === repository.github_repo &&
@@ -437,23 +562,42 @@ function parsePullNumber(prUrl?: string): number | undefined {
   return match ? Number(match[1]) : undefined;
 }
 
-function hasKnownComment(existing: IssueComment[], comment: GitHubIssueComment): boolean {
-  return existing.some((entry) => entry.author === comment.author && entry.body === comment.body && entry.createdAt === comment.createdAt);
+function hasKnownComment(
+  existing: IssueComment[],
+  comment: GitHubIssueComment,
+): boolean {
+  return existing.some(
+    (entry) =>
+      entry.author === comment.author &&
+      entry.body === comment.body &&
+      entry.createdAt === comment.createdAt,
+  );
 }
 
-function hasKnownIssueComment(existing: IssueComment[], comment: IssueComment): boolean {
-  return existing.some((entry) => entry.author === comment.author && entry.body === comment.body && entry.createdAt === comment.createdAt);
+function hasKnownIssueComment(
+  existing: IssueComment[],
+  comment: IssueComment,
+): boolean {
+  return existing.some(
+    (entry) =>
+      entry.author === comment.author &&
+      entry.body === comment.body &&
+      entry.createdAt === comment.createdAt,
+  );
 }
 
 function toIssueComment(comment: GitHubIssueComment): IssueComment {
   return {
     author: comment.author,
     body: comment.body,
-    createdAt: comment.createdAt
+    createdAt: comment.createdAt,
   };
 }
 
-function isPrdApprovalComment(repository: RepositoryConfig, comment: Pick<IssueComment, "body">): boolean {
+function isPrdApprovalComment(
+  repository: RepositoryConfig,
+  comment: Pick<IssueComment, "body">,
+): boolean {
   const body = comment.body.toLowerCase();
   const mention = repository.trigger.mention.toLowerCase();
 
@@ -465,10 +609,16 @@ function isPrdApprovalComment(repository: RepositoryConfig, comment: Pick<IssueC
     return false;
   }
 
-  return /\bapprove\s+prd\b|\bprd\s+approved\b|\/approve-prd|批准\s*prd|同意执行|可以执行/.test(body);
+  return /\bapprove\s+prd\b|\bprd\s+approved\b|\/approve-prd|批准\s*prd|同意执行|可以执行/.test(
+    body,
+  );
 }
 
-function isIssueTriggerComment(repository: RepositoryConfig, task: Task, comment: IssueComment): boolean {
+function isIssueTriggerComment(
+  repository: RepositoryConfig,
+  task: Task,
+  comment: IssueComment,
+): boolean {
   if (isGeneratedCodeZeroComment(comment.body)) {
     return false;
   }
@@ -480,16 +630,23 @@ function isIssueTriggerComment(repository: RepositoryConfig, task: Task, comment
     labels: task.issue.labels,
     commentBody: comment.body,
     actor: comment.author,
-    fallbackMention: process.env.AGENT_TRIGGER_MENTION ?? "@agent-prd"
+    fallbackMention: process.env.AGENT_TRIGGER_MENTION ?? "@agent-prd",
   }).shouldTrigger;
 }
 
-function getIssueRetriggerRestartStatus(task: Task, comment: IssueComment): TaskStatus | undefined {
+function getIssueRetriggerRestartStatus(
+  task: Task,
+  comment: IssueComment,
+): TaskStatus | undefined {
   if (task.status === "FAILED" || task.status === "BLOCKED") {
-    return task.prd ? "PRD_APPROVED" : "QUEUED";
+    return task.planningDocument ? "PRD_APPROVED" : "QUEUED";
   }
 
-  if (isComputeActiveStatus(task.status) && task.prd && isExplicitRetryComment(comment)) {
+  if (
+    isComputeActiveStatus(task.status) &&
+    task.planningDocument &&
+    isExplicitRetryComment(comment)
+  ) {
     return "PRD_APPROVED";
   }
 
@@ -497,7 +654,9 @@ function getIssueRetriggerRestartStatus(task: Task, comment: IssueComment): Task
 }
 
 function isExplicitRetryComment(comment: IssueComment): boolean {
-  return /\b(retry|rerun|resume|restart)\b|重新|重试|再跑|继续处理|重新处理/.test(comment.body.toLowerCase());
+  return /\b(retry|rerun|resume|restart)\b|重新|重试|再跑|继续处理|重新处理/.test(
+    comment.body.toLowerCase(),
+  );
 }
 
 function isGeneratedCodeZeroComment(body: string): boolean {
@@ -511,5 +670,9 @@ function isGeneratedCodeZeroComment(body: string): boolean {
 }
 
 function isBotActor(actor: string): boolean {
-  return actor.endsWith("[bot]") || actor === "github-actions" || actor === "dependabot";
+  return (
+    actor.endsWith("[bot]") ||
+    actor === "github-actions" ||
+    actor === "dependabot"
+  );
 }

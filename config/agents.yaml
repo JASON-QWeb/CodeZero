@@ -64,7 +64,7 @@ agents:
     system_prompt: prompts/system/main-agent.md
     skills:
       - repo-context-compress
-      - minimal-change-planner
+      - implementation-scope-planner
   review:
     provider: default
     # provider_by_complexity:

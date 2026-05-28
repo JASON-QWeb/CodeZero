@@ -5,18 +5,17 @@
 ```mermaid
 flowchart TD
   A["GitHub Issue created or labeled"] --> B["Collect context"]
-  B --> C["Brainstorm requirements"]
-  C --> D["Draft PRD"]
-  D --> E{"Complex or risky?"}
-  E -->|Yes| F["Wait for human PRD review"]
-  F --> G{"Approved?"}
-  G -->|No| H["Revise PRD or stop"]
-  G -->|Yes| I["Prepare sandbox"]
-  E -->|No| I
+  B --> I["Create or reuse persistent task sandbox"]
   I --> Q["Create isolated issue branch"]
   Q --> U["Build repo navigation graph"]
   U --> V["Create navigation route + ContextPack"]
-  V --> J["Implement with agent + subagents"]
+  V --> C["Draft one PRD/Plan document"]
+  C --> E{"Complex or risky?"}
+  E -->|Yes| F["Wait for human PRD review"]
+  F --> G{"Approved?"}
+  G -->|No| H["Revise plan or stop"]
+  G -->|Yes| J["Implement in same sandbox"]
+  E -->|No| J
   J --> K["Run build, lint, test, screenshots"]
   K --> W["Run policy and security scans"]
   W --> L{"Verification passed?"}
@@ -31,7 +30,7 @@ flowchart TD
   O --> P["Propose memory / project map update"]
 ```
 
-## 2. PRD 阶段
+## 2. PRD/Plan 阶段
 
 输入：
 
@@ -39,16 +38,16 @@ flowchart TD
 - Issue 正文
 - 标签
 - 评论
-- 关联文件或设计稿
-- 仓库结构摘要
+- 同一 task sandbox 中的仓库结构摘要
+- ContextPack、Repo Navigation Graph、CodeGraph/Knowledge Graph 摘要
 - 历史相似 Issue
 
 输出：
 
-- `prd.md`
-- `brainstorm.md`
-- `acceptance_criteria.md`
-- `complexity.json`
+- `planning-document.json`
+- GitHub Issue 中可见的 PRD/Plan 评论
+
+这是一份文档，不是 PRD 和 plan 两次独立理解。它同时包含背景、目标、验收标准、风险、复杂度、预计阅读文件、预计修改文件、测试计划和验证命令。
 
 门禁：
 
@@ -60,7 +59,7 @@ flowchart TD
 
 主 Agent 读取：
 
-- PRD
+- PRD/Plan 文档
 - ContextPack
 - 相关文件证据链
 - 技术约束
@@ -76,13 +75,13 @@ flowchart TD
 - navigation route 生成。
 - agentic search。
 - ContextPack 生成。
-- 最小修改计划生成。
+- PRD/Plan 文档生成。
 
 每个 Issue 必须创建独立任务分支。除非人工明确设置依赖关系，当前 Issue 不能基于其他未合并 Issue 的分支。
 
 CodeZero implementation executor 输入：
 
-- Issue、已批准 PRD、内部执行计划
+- Issue、已批准 PRD/Plan 文档
 - ContextPack、CodeGraph/Knowledge Graph 摘要、仓库 rules/skills
 - 上一次质量门禁或 review feedback
 - 用户在 CodeZero 中配置的模型/API key 对应环境变量
@@ -202,7 +201,7 @@ PR 创建后，系统可以生成记忆更新建议：
 - quality gate result。
 - Review finding。
 
-Golden issue evals 应复用同一套 workflow 组件，评估 PRD、navigation route、ContextPack、最小修改计划、Review 和 PR body。
+Golden issue evals 应复用同一套 workflow 组件，评估 PRD/Plan 文档、navigation route、ContextPack、Review 和 PR body。
 
 ## 9. 人工操作
 

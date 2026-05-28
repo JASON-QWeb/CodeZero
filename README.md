@@ -8,26 +8,26 @@
 
 </div>
 
-CodeZero is a GitHub-native engineering agent platform that turns product intent into reviewable, verified pull requests. Describe the change in an Issue, mention the agent, or let a repository policy trigger the run. CodeZero drafts the PRD, reads the repository, builds a focused context pack, asks a coding agent to edit inside a sandbox, streams the work back to the board, runs verification, reviews the diff, and opens a draft PR with local validation steps.
+CodeZero is a GitHub-native engineering agent platform that turns product intent into reviewable, verified pull requests. Describe the change in an Issue, mention the agent, or let a repository policy trigger the run. CodeZero creates one persistent task sandbox, reads the repository, builds a focused context pack, drafts one PRD/Plan document, asks a coding agent to edit in that same sandbox after approval, streams the work back to the board, runs verification, reviews the diff, and opens a draft PR with local validation steps.
 
 It is built for the messy middle between "I have an idea" and "this PR is ready for a human review." Instead of treating code generation as a one-shot prompt, CodeZero wraps it in durable workflow state, repository intelligence, isolated execution, quality gates, traceable events, and approval points where people should stay in control.
 
 ## What It Feels Like
 
 - Open a GitHub Issue and write the product intent in natural language.
-- CodeZero turns that intent into a PRD, acceptance criteria, risk notes, and a minimal change plan.
+- CodeZero turns that intent and repository context into one PRD/Plan document: acceptance criteria, risks, files, tests, and commands.
 - The implementation agent works through OpenCode in an isolated sandbox, with stdout/stderr and structured progress streamed to the Run Console.
 - The board shows where the run is: syncing, indexing, planning, coding, reviewing, blocked, failed, or ready.
 - A draft PR appears with the diff, verification evidence, risks, and the exact commands a maintainer can run locally.
 
 ## Highlights
 
-- **Issue to PRD to PR**: convert GitHub Issues into structured PRDs, implementation plans, verified diffs, and draft PRs.
+- **Issue to PRD/Plan to PR**: convert GitHub Issues into one structured planning document, verified diffs, and draft PRs.
 - **Async GitHub sync**: repository sync and issue ingestion run through queue-backed workers instead of blocking the page.
 - **Live agent progress**: OpenCode output is captured as task events, so the board can show what the coding executor is doing.
 - **OpenCode-first implementation**: the main code path delegates edits to a coding CLI executor instead of legacy JSON file-write actions.
 - **Repository intelligence**: CodeGraph, Repo Navigation Graph, approved memory, and ContextPack narrow the edit surface before code changes begin.
-- **Isolated execution**: each Issue receives its own sandbox, branch, artifacts, logs, and verification trail.
+- **Persistent task sandbox**: each Issue receives one sandbox, branch, artifact set, logs, and verification trail that continue through approval and feedback iterations.
 - **Human control**: PRD approval, policy gates, review subagents, and memory proposals keep sensitive steps inspectable.
 - **Provider flexibility**: works with OpenAI-compatible gateways and can route agents across different providers and models.
 - **Operator console**: Run Console, Settings Console, Memory Inbox, Trace Replay API, and Golden Issue Eval CLI are included.
@@ -40,18 +40,17 @@ flowchart TD
   TP --> API["Fastify Webhook API"]
   API --> Q["Queue-backed sync and workflow jobs"]
   Q --> WF["Durable Workflow Orchestrator"]
-  WF --> PRD["PRD Agent"]
-  PRD --> GATE{"Human approval required?"}
-  GATE -->|Yes| UI["Run Console / Review Board"]
-  UI --> WF
-  GATE -->|No| SB["Per-Issue Sandbox"]
-  WF --> SB
+  WF --> SB["Persistent Task Sandbox"]
   SB --> IDX["Codebase Intelligence"]
   IDX --> GRAPH["Repo Navigation Graph"]
   GRAPH --> MEM["Approved Memory Retrieval"]
   MEM --> CP["Evidence-backed ContextPack"]
-  CP --> PLAN["Minimal Change Planner"]
-  PLAN --> IMPL["OpenCode Coding Executor"]
+  CP --> PRD["PRD/Plan Agent"]
+  PRD --> GATE{"Human approval required?"}
+  GATE -->|Yes| UI["Run Console / Review Board"]
+  UI --> WF
+  GATE -->|No| IMPL["OpenCode Coding Executor"]
+  WF --> IMPL
   IMPL --> STREAM["Live Progress Events"]
   STREAM --> UI
   IMPL --> QA["Quality Gates"]
@@ -64,10 +63,10 @@ flowchart TD
 ## How It Works
 
 1. **Trigger**: GitHub webhook, `@agent` mention, label, or manual import creates a task.
-2. **Understand**: the PRD agent extracts goals, risks, acceptance criteria, and complexity.
+2. **Open Workspace**: CodeZero creates or reuses the task sandbox and issue branch.
 3. **Orient**: repository indexing, navigation graph, approved memory, and ContextPack identify the relevant files.
-4. **Plan**: the workflow writes a minimal change plan before handing the task to the coding executor.
-5. **Implement**: OpenCode edits the sandboxed repository using the generated prompt file and model configuration.
+4. **Plan**: one planning pass produces the PRD/Plan document used for approval and implementation.
+5. **Implement**: after approval, OpenCode edits the same sandboxed repository using the generated prompt file and model configuration.
 6. **Stream**: executor stdout/stderr and structured JSON lines become board events such as progress, file activity, commands, and errors.
 7. **Verify**: build, lint, test, typecheck, screenshot hooks, policy checks, and review subagents run before PR creation.
 8. **Publish**: CodeZero pushes a branch and opens a draft PR with evidence, risks, and local verification commands.
@@ -199,6 +198,6 @@ The Web Settings Console can edit and validate these files during local operatio
 
 ## Current Status
 
-The MVP runs locally and includes GitHub Issue ingestion, async repository sync, repository trigger policy, queue and concurrency limits, PRD generation, conditional human approval, Repo Navigation Graph MVP, ContextPack generation, official Understand-Anything project graph entry point, OpenCode-based sandbox implementation, streamed agent progress, Trace Replay API, Run Console, Settings Console, Memory Inbox, Golden Issue Eval CLI/CI, Repository Onboarding, quality gates, Review subagent, and draft PR creation.
+The MVP runs locally and includes GitHub Issue ingestion, async repository sync, repository trigger policy, queue and concurrency limits, one PRD/Plan planning document, conditional human approval, Repo Navigation Graph MVP, ContextPack generation, official Understand-Anything project graph entry point, OpenCode-based sandbox implementation, streamed agent progress, Trace Replay API, Run Console, Settings Console, Memory Inbox, Golden Issue Eval CLI/CI, Repository Onboarding, quality gates, Review subagent, and draft PR creation.
 
 Next hardening areas include approval recovery, stronger provider health diagnostics, stricter command and tool schemas, security scanning, richer eval assertions, and deeper graph adapters for larger repositories.

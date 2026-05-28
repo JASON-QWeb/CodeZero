@@ -2,16 +2,27 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentDefinition } from "@agent/agent-runtime";
 import type { AppConfig, ImplementationExecutorConfig } from "@agent/config";
-import { getGitDiff, runCommand, type CommandOutputChunk, type CommandResult } from "@agent/sandbox";
-import type { JsonObject, MinimalChangePlan, PrdDocument, QualityGateResult, Task, TaskEvent } from "@agent/shared";
+import {
+  getGitDiff,
+  runCommand,
+  type CommandOutputChunk,
+  type CommandResult,
+} from "@agent/sandbox";
+import type {
+  JsonObject,
+  PlanningDocument,
+  QualityGateResult,
+  Task,
+  TaskEvent,
+} from "@agent/shared";
 
-export type NormalizedImplementationExecutorConfig = Required<ImplementationExecutorConfig>;
+export type NormalizedImplementationExecutorConfig =
+  Required<ImplementationExecutorConfig>;
 type AgentProviderConfig = AppConfig["agents"]["providers"][string];
 
 export type CodingExecutorPromptInput = {
   task: Task;
-  prd: PrdDocument;
-  minimalChangePlan: MinimalChangePlan;
+  planningDocument: PlanningDocument;
   implementationContext: JsonObject;
   fileSnippets: JsonObject;
   reviewerFeedback?: string;
@@ -45,7 +56,7 @@ export type CodingExecutorRunResult = {
 };
 
 export function normalizeImplementationExecutorConfig(
-  value: ImplementationExecutorConfig | undefined
+  value: ImplementationExecutorConfig | undefined,
 ): NormalizedImplementationExecutorConfig {
   return {
     mode: value?.mode ?? "cli",
@@ -54,15 +65,23 @@ export function normalizeImplementationExecutorConfig(
       value?.command ??
       'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
     timeout_ms: value?.timeout_ms ?? 60 * 60_000,
-    env: value?.env ?? {}
+    env: value?.env ?? {},
   };
 }
 
-export function buildCodingExecutorEnv(input: { config: AppConfig; agent: AgentDefinition; executor: NormalizedImplementationExecutorConfig }): NodeJS.ProcessEnv {
+export function buildCodingExecutorEnv(input: {
+  config: AppConfig;
+  agent: AgentDefinition;
+  executor: NormalizedImplementationExecutorConfig;
+}): NodeJS.ProcessEnv {
   const providerId = input.agent.providerId;
   const provider = input.config.agents.providers[providerId];
-  const providerApiKey = provider ? process.env[provider.api_key_env] : undefined;
-  const codingProvider = provider ? resolveCodingExecutorProvider(providerId, provider) : undefined;
+  const providerApiKey = provider
+    ? process.env[provider.api_key_env]
+    : undefined;
+  const codingProvider = provider
+    ? resolveCodingExecutorProvider(providerId, provider)
+    : undefined;
   const providerEnv = provider
     ? {
         [provider.api_key_env]: providerApiKey,
@@ -76,25 +95,27 @@ export function buildCodingExecutorEnv(input: { config: AppConfig; agent: AgentD
         CODEZERO_OPENCODE_MODEL: codingProvider?.modelRef,
         CODEZERO_OPENCODE_MODE: codingProvider?.mode,
         CODEZERO_MODEL_PROVIDER: providerId,
-        CODEZERO_MODEL: provider.model
+        CODEZERO_MODEL: provider.model,
       }
     : {};
 
   return {
     ...providerEnv,
     ...(codingProvider?.env ?? {}),
-    ...input.executor.env
+    ...input.executor.env,
   };
 }
 
-export function buildCodingExecutorPrompt(input: CodingExecutorPromptInput): string {
+export function buildCodingExecutorPrompt(
+  input: CodingExecutorPromptInput,
+): string {
   return [
     "# CodeZero Implementation Request",
     "",
     "You are CodeZero's internal implementation executor running inside an isolated Git worktree.",
     "Modify the repository files directly. Do not commit, push, create pull requests, or change branches.",
     "CodeZero will run the final quality gates, review the diff, publish screenshots, and create or update the GitHub PR.",
-    "Keep the diff focused on the approved PRD and latest feedback. Do not include unrelated refactors.",
+    "Keep the diff focused on the approved PRD/Plan document and latest feedback. Do not include unrelated refactors.",
     "",
     "## Issue",
     `- Repository: ${input.task.issue.owner}/${input.task.issue.repo}`,
@@ -103,11 +124,8 @@ export function buildCodingExecutorPrompt(input: CodingExecutorPromptInput): str
     "",
     input.task.issue.body.trim() || "(No issue body provided.)",
     "",
-    "## Approved PRD",
-    JSON.stringify(input.prd, null, 2),
-    "",
-    "## Implementation Plan",
-    JSON.stringify(input.minimalChangePlan, null, 2),
+    "## Approved PRD/Plan Document",
+    JSON.stringify(input.planningDocument, null, 2),
     "",
     "## Repository Context",
     JSON.stringify(input.implementationContext, null, 2),
@@ -116,50 +134,81 @@ export function buildCodingExecutorPrompt(input: CodingExecutorPromptInput): str
     JSON.stringify(input.fileSnippets, null, 2),
     "",
     input.reviewerFeedback?.trim()
-      ? ["## Latest Feedback Or Self-Check Repair Context", input.reviewerFeedback.trim(), ""].join("\n")
+      ? [
+          "## Latest Feedback Or Self-Check Repair Context",
+          input.reviewerFeedback.trim(),
+          "",
+        ].join("\n")
       : "",
     input.qualityGateResults?.length
-      ? ["## Latest Quality Gate Results", JSON.stringify(input.qualityGateResults, null, 2), ""].join("\n")
+      ? [
+          "## Latest Quality Gate Results",
+          JSON.stringify(input.qualityGateResults, null, 2),
+          "",
+        ].join("\n")
       : "",
     "## Completion Contract",
     "- Leave the working tree with the required code changes.",
     "- Add or update tests when the PRD or failure output requires it.",
     "- You may run targeted local commands if helpful, but CodeZero will run the authoritative self-checks after you finish.",
-    "- Stop after the implementation is complete; do not ask the user for follow-up unless the repository is genuinely blocked."
+    "- Stop after the implementation is complete; do not ask the user for follow-up unless the repository is genuinely blocked.",
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promise<CodingExecutorRunResult> {
+export async function runCodingCliExecutor(
+  input: CodingExecutorRunInput,
+): Promise<CodingExecutorRunResult> {
   const executorDir = path.join(input.artifactDir, "coding-executor");
   await mkdir(executorDir, { recursive: true });
-  const promptPath = path.join(executorDir, `prompt-attempt-${input.attempt}.md`);
-  const openCodeConfigPath = path.join(executorDir, `opencode-attempt-${input.attempt}.json`);
+  const promptPath = path.join(
+    executorDir,
+    `prompt-attempt-${input.attempt}.md`,
+  );
+  const openCodeConfigPath = path.join(
+    executorDir,
+    `opencode-attempt-${input.attempt}.json`,
+  );
   const logPath = path.join(executorDir, `run-attempt-${input.attempt}.json`);
   await writeFile(promptPath, input.prompt, "utf8");
   const openCodeConfig = buildOpenCodeProviderConfig(input.config, input.agent);
 
   if (openCodeConfig) {
-    await writeFile(openCodeConfigPath, `${JSON.stringify(openCodeConfig, null, 2)}\n`, "utf8");
+    await writeFile(
+      openCodeConfigPath,
+      `${JSON.stringify(openCodeConfig, null, 2)}\n`,
+      "utf8",
+    );
   }
 
-  const progressReporter = createCodingExecutorProgressReporter(input.onProgress);
+  const progressReporter = createCodingExecutorProgressReporter(
+    input.onProgress,
+  );
   const commandResult = await runCommand({
     cwd: input.repoDir,
     command: input.executor.command,
     timeoutMs: input.executor.timeout_ms,
     env: {
-      ...buildCodingExecutorEnv({ config: input.config, agent: input.agent, executor: input.executor }),
+      ...buildCodingExecutorEnv({
+        config: input.config,
+        agent: input.agent,
+        executor: input.executor,
+      }),
       CODEZERO_PROMPT_FILE: promptPath,
       CODEZERO_TASK_ID: input.task.id,
       CODEZERO_REPO_DIR: input.repoDir,
       CODEZERO_ARTIFACT_DIR: input.artifactDir,
       CODEZERO_ISSUE_URL: input.task.issue.url,
       CODEZERO_EXECUTOR_NAME: input.executor.name,
-      ...(openCodeConfig ? { OPENCODE_CONFIG: openCodeConfigPath, CODEZERO_OPENCODE_CONFIG_FILE: openCodeConfigPath } : {})
+      ...(openCodeConfig
+        ? {
+            OPENCODE_CONFIG: openCodeConfigPath,
+            CODEZERO_OPENCODE_CONFIG_FILE: openCodeConfigPath,
+          }
+        : {}),
     },
-    onOutput: (chunk) => progressReporter.accept(chunk)
+    onOutput: (chunk) => progressReporter.accept(chunk),
   });
   await progressReporter.flush();
   const diff = await getGitDiff(input.repoDir);
@@ -175,12 +224,12 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
         durationMs: commandResult.durationMs,
         stdout: commandResult.stdout,
         stderr: commandResult.stderr,
-        diffSummary: summarizeDiffForLog(diff)
+        diffSummary: summarizeDiffForLog(diff),
       },
       null,
-      2
+      2,
     )}\n`,
-    "utf8"
+    "utf8",
   );
 
   return {
@@ -188,12 +237,17 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
     promptPath,
     openCodeConfigPath: openCodeConfig ? openCodeConfigPath : undefined,
     logPath,
-    diff
+    diff,
   };
 }
 
-function createCodingExecutorProgressReporter(onProgress: CodingExecutorRunInput["onProgress"]) {
-  const buffers: Record<CommandOutputChunk["stream"], string> = { stdout: "", stderr: "" };
+function createCodingExecutorProgressReporter(
+  onProgress: CodingExecutorRunInput["onProgress"],
+) {
+  const buffers: Record<CommandOutputChunk["stream"], string> = {
+    stdout: "",
+    stderr: "",
+  };
   const pending: Promise<void>[] = [];
   const recentMessages = new Map<string, number>();
 
@@ -236,13 +290,13 @@ function createCodingExecutorProgressReporter(onProgress: CodingExecutorRunInput
         buffers[stream] = "";
       }
       await Promise.all(pending);
-    }
+    },
   };
 }
 
 export function normalizeCodingExecutorProgressLine(
   line: string,
-  stream: CommandOutputChunk["stream"] = "stdout"
+  stream: CommandOutputChunk["stream"] = "stdout",
 ): CodingExecutorProgressEvent | undefined {
   const clean = stripAnsi(line).trim();
   if (!clean || isIgnorableExecutorLine(clean)) {
@@ -255,8 +309,8 @@ export function normalizeCodingExecutorProgressLine(
       level: /error|failed|fatal|exception/i.test(clean) ? "error" : "warn",
       metadata: {
         source: "opencode",
-        stream
-      }
+        stream,
+      },
     };
   }
 
@@ -267,8 +321,8 @@ export function normalizeCodingExecutorProgressLine(
       level: "info",
       metadata: {
         source: "opencode",
-        stream
-      }
+        stream,
+      },
     };
   }
 
@@ -281,29 +335,42 @@ export function normalizeCodingExecutorProgressLine(
       metadata: {
         source: "opencode",
         stream,
-        eventType
-      }
+        eventType,
+      },
     };
   }
 
-  const filePath = findStringValue(parsed, ["path", "file", "filePath", "filename"]);
+  const filePath = findStringValue(parsed, [
+    "path",
+    "file",
+    "filePath",
+    "filename",
+  ]);
   const command = findStringValue(parsed, ["command", "cmd"]);
   const toolName = findStringValue(parsed, ["tool", "toolName", "tool_name"]);
-  const text = findStringValue(parsed, ["message", "text", "content", "delta", "summary", "title", "output"]);
+  const text = findStringValue(parsed, [
+    "message",
+    "text",
+    "content",
+    "delta",
+    "summary",
+    "title",
+    "output",
+  ]);
   const metadata = compactProgressMetadata({
     source: "opencode",
     stream,
     eventType,
     filePath,
     command,
-    toolName
+    toolName,
   });
 
   if (filePath && /file|edit|patch|write|diff/.test(lowerEventType)) {
     return {
       message: `OpenCode file activity: ${filePath}`,
       level: "info",
-      metadata
+      metadata,
     };
   }
 
@@ -311,7 +378,7 @@ export function normalizeCodingExecutorProgressLine(
     return {
       message: `OpenCode command: ${truncateProgressText(command, 300)}`,
       level: "info",
-      metadata
+      metadata,
     };
   }
 
@@ -319,7 +386,7 @@ export function normalizeCodingExecutorProgressLine(
     return {
       message: `OpenCode tool: ${toolName}${filePath ? ` ${filePath}` : ""}`,
       level: "info",
-      metadata
+      metadata,
     };
   }
 
@@ -327,7 +394,7 @@ export function normalizeCodingExecutorProgressLine(
     return {
       message: `OpenCode: ${truncateProgressText(text, 600)}`,
       level: "info",
-      metadata
+      metadata,
     };
   }
 
@@ -335,7 +402,7 @@ export function normalizeCodingExecutorProgressLine(
     return {
       message: `OpenCode event: ${eventType}`,
       level: "debug",
-      metadata
+      metadata,
     };
   }
 
@@ -351,7 +418,10 @@ function parseJsonLine(value: string): unknown {
 }
 
 function stripAnsi(value: string): string {
-  return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
+  return value.replace(
+    new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"),
+    "",
+  );
 }
 
 function isIgnorableExecutorLine(value: string): boolean {
@@ -391,19 +461,26 @@ function findStringValue(value: unknown, keys: string[], depth = 0): string {
 }
 
 function compactProgressMetadata(input: Record<string, string>): JsonObject {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value.length > 0));
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value.length > 0),
+  );
 }
 
 function truncateProgressText(value: string, maxChars: number): string {
   const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized.length > maxChars ? `${normalized.slice(0, maxChars)}...` : normalized;
+  return normalized.length > maxChars
+    ? `${normalized.slice(0, maxChars)}...`
+    : normalized;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function buildOpenCodeProviderConfig(config: AppConfig, agent: AgentDefinition): JsonObject | undefined {
+function buildOpenCodeProviderConfig(
+  config: AppConfig,
+  agent: AgentDefinition,
+): JsonObject | undefined {
   const providerId = agent.providerId;
   const provider = config.agents.providers[providerId];
 
@@ -416,7 +493,7 @@ function buildOpenCodeProviderConfig(config: AppConfig, agent: AgentDefinition):
 
 function resolveCodingExecutorProvider(
   providerId: string,
-  provider: AgentProviderConfig
+  provider: AgentProviderConfig,
 ): {
   mode: "auto" | "custom" | "native";
   providerId: string;
@@ -427,7 +504,10 @@ function resolveCodingExecutorProvider(
   const executorProvider = provider.coding_executor;
   const mode = executorProvider?.mode ?? "auto";
   const model = executorProvider?.model ?? provider.model;
-  const resolvedProviderId = executorProvider?.provider_id ?? inferOpenCodeProviderId(mode, model) ?? "codezero";
+  const resolvedProviderId =
+    executorProvider?.provider_id ??
+    inferOpenCodeProviderId(mode, model) ??
+    "codezero";
   const modelKey = toOpenCodeProviderModelKey(resolvedProviderId, model);
   const modelRef = toOpenCodeModelRef(resolvedProviderId, modelKey);
   const env = executorProvider?.env ?? {};
@@ -442,19 +522,23 @@ function resolveCodingExecutorProvider(
       : {
           baseURL: provider.base_url,
           apiKey: "{env:OPENAI_API_KEY}",
-          ...toJsonObject(executorProvider?.options ?? {})
+          ...toJsonObject(executorProvider?.options ?? {}),
         };
   const modelOptions = {
     name: modelKey,
-    ...toJsonObject(executorProvider?.model_options ?? {})
+    ...toJsonObject(executorProvider?.model_options ?? {}),
   };
   const providerEntry: JsonObject = {
-    ...(executorProvider?.npm || mode !== "native" ? { npm: executorProvider?.npm ?? "@ai-sdk/openai-compatible" } : {}),
+    ...(executorProvider?.npm || mode !== "native"
+      ? { npm: executorProvider?.npm ?? "@ai-sdk/openai-compatible" }
+      : {}),
     name: executorProvider?.name ?? "CodeZero Runtime Provider",
-    ...(Object.keys(providerOptions).length > 0 ? { options: providerOptions } : {}),
+    ...(Object.keys(providerOptions).length > 0
+      ? { options: providerOptions }
+      : {}),
     models: {
-      [modelKey]: modelOptions
-    }
+      [modelKey]: modelOptions,
+    },
   };
 
   return {
@@ -465,23 +549,28 @@ function resolveCodingExecutorProvider(
     config: {
       $schema: "https://opencode.ai/config.json",
       provider: {
-        [resolvedProviderId]: providerEntry
+        [resolvedProviderId]: providerEntry,
       },
-      model: modelRef
-    }
+      model: modelRef,
+    },
   };
 }
 
-function shouldWriteNativeProviderConfig(executorProvider: AgentProviderConfig["coding_executor"]): boolean {
+function shouldWriteNativeProviderConfig(
+  executorProvider: AgentProviderConfig["coding_executor"],
+): boolean {
   return Boolean(
     executorProvider?.npm ||
-      executorProvider?.name ||
-      Object.keys(executorProvider?.options ?? {}).length > 0 ||
-      Object.keys(executorProvider?.model_options ?? {}).length > 0
+    executorProvider?.name ||
+    Object.keys(executorProvider?.options ?? {}).length > 0 ||
+    Object.keys(executorProvider?.model_options ?? {}).length > 0,
   );
 }
 
-function inferOpenCodeProviderId(mode: "auto" | "custom" | "native", model: string): string | undefined {
+function inferOpenCodeProviderId(
+  mode: "auto" | "custom" | "native",
+  model: string,
+): string | undefined {
   if (mode !== "native") {
     return undefined;
   }
@@ -491,7 +580,9 @@ function inferOpenCodeProviderId(mode: "auto" | "custom" | "native", model: stri
 }
 
 function toOpenCodeProviderModelKey(providerId: string, model: string): string {
-  return model.startsWith(`${providerId}/`) ? model.slice(providerId.length + 1) : model;
+  return model.startsWith(`${providerId}/`)
+    ? model.slice(providerId.length + 1)
+    : model;
 }
 
 function toOpenCodeModelRef(providerId: string, modelKey: string): string {
@@ -499,13 +590,20 @@ function toOpenCodeModelRef(providerId: string, modelKey: string): string {
 }
 
 function toJsonObject(value: Record<string, unknown>): JsonObject {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as JsonObject;
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as JsonObject;
 }
 
 function summarizeDiffForLog(diff: string): string {
   return diff
     .split("\n")
-    .filter((line) => line.startsWith("diff --git ") || line.startsWith("+++") || line.startsWith("---"))
+    .filter(
+      (line) =>
+        line.startsWith("diff --git ") ||
+        line.startsWith("+++") ||
+        line.startsWith("---"),
+    )
     .slice(0, 80)
     .join("\n");
 }

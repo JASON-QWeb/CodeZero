@@ -154,11 +154,11 @@ PRD 必须包含背景、目标、非目标、用户故事、验收标准、影�
 如果包含密钥、隐私、生产数据或无法确认的推断，必须拒绝写入长期记忆。
 ```
 
-### 3.8 `minimal-change-planner`
+### 3.8 `planning-agent`
 
 职责：
 
-- 根据 PRD 和 ContextPack 生成最小修改计划。
+- 根据 Issue 和 ContextPack 生成同一份 PRD/Plan 文档。
 - 声明预计读取和修改文件。
 - 声明测试计划。
 - 声明明确不做的事情。
@@ -203,7 +203,7 @@ PRD 必须包含背景、目标、非目标、用户故事、验收标准、影�
 核心提示词骨架：
 
 ```text
-你是 PR review subagent。请只根据 PRD、ContextPack、最小修改计划、diff、测试结果和截图进行审核。
+你是 PR review subagent。请只根据 PRD/Plan 文档、ContextPack、diff、测试结果和截图进行审核。
 优先找阻断问题：需求未满足、无关改动、缺少测试、安全或数据风险。
 不要要求超出 PRD 的额外功能。
 输出必须包含 approved、blocking_findings、missing_tests、scope_violations、risk_level。
@@ -302,7 +302,7 @@ prompts/
 - 如果前端改动无法截图，必须阻止创建 draft PR 或标注高风险。
 - 如果 diff 超过配置阈值，必须触发 Review Agent。
 - 如果 Review subagent 不通过，不得创建 PR。
-- 如果实际改动超出最小修改计划，必须重新说明原因或回滚无关改动。
+- 如果实际改动超出 PRD/Plan 文档的实现范围，必须重新说明原因或回滚无关改动。
 
 ## 8. 项目业务 Skill 加载规则
 

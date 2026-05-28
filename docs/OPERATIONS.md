@@ -199,7 +199,7 @@ agents:
     system_prompt: prompts/system/main-agent.md
     skills:
       - repo-context-compress
-      - minimal-change-planner
+      - implementation-scope-planner
 ```
 
 Coding executor provider 示例：
@@ -363,20 +363,19 @@ Run Console 的 repository cards 会显示每个仓库的 queued 数、running/m
 
 worker 会按顺序执行：
 
-1. PRD Agent。
-2. PRD 人审门禁。
-3. Docker 沙箱 clone。
-4. Issue 独立分支。
-5. codebase index。
-6. agentic search。
-7. ContextPack。
-8. minimal change plan。
-9. sandbox coding executor 通过 OpenCode 直接修改隔离 worktree；失败时不回退到 JSON action 或自研文件编辑工具。
-10. build/lint/typecheck/unit test。
-11. 前端 Chrome 截图，如果配置了 URL。
-12. Review subagent。
-13. commit/push/draft PR。
-14. PR 人工评论触发同一分支迭代，重新执行实现、自检、review、push 和 PR 正文刷新。
+1. 创建或恢复同一个 task sandbox。
+2. Issue 独立分支。
+3. codebase index。
+4. agentic search。
+5. ContextPack。
+6. Planning Agent 生成同一份 PRD/Plan 文档。
+7. PRD/Plan 人审门禁。
+8. sandbox coding executor 通过 OpenCode 直接修改同一隔离 worktree；失败时不回退到 JSON action 或自研文件编辑工具。
+9. build/lint/typecheck/unit test。
+10. 前端 Chrome 截图，如果配置了 URL。
+11. Review subagent。
+12. commit/push/draft PR。
+13. PR 人工评论触发同一分支、同一 sandbox 迭代，重新执行实现、自检、review、push 和 PR 正文刷新。
 
 没有 OpenAI 或 GitHub 凭证时，任务会进入 `FAILED` 或 `BLOCKED` 并记录明确事件；不会假装成功。
 
@@ -462,4 +461,4 @@ git checkout <agent-branch>
 
 当前实现会从 lockfile 推导安装命令，从 `repositories.yaml` 的 `quality_gates` 和 `frontend.dev_command` 推导验证/启动命令，并写入质量门禁结果和截图 artifact。前端截图会复制进 PR 分支的 `.agent/screenshots/issue-<number>/`，PR 正文使用 GitHub raw URL 直接嵌图，避免只给本地路径或不可渲染链接。后续 Review subagent 会阻断缺少本地验证说明的 PR。
 
-PR 创建后，GitHub PR conversation 中的人工评论会被 webhook 映射回已有 task。系统不会新建另一个 Issue task，而是 clone 当前 PR 分支，在同一个分支上应用用户反馈、重新跑质量门禁和 review subagent，通过后 push 并更新原 PR 正文，再在 PR 里回复本轮已处理。用户继续评论时重复这一轮，直到用户满意并自行合并。
+PR 创建后，GitHub PR conversation 中的人工评论会被 webhook 映射回已有 task。系统不会新建另一个 Issue task，也不会新开 feedback sandbox；它会恢复同一个 task sandbox 和同一个 PR 分支，应用用户反馈、重新跑质量门禁和 review subagent，通过后 push 并更新原 PR 正文，再在 PR 里回复本轮已处理。用户继续评论时重复这一轮，直到用户满意并自行合并。

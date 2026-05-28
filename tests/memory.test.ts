@@ -3,7 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildContextPack } from "@agent/codebase-intelligence";
-import { createTaskMemoryProposal, FileMemoryStore, toContextMemories } from "@agent/memory";
+import {
+  createTaskMemoryProposal,
+  FileMemoryStore,
+  toContextMemories,
+} from "@agent/memory";
 import { createTask } from "@agent/orchestrator";
 import type { IssueContext, Task } from "@agent/shared";
 
@@ -17,14 +21,14 @@ const issue: IssueContext = {
   body: "The order detail page shows stale refund status copy.",
   labels: ["frontend", "refund"],
   comments: [],
-  baseBranch: "main"
+  baseBranch: "main",
 };
 
 describe("memory", () => {
   it("creates task memory proposals for episodic and procedural memory", () => {
     const task: Task = {
       ...createTask(issue),
-      prd: {
+      planningDocument: {
         title: "Refund status copy wrong",
         background: "",
         goals: ["Fix refund status copy on order detail."],
@@ -34,9 +38,28 @@ describe("memory", () => {
         risks: [],
         unknowns: [],
         taskType: "frontend",
-        complexity: { score: 20, requiresHumanReview: false, reasons: [] }
+        complexity: { score: 20, requiresHumanReview: false, reasons: [] },
+        implementationPlan: {
+          goal: "Fix refund status copy on order detail.",
+          acceptanceCriteria: [],
+          filesToRead: [],
+          filesExpectedToChange: [],
+          testsToAddOrUpdate: [],
+          commandsToRun: [],
+          explicitNonGoals: [],
+          riskNotes: [],
+        },
       },
-      qualityGateResults: [{ kind: "unit_test", command: "pnpm test", passed: true, exitCode: 0, durationMs: 100, output: "" }],
+      qualityGateResults: [
+        {
+          kind: "unit_test",
+          command: "pnpm test",
+          passed: true,
+          exitCode: 0,
+          durationMs: 100,
+          output: "",
+        },
+      ],
       reviewResult: {
         approved: true,
         blockingFindings: [],
@@ -44,13 +67,21 @@ describe("memory", () => {
         missingTests: [],
         scopeViolations: [],
         riskLevel: "low",
-        prDescriptionNotes: []
-      }
+        prDescriptionNotes: [],
+      },
     };
-    const proposal = createTaskMemoryProposal({ task, now: new Date("2026-05-12T00:00:00.000Z") });
+    const proposal = createTaskMemoryProposal({
+      task,
+      now: new Date("2026-05-12T00:00:00.000Z"),
+    });
 
-    expect(proposal.records.map((record) => record.kind)).toEqual(["episodic", "procedural"]);
-    expect(proposal.records.every((record) => record.status === "proposed")).toBe(true);
+    expect(proposal.records.map((record) => record.kind)).toEqual([
+      "episodic",
+      "procedural",
+    ]);
+    expect(
+      proposal.records.every((record) => record.status === "proposed"),
+    ).toBe(true);
     expect(proposal.records[0]?.tags).toContain("refund");
   });
 
@@ -83,7 +114,7 @@ describe("memory", () => {
       files: [],
       symbols: [],
       businessRules: [],
-      memories
+      memories,
     });
 
     expect(contextPack.memories).toHaveLength(1);

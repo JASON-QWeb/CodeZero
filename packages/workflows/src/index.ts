@@ -46,4 +46,4 @@ export {
   type NormalizedImplementationExecutorConfig
 } from "./coding-executor.js";
 export { createRepositoryPermissionPolicies, repositoryAllowsTool } from "./repository-policies.js";
-export { planSchema, prdSchema, reviewSchema } from "./schemas.js";
+export { planSchema, planningDocumentSchema, prdSchema, reviewSchema } from "./schemas.js";

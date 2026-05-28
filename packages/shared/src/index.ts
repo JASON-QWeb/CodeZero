@@ -23,7 +23,7 @@ export const taskStatuses = [
   "DONE",
   "BLOCKED",
   "FAILED",
-  "CANCELLED"
+  "CANCELLED",
 ] as const;
 
 export type TaskStatus = (typeof taskStatuses)[number];
@@ -37,14 +37,25 @@ export const agentRoles = [
   "frontend-qa",
   "backend-test",
   "review",
-  "pr-writer"
+  "pr-writer",
 ] as const;
 
 export type AgentRole = (typeof agentRoles)[number];
 
-export type TaskType = "frontend" | "backend" | "fullstack" | "docs" | "unknown";
+export type TaskType =
+  | "frontend"
+  | "backend"
+  | "fullstack"
+  | "docs"
+  | "unknown";
 export type RiskLevel = "low" | "medium" | "high";
-export type QualityGateKind = "setup" | "build" | "lint" | "typecheck" | "unit_test" | "frontend_screenshot";
+export type QualityGateKind =
+  | "setup"
+  | "build"
+  | "lint"
+  | "typecheck"
+  | "unit_test"
+  | "frontend_screenshot";
 
 export type IssueContext = {
   provider: "github";
@@ -89,9 +100,8 @@ export type Task = {
   issue: IssueContext;
   status: TaskStatus;
   branchName?: string;
-  prd?: PrdDocument;
+  planningDocument?: PlanningDocument;
   contextPack?: ContextPack;
-  minimalChangePlan?: MinimalChangePlan;
   qualityGateResults?: QualityGateResult[];
   reviewResult?: ReviewResult;
   prUrl?: string;
@@ -122,7 +132,6 @@ export type TaskEventType =
   | "NAVIGATION_ROUTE_CREATED"
   | "MEMORY_RETRIEVED"
   | "CONTEXT_PACK_CREATED"
-  | "PLAN_CREATED"
   | "AGENT_RUN_STARTED"
   | "AGENT_RUN_PROGRESS"
   | "AGENT_RUN_FINISHED"
@@ -156,7 +165,14 @@ export type TaskEvent = {
 };
 
 export type FileEvidence = {
-  kind: "keyword" | "path" | "symbol" | "semantic" | "history" | "business-skill" | "graph";
+  kind:
+    | "keyword"
+    | "path"
+    | "symbol"
+    | "semantic"
+    | "history"
+    | "business-skill"
+    | "graph";
   score: number;
   summary: string;
 };
@@ -206,6 +222,10 @@ export type MinimalChangePlan = {
   commandsToRun: string[];
   explicitNonGoals: string[];
   riskNotes: string[];
+};
+
+export type PlanningDocument = PrdDocument & {
+  implementationPlan: MinimalChangePlan;
 };
 
 export type Artifact = {
@@ -271,7 +291,12 @@ export type TraceSpanKind =
   | "human"
   | "error";
 
-export type TraceSpanStatus = "success" | "running" | "blocked" | "failed" | "info";
+export type TraceSpanStatus =
+  | "success"
+  | "running"
+  | "blocked"
+  | "failed"
+  | "info";
 
 export type TraceSpan = {
   id: string;

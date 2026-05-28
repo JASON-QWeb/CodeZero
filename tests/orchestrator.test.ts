@@ -33,6 +33,9 @@ describe("orchestrator", () => {
 
   it("models the quality gate before PR creation", () => {
     const plan = createDefaultWorkflowPlan();
+    expect(plan.indexOf("prepare-sandbox")).toBeLessThan(plan.indexOf("brainstorm"));
+    expect(canTransition("CONTEXT_PACK_CREATED", "BRAINSTORMING")).toBe(true);
+    expect(canTransition("PRD_APPROVED", "IMPLEMENTING")).toBe(true);
     expect(plan.indexOf("quality-gates")).toBeLessThan(plan.indexOf("subagent-review"));
     expect(plan.indexOf("subagent-review")).toBeLessThan(plan.indexOf("create-draft-pr"));
     expect(canTransition("QUALITY_GATES_RUNNING", "SUBAGENT_REVIEWING")).toBe(true);
@@ -47,4 +50,3 @@ describe("orchestrator", () => {
     expect(allQualityGatesPassed(results)).toBe(false);
   });
 });
-

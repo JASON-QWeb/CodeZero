@@ -6,7 +6,16 @@ import type { AppConfig, RepositoryConfig } from "@agent/config";
 import { createTask } from "@agent/orchestrator";
 import type { TaskRepository } from "@agent/persistence";
 import { runCommand } from "@agent/sandbox";
-import type { Artifact, ContextPack, IssueContext, PrdDocument, QualityGateResult, Task, TaskEvent } from "@agent/shared";
+import type {
+  Artifact,
+  ContextPack,
+  IssueContext,
+  PlanningDocument,
+  PrdDocument,
+  QualityGateResult,
+  Task,
+  TaskEvent,
+} from "@agent/shared";
 import {
   compactContextPackForImplementation,
   buildCodingExecutorEnv,
@@ -33,17 +42,29 @@ import {
   selectProviderForComplexity,
   shouldExtendQualityGateSelfCheck,
   shouldExtendSelfCheckAfterFailureKindChange,
-  writeTaskArtifact
+  writeTaskArtifact,
 } from "@agent/workflows";
 
 describe("workflow modules", () => {
   it("selects providers by task complexity with a conservative fallback", () => {
-    const providerByComplexity = { low: "small", medium: "balanced", high: "large" };
+    const providerByComplexity = {
+      low: "small",
+      medium: "balanced",
+      high: "large",
+    };
 
-    expect(selectProviderForComplexity("default", providerByComplexity, undefined)).toBe("default");
-    expect(selectProviderForComplexity("default", providerByComplexity, 35)).toBe("small");
-    expect(selectProviderForComplexity("default", providerByComplexity, 70)).toBe("balanced");
-    expect(selectProviderForComplexity("default", providerByComplexity, 71)).toBe("large");
+    expect(
+      selectProviderForComplexity("default", providerByComplexity, undefined),
+    ).toBe("default");
+    expect(
+      selectProviderForComplexity("default", providerByComplexity, 35),
+    ).toBe("small");
+    expect(
+      selectProviderForComplexity("default", providerByComplexity, 70),
+    ).toBe("balanced");
+    expect(
+      selectProviderForComplexity("default", providerByComplexity, 71),
+    ).toBe("large");
     expect(selectProviderForComplexity("default", {}, 99)).toBe("default");
   });
 
@@ -58,24 +79,33 @@ describe("workflow modules", () => {
       systemPrompt: "Implement.",
       skillRefs: [],
       tools: [],
-      guardrails: []
+      guardrails: [],
     };
 
     try {
-      const env = buildCodingExecutorEnv({ config: createAppConfig("/tmp/project"), agent, executor });
+      const env = buildCodingExecutorEnv({
+        config: createAppConfig("/tmp/project"),
+        agent,
+        executor,
+      });
       const prompt = buildCodingExecutorPrompt({
-        task: { ...createTask(issue), prd: highComplexityPrd, minimalChangePlan: minimalPlan(), contextPack: compactableContextPack() },
-        prd: highComplexityPrd,
-        minimalChangePlan: minimalPlan(),
-        implementationContext: compactContextPackForImplementation(compactableContextPack()),
-        fileSnippets: { "src/change.ts": "old\n" }
+        task: {
+          ...createTask(issue),
+          planningDocument: highComplexityPlanningDocument(),
+          contextPack: compactableContextPack(),
+        },
+        planningDocument: highComplexityPlanningDocument(),
+        implementationContext: compactContextPackForImplementation(
+          compactableContextPack(),
+        ),
+        fileSnippets: { "src/change.ts": "old\n" },
       });
 
       expect(executor.mode).toBe("cli");
       expect(executor.command).toContain("opencode-ai");
       expect(executor.command).toContain('--file="$CODEZERO_PROMPT_FILE"');
       expect(executor.command).toContain(
-        '"Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
+        '"Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
       );
       expect(env.OPENAI_API_KEY).toBe("secret");
       expect(env.OPENAI_BASE_URL).toBe("https://api.example.test");
@@ -83,7 +113,9 @@ describe("workflow modules", () => {
       expect(env.CODEZERO_OPENCODE_MODEL).toBe("codezero/model-default");
       expect(prompt).toContain("CodeZero Implementation Request");
       expect(prompt).not.toContain("OpenCode");
-      expect(prompt).toContain("Leave the working tree with the required code changes");
+      expect(prompt).toContain(
+        "Leave the working tree with the required code changes",
+      );
     } finally {
       if (previousApiKey === undefined) {
         delete process.env.TEST_API_KEY;
@@ -109,8 +141,8 @@ describe("workflow modules", () => {
         model: "claude-sonnet-4-5",
         env: { ANTHROPIC_API_KEY: "secret" },
         options: {},
-        model_options: {}
-      }
+        model_options: {},
+      },
     };
     const executor = normalizeImplementationExecutorConfig(undefined);
     const agent = {
@@ -120,7 +152,7 @@ describe("workflow modules", () => {
       systemPrompt: "Implement.",
       skillRefs: [],
       tools: [],
-      guardrails: []
+      guardrails: [],
     };
 
     const env = buildCodingExecutorEnv({ config, agent, executor });
@@ -133,33 +165,60 @@ describe("workflow modules", () => {
 
   it("normalizes OpenCode stream output without exposing hidden reasoning text", () => {
     expect(
-      normalizeCodingExecutorProgressLine(JSON.stringify({ type: "tool", tool: "edit", path: "src/app.ts", message: "editing file" }))
+      normalizeCodingExecutorProgressLine(
+        JSON.stringify({
+          type: "tool",
+          tool: "edit",
+          path: "src/app.ts",
+          message: "editing file",
+        }),
+      ),
     ).toMatchObject({
       message: "OpenCode tool: edit src/app.ts",
       metadata: {
         eventType: "tool",
         filePath: "src/app.ts",
-        toolName: "edit"
-      }
+        toolName: "edit",
+      },
     });
 
-    expect(normalizeCodingExecutorProgressLine(JSON.stringify({ type: "reasoning", text: "private chain of thought" }))).toMatchObject({
-      message: "OpenCode is planning the next implementation step"
+    expect(
+      normalizeCodingExecutorProgressLine(
+        JSON.stringify({ type: "reasoning", text: "private chain of thought" }),
+      ),
+    ).toMatchObject({
+      message: "OpenCode is planning the next implementation step",
     });
-    expect(normalizeCodingExecutorProgressLine("npm warn Unknown env config \"recursive\"", "stderr")).toBeUndefined();
-    expect(normalizeCodingExecutorProgressLine("Error: model failed", "stderr")).toMatchObject({
+    expect(
+      normalizeCodingExecutorProgressLine(
+        'npm warn Unknown env config "recursive"',
+        "stderr",
+      ),
+    ).toBeUndefined();
+    expect(
+      normalizeCodingExecutorProgressLine("Error: model failed", "stderr"),
+    ).toMatchObject({
       level: "error",
-      message: "OpenCode stderr: Error: model failed"
+      message: "OpenCode stderr: Error: model failed",
     });
   });
 
   it("runs a CLI coding executor in the sandbox and captures the resulting diff", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-coding-executor-"));
+    const repoDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-coding-executor-"),
+    );
     const artifactDir = path.join(repoDir, "artifacts");
     await runCommand({ cwd: repoDir, command: "git init" });
-    await runCommand({ cwd: repoDir, command: "git config user.email test@example.com && git config user.name Test" });
+    await runCommand({
+      cwd: repoDir,
+      command:
+        "git config user.email test@example.com && git config user.name Test",
+    });
     await writeFile(path.join(repoDir, "app.txt"), "old\n");
-    await runCommand({ cwd: repoDir, command: "git add app.txt && git commit -m init" });
+    await runCommand({
+      cwd: repoDir,
+      command: "git add app.txt && git commit -m init",
+    });
     const previousApiKey = process.env.TEST_API_KEY;
     process.env.TEST_API_KEY = "secret";
     const executor = normalizeImplementationExecutorConfig({
@@ -168,7 +227,7 @@ describe("workflow modules", () => {
       command:
         "node -e \"const fs=require('fs'); if(!process.env.OPENAI_API_KEY || !process.env.CODEZERO_PROMPT_FILE || !process.env.OPENCODE_CONFIG) process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
       timeout_ms: 30_000,
-      env: {}
+      env: {},
     });
     const agent = {
       id: "implementation",
@@ -177,7 +236,7 @@ describe("workflow modules", () => {
       systemPrompt: "Implement.",
       skillRefs: [],
       tools: [],
-      guardrails: []
+      guardrails: [],
     };
 
     try {
@@ -185,26 +244,45 @@ describe("workflow modules", () => {
         config: createAppConfig(repoDir),
         executor,
         agent,
-        task: { ...createTask(issue), prd: highComplexityPrd, minimalChangePlan: minimalPlan(), contextPack: compactableContextPack() },
+        task: {
+          ...createTask(issue),
+          planningDocument: highComplexityPlanningDocument(),
+          contextPack: compactableContextPack(),
+        },
         repoDir,
         artifactDir,
         prompt: "Change app.txt",
-        attempt: 1
+        attempt: 1,
       });
 
       expect(result.commandResult.exitCode).toBe(0);
       expect(result.diff).toContain("-old");
       expect(result.diff).toContain("+new");
-      await expect(readFile(result.promptPath, "utf8")).resolves.toBe("Change app.txt");
+      await expect(readFile(result.promptPath, "utf8")).resolves.toBe(
+        "Change app.txt",
+      );
       expect(result.openCodeConfigPath).toBeDefined();
-      const openCodeConfig = JSON.parse(await readFile(result.openCodeConfigPath ?? "", "utf8")) as {
+      const openCodeConfig = JSON.parse(
+        await readFile(result.openCodeConfigPath ?? "", "utf8"),
+      ) as {
         model: string;
-        provider: { codezero: { options: { apiKey: string; baseURL: string }; models: Record<string, unknown> } };
+        provider: {
+          codezero: {
+            options: { apiKey: string; baseURL: string };
+            models: Record<string, unknown>;
+          };
+        };
       };
       expect(openCodeConfig.model).toBe("codezero/model-default");
-      expect(openCodeConfig.provider.codezero.options.baseURL).toBe("https://api.example.test");
-      expect(openCodeConfig.provider.codezero.options.apiKey).toBe("{env:OPENAI_API_KEY}");
-      expect(openCodeConfig.provider.codezero.models["model-default"]).toBeDefined();
+      expect(openCodeConfig.provider.codezero.options.baseURL).toBe(
+        "https://api.example.test",
+      );
+      expect(openCodeConfig.provider.codezero.options.apiKey).toBe(
+        "{env:OPENAI_API_KEY}",
+      );
+      expect(
+        openCodeConfig.provider.codezero.models["model-default"],
+      ).toBeDefined();
       expect(JSON.stringify(openCodeConfig)).not.toContain("secret");
     } finally {
       if (previousApiKey === undefined) {
@@ -216,12 +294,21 @@ describe("workflow modules", () => {
   });
 
   it("writes a custom coding provider config without storing API keys", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-custom-coding-provider-"));
+    const repoDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-custom-coding-provider-"),
+    );
     const artifactDir = path.join(repoDir, "artifacts");
     await runCommand({ cwd: repoDir, command: "git init" });
-    await runCommand({ cwd: repoDir, command: "git config user.email test@example.com && git config user.name Test" });
+    await runCommand({
+      cwd: repoDir,
+      command:
+        "git config user.email test@example.com && git config user.name Test",
+    });
     await writeFile(path.join(repoDir, "app.txt"), "old\n");
-    await runCommand({ cwd: repoDir, command: "git add app.txt && git commit -m init" });
+    await runCommand({
+      cwd: repoDir,
+      command: "git add app.txt && git commit -m init",
+    });
     const config = createAppConfig(repoDir);
     const defaultProvider = config.agents.providers.default;
 
@@ -239,16 +326,16 @@ describe("workflow modules", () => {
         name: "OpenRouter",
         options: {
           baseURL: "https://openrouter.ai/api/v1",
-          apiKey: "{env:OPENROUTER_API_KEY}"
+          apiKey: "{env:OPENROUTER_API_KEY}",
         },
         model_options: {
           limit: {
             context: 200000,
-            output: 64000
-          }
+            output: 64000,
+          },
         },
-        env: { OPENROUTER_API_KEY: "secret-openrouter-key" }
-      }
+        env: { OPENROUTER_API_KEY: "secret-openrouter-key" },
+      },
     };
     const executor = normalizeImplementationExecutorConfig({
       mode: "cli",
@@ -256,7 +343,7 @@ describe("workflow modules", () => {
       command:
         "node -e \"const fs=require('fs'); if(process.env.CODEZERO_OPENCODE_MODEL !== 'openrouter/anthropic/claude-sonnet-4-5' || process.env.OPENROUTER_API_KEY !== 'secret-openrouter-key') process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
       timeout_ms: 30_000,
-      env: {}
+      env: {},
     });
     const agent = {
       id: "implementation",
@@ -265,60 +352,101 @@ describe("workflow modules", () => {
       systemPrompt: "Implement.",
       skillRefs: [],
       tools: [],
-      guardrails: []
+      guardrails: [],
     };
 
     const result = await runCodingCliExecutor({
       config,
       executor,
       agent,
-      task: { ...createTask(issue), prd: highComplexityPrd, minimalChangePlan: minimalPlan(), contextPack: compactableContextPack() },
+      task: {
+        ...createTask(issue),
+        planningDocument: highComplexityPlanningDocument(),
+        contextPack: compactableContextPack(),
+      },
       repoDir,
       artifactDir,
       prompt: "Change app.txt",
-      attempt: 1
+      attempt: 1,
     });
 
     expect(result.commandResult.exitCode).toBe(0);
-    const openCodeConfig = JSON.parse(await readFile(result.openCodeConfigPath ?? "", "utf8")) as {
+    const openCodeConfig = JSON.parse(
+      await readFile(result.openCodeConfigPath ?? "", "utf8"),
+    ) as {
       model: string;
       provider: {
         openrouter: {
           options: { apiKey: string; baseURL: string };
-          models: Record<string, { limit?: { context: number; output: number } }>;
+          models: Record<
+            string,
+            { limit?: { context: number; output: number } }
+          >;
         };
       };
     };
     expect(openCodeConfig.model).toBe("openrouter/anthropic/claude-sonnet-4-5");
-    expect(openCodeConfig.provider.openrouter.options.baseURL).toBe("https://openrouter.ai/api/v1");
-    expect(openCodeConfig.provider.openrouter.options.apiKey).toBe("{env:OPENROUTER_API_KEY}");
-    expect(openCodeConfig.provider.openrouter.models["anthropic/claude-sonnet-4-5"]?.limit?.context).toBe(200000);
-    expect(JSON.stringify(openCodeConfig)).not.toContain("secret-openrouter-key");
+    expect(openCodeConfig.provider.openrouter.options.baseURL).toBe(
+      "https://openrouter.ai/api/v1",
+    );
+    expect(openCodeConfig.provider.openrouter.options.apiKey).toBe(
+      "{env:OPENROUTER_API_KEY}",
+    );
+    expect(
+      openCodeConfig.provider.openrouter.models["anthropic/claude-sonnet-4-5"]
+        ?.limit?.context,
+    ).toBe(200000);
+    expect(JSON.stringify(openCodeConfig)).not.toContain(
+      "secret-openrouter-key",
+    );
   });
 
   it("rolls back partial implementation edits before a retry", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-workflow-reset-"));
+    const repoDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-workflow-reset-"),
+    );
     await runCommand({ cwd: repoDir, command: "git init" });
-    await runCommand({ cwd: repoDir, command: "git config user.email test@example.com && git config user.name Test" });
+    await runCommand({
+      cwd: repoDir,
+      command:
+        "git config user.email test@example.com && git config user.name Test",
+    });
     await writeFile(path.join(repoDir, "app.ts"), "old\n");
-    await runCommand({ cwd: repoDir, command: "git add app.ts && git commit -m init" });
+    await runCommand({
+      cwd: repoDir,
+      command: "git add app.ts && git commit -m init",
+    });
 
     await writeFile(path.join(repoDir, "app.ts"), "partial\n");
     await writeFile(path.join(repoDir, "new-file.ts"), "new\n");
 
     await resetImplementationAttempt(repoDir);
 
-    const status = await runCommand({ cwd: repoDir, command: "git status --short" });
-    await expect(readFile(path.join(repoDir, "app.ts"), "utf8")).resolves.toBe("old\n");
+    const status = await runCommand({
+      cwd: repoDir,
+      command: "git status --short",
+    });
+    await expect(readFile(path.join(repoDir, "app.ts"), "utf8")).resolves.toBe(
+      "old\n",
+    );
     expect(status.stdout.trim()).toBe("");
   });
 
   it("restores a failed retry to the checkpoint without losing previous edits", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-workflow-checkpoint-"));
+    const repoDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-workflow-checkpoint-"),
+    );
     await runCommand({ cwd: repoDir, command: "git init" });
-    await runCommand({ cwd: repoDir, command: "git config user.email test@example.com && git config user.name Test" });
+    await runCommand({
+      cwd: repoDir,
+      command:
+        "git config user.email test@example.com && git config user.name Test",
+    });
     await writeFile(path.join(repoDir, "app.ts"), "old\n");
-    await runCommand({ cwd: repoDir, command: "git add app.ts && git commit -m init" });
+    await runCommand({
+      cwd: repoDir,
+      command: "git add app.ts && git commit -m init",
+    });
 
     await writeFile(path.join(repoDir, "app.ts"), "implemented\n");
     await writeFile(path.join(repoDir, "new-file.ts"), "created\n");
@@ -334,10 +462,19 @@ describe("workflow modules", () => {
       await cleanupImplementationCheckpoint(checkpoint);
     }
 
-    const status = await runCommand({ cwd: repoDir, command: "git status --short" });
-    await expect(readFile(path.join(repoDir, "app.ts"), "utf8")).resolves.toBe("implemented\n");
-    await expect(readFile(path.join(repoDir, "new-file.ts"), "utf8")).resolves.toBe("created\n");
-    await expect(readFile(path.join(repoDir, "scratch.ts"), "utf8")).rejects.toThrow();
+    const status = await runCommand({
+      cwd: repoDir,
+      command: "git status --short",
+    });
+    await expect(readFile(path.join(repoDir, "app.ts"), "utf8")).resolves.toBe(
+      "implemented\n",
+    );
+    await expect(
+      readFile(path.join(repoDir, "new-file.ts"), "utf8"),
+    ).resolves.toBe("created\n");
+    await expect(
+      readFile(path.join(repoDir, "scratch.ts"), "utf8"),
+    ).rejects.toThrow();
     expect(status.stdout).toContain(" M app.ts");
     expect(status.stdout).toContain("?? new-file.ts");
     expect(status.stdout).not.toContain("scratch.ts");
@@ -352,11 +489,11 @@ describe("workflow modules", () => {
           passed: false,
           exitCode: 1,
           durationMs: 10,
-          output: "Expected async sync status to be success"
-        }
+          output: "Expected async sync status to be success",
+        },
       ],
       1,
-      4
+      4,
     );
 
     expect(feedback).toContain("Automated self-check failed");
@@ -369,15 +506,22 @@ describe("workflow modules", () => {
     const feedback = formatReviewRepairFeedback(
       {
         approved: false,
-        blockingFindings: [{ title: "Missing retry", body: "The failed state has no retry path.", blocking: true, file: "src/sync.ts" }],
+        blockingFindings: [
+          {
+            title: "Missing retry",
+            body: "The failed state has no retry path.",
+            blocking: true,
+            file: "src/sync.ts",
+          },
+        ],
         nonBlockingFindings: [],
         missingTests: ["Add failed sync coverage"],
         scopeViolations: [],
         riskLevel: "medium",
-        prDescriptionNotes: []
+        prDescriptionNotes: [],
       },
       2,
-      4
+      4,
     );
 
     expect(feedback).toContain("Review subagent blocked");
@@ -394,9 +538,10 @@ describe("workflow modules", () => {
           passed: false,
           exitCode: 1,
           durationMs: 10,
-          output: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"
-        }
-      ])
+          output:
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        },
+      ]),
     ).toBe(true);
 
     expect(
@@ -407,9 +552,9 @@ describe("workflow modules", () => {
           passed: false,
           exitCode: 1,
           durationMs: 10,
-          output: "AssertionError: expected false to be true"
-        }
-      ])
+          output: "AssertionError: expected false to be true",
+        },
+      ]),
     ).toBe(false);
 
     expect(
@@ -420,9 +565,10 @@ describe("workflow modules", () => {
           passed: false,
           exitCode: 1,
           durationMs: 10,
-          output: "create migrate instance: failed to open database: pq: SSL is not enabled on the server"
-        }
-      ])
+          output:
+            "create migrate instance: failed to open database: pq: SSL is not enabled on the server",
+        },
+      ]),
     ).toBe(true);
   });
 
@@ -434,8 +580,8 @@ describe("workflow modules", () => {
         passed: false,
         exitCode: 1,
         durationMs: 10,
-        output: "undefined: fakeGitHubClient"
-      }
+        output: "undefined: fakeGitHubClient",
+      },
     ];
     const nextFailure: QualityGateResult[] = [
       {
@@ -444,86 +590,124 @@ describe("workflow modules", () => {
         passed: false,
         exitCode: 1,
         durationMs: 10,
-        output: "*fakeGitHubClient does not implement service.GitHubContentClient (missing method DeleteFile)"
-      }
+        output:
+          "*fakeGitHubClient does not implement service.GitHubContentClient (missing method DeleteFile)",
+      },
     ];
 
     expect(getSelfCheckHardMaxAttempts(4)).toBe(10);
     expect(qualityGateFailuresChanged(firstFailure, nextFailure)).toBe(true);
-    expect(shouldExtendQualityGateSelfCheck(firstFailure, nextFailure, 4, 7)).toBe(true);
-    expect(shouldExtendQualityGateSelfCheck(nextFailure, nextFailure, 7, 7)).toBe(false);
-    expect(shouldExtendSelfCheckAfterFailureKindChange("review", "quality", 7, 10)).toBe(true);
-    expect(shouldExtendSelfCheckAfterFailureKindChange("quality", "quality", 7, 10)).toBe(false);
-    expect(shouldExtendSelfCheckAfterFailureKindChange("review", "quality", 10, 10)).toBe(false);
+    expect(
+      shouldExtendQualityGateSelfCheck(firstFailure, nextFailure, 4, 7),
+    ).toBe(true);
+    expect(
+      shouldExtendQualityGateSelfCheck(nextFailure, nextFailure, 7, 7),
+    ).toBe(false);
+    expect(
+      shouldExtendSelfCheckAfterFailureKindChange("review", "quality", 7, 10),
+    ).toBe(true);
+    expect(
+      shouldExtendSelfCheckAfterFailureKindChange("quality", "quality", 7, 10),
+    ).toBe(false);
+    expect(
+      shouldExtendSelfCheckAfterFailureKindChange("review", "quality", 10, 10),
+    ).toBe(false);
   });
 
   it("extracts quality-gate failure files for focused repair snippets", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-feedback-paths-"));
-    await mkdir(path.join(repoDir, "backend/internal/handler"), { recursive: true });
-    await mkdir(path.join(repoDir, "backend/internal/testutil"), { recursive: true });
-    await writeFile(path.join(repoDir, "backend/internal/handler/main_test.go"), "package handler\n");
-    await writeFile(path.join(repoDir, "backend/internal/testutil/postgres.go"), "package testutil\n");
+    const repoDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-feedback-paths-"),
+    );
+    await mkdir(path.join(repoDir, "backend/internal/handler"), {
+      recursive: true,
+    });
+    await mkdir(path.join(repoDir, "backend/internal/testutil"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(repoDir, "backend/internal/handler/main_test.go"),
+      "package handler\n",
+    );
+    await writeFile(
+      path.join(repoDir, "backend/internal/testutil/postgres.go"),
+      "package testutil\n",
+    );
 
     await expect(
       extractImplementationFeedbackPaths(
         repoDir,
         [
           "internal/handler/main_test.go:12:11: undefined: testutil.SetupTestDB",
-          "frontend/src/missing.ts:1:1: ignored because it does not exist"
-        ].join("\n")
-      )
-    ).resolves.toEqual(["backend/internal/handler/main_test.go", "backend/internal/testutil/postgres.go"]);
+          "frontend/src/missing.ts:1:1: ignored because it does not exist",
+        ].join("\n"),
+      ),
+    ).resolves.toEqual([
+      "backend/internal/handler/main_test.go",
+      "backend/internal/testutil/postgres.go",
+    ]);
   });
 
   it("formats PRD comments for GitHub issue review", () => {
     const body = createPrdIssueComment({
       task: createTask(issue),
-      prd: highComplexityPrd,
+      planningDocument: highComplexityPlanningDocument(),
       requiresHumanReview: true,
       mention: "@codeZero",
-      locale: "zh"
+      locale: "zh",
     });
 
     expect(body).toContain("## CodeZero PRD");
     expect(body).toContain("@codeZero approve prd");
     expect(body).toContain("验收标准");
+    expect(body).toContain("PRD 执行计划");
+    expect(body).toContain("src/change.ts");
   });
 
   it("compacts implementation context and prioritizes plan files", () => {
     const contextPack = compactableContextPack();
     const task = {
       contextPack,
-      minimalChangePlan: {
-        goal: "Change sync",
-        acceptanceCriteria: [],
-        filesToRead: ["src/read.ts", "src/change.ts"],
-        filesExpectedToChange: ["src/change.ts"],
-        testsToAddOrUpdate: ["src/change.test.ts (add coverage)"],
-        commandsToRun: [],
-        explicitNonGoals: [],
-        riskNotes: []
-      }
-    } satisfies Pick<Task, "contextPack" | "minimalChangePlan">;
+      planningDocument: {
+        ...highComplexityPlanningDocument(),
+        implementationPlan: {
+          goal: "Change sync",
+          acceptanceCriteria: [],
+          filesToRead: ["src/read.ts", "src/change.ts"],
+          filesExpectedToChange: ["src/change.ts"],
+          testsToAddOrUpdate: ["src/change.test.ts (add coverage)"],
+          commandsToRun: [],
+          explicitNonGoals: [],
+          riskNotes: [],
+        },
+      },
+    } satisfies Pick<Task, "contextPack" | "planningDocument">;
 
-    expect(selectImplementationSnippetPaths(task)).toEqual(["src/change.ts", "src/read.ts", "src/change.test.ts", "src/existing.test.ts"]);
+    expect(selectImplementationSnippetPaths(task)).toEqual([
+      "src/change.ts",
+      "src/read.ts",
+      "src/change.test.ts",
+      "src/existing.test.ts",
+    ]);
 
     const compact = compactContextPackForImplementation(contextPack);
     expect(JSON.stringify(compact)).not.toContain("large code block");
     expect(compact.codeGraphContext).toEqual({
       summary: "Relevant graph",
       relatedFiles: ["src/change.ts"],
-      stats: { nodeCount: 1 }
+      stats: { nodeCount: 1 },
     });
     expect(compact.knowledgeGraphContext).toEqual({
       provider: "Understand-Anything",
       graph: { nodes: 2, edges: 1 },
       files: ["src/change.ts"],
-      highlights: [{ path: "src/change.ts", label: "Change" }]
+      highlights: [{ path: "src/change.ts", label: "Change" }],
     });
   });
 
   it("writes task artifacts through the shared artifact helper", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "agent-workflow-artifacts-"));
+    const rootDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-workflow-artifacts-"),
+    );
     const artifacts: Artifact[] = [];
 
     const artifact = await writeTaskArtifact({
@@ -531,27 +715,39 @@ describe("workflow modules", () => {
       tasks: {
         addArtifact: async (entry) => {
           artifacts.push(entry);
-        }
+        },
       } as never,
       taskId: "task-1",
       type: "prd",
       fileName: "prd.json",
-      content: "{\"title\":\"Demo\"}\n"
+      content: '{"title":"Demo"}\n',
     });
 
-    await expect(readFile(path.join(rootDir, "artifacts", "task-1", "prd.json"), "utf8")).resolves.toContain("Demo");
+    await expect(
+      readFile(path.join(rootDir, "artifacts", "task-1", "prd.json"), "utf8"),
+    ).resolves.toContain("Demo");
     expect(artifact.id).toMatch(/^artifact-/);
     expect(createArtifactId()).toMatch(/^artifact-/);
     expect(artifacts).toEqual([artifact]);
   });
 
   it("creates workflow agent definitions from prompt files", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "agent-workflow-agent-"));
+    const rootDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-workflow-agent-"),
+    );
     await mkdir(path.join(rootDir, "prompts"), { recursive: true });
-    await writeFile(path.join(rootDir, "prompts", "impl.md"), "You implement safely.\n");
+    await writeFile(
+      path.join(rootDir, "prompts", "impl.md"),
+      "You implement safely.\n",
+    );
     const config = createAppConfig(rootDir);
 
-    const agent = await createWorkflowAgent(config, "implementation", "main-implementation", 72);
+    const agent = await createWorkflowAgent(
+      config,
+      "implementation",
+      "main-implementation",
+      72,
+    );
 
     expect(agent.providerId).toBe("large");
     expect(agent.systemPrompt).toContain("implement safely");
@@ -562,14 +758,21 @@ describe("workflow modules", () => {
   it("validates workflow provider configuration before creating a runner", async () => {
     const config = createAppConfig("/tmp/project");
 
-    await expect(createWorkflowAgentRunner(config, {})).rejects.toThrow("TEST_API_KEY is required");
-    await expect(createWorkflowAgentRunner(config, { TEST_API_KEY: "secret" })).resolves.toBeDefined();
+    await expect(createWorkflowAgentRunner(config, {})).rejects.toThrow(
+      "TEST_API_KEY is required",
+    );
+    await expect(
+      createWorkflowAgentRunner(config, { TEST_API_KEY: "secret" }),
+    ).resolves.toBeDefined();
   });
 
   it("marks tasks failed when the issue repository is not configured", async () => {
     const task = createTask(issue);
     const tasks = new InMemoryTaskRepository(task);
-    const runner = new IssueWorkflowRunner(createAppConfig("/tmp/project"), tasks);
+    const runner = new IssueWorkflowRunner(
+      createAppConfig("/tmp/project"),
+      tasks,
+    );
 
     const result = await runner.run(task.id);
 
@@ -578,28 +781,77 @@ describe("workflow modules", () => {
     expect(tasks.events.map((event) => event.type)).toContain("TASK_FAILED");
   });
 
-  it("stops before sandbox creation when a PRD needs human review", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "agent-workflow-review-"));
+  it("keeps a persistent sandbox while waiting for planning approval", async () => {
+    const rootDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-workflow-review-"),
+    );
     await mkdir(path.join(rootDir, "prompts"), { recursive: true });
     await writeFile(path.join(rootDir, "prompts", "prd.md"), "Draft PRDs.\n");
     await writeFile(path.join(rootDir, "prompts", "impl.md"), "Implement.\n");
     await writeFile(path.join(rootDir, "prompts", "review.md"), "Review.\n");
+    const repoDir = path.join(
+      rootDir,
+      "sandboxes",
+      "task-acme-shop-12",
+      "repo",
+    );
+    const artifactDir = path.join(
+      rootDir,
+      "sandboxes",
+      "task-acme-shop-12",
+      "artifacts",
+    );
+    const logDir = path.join(rootDir, "sandboxes", "task-acme-shop-12", "logs");
+    await mkdir(repoDir, { recursive: true });
+    await mkdir(artifactDir, { recursive: true });
+    await mkdir(logDir, { recursive: true });
+    await runCommand({ cwd: repoDir, command: "git init" });
+    await runCommand({
+      cwd: repoDir,
+      command:
+        "git config user.email test@example.com && git config user.name Test",
+    });
+    await writeFile(path.join(repoDir, "README.md"), "demo\n");
+    await runCommand({
+      cwd: repoDir,
+      command:
+        "git add README.md && git commit -m init && git checkout -b agent/issue-12",
+    });
     const task = {
       ...createTask(issue),
-      prd: highComplexityPrd,
-      status: "PRD_DRAFTED"
+      planningDocument: highComplexityPlanningDocument(),
+      contextPack: compactableContextPack(),
+      sandbox: {
+        repoDir,
+        artifactDir,
+        logDir,
+        mode: "worktree" as const,
+      },
+      status: "PRD_DRAFTED",
     } satisfies Task;
     const tasks = new InMemoryTaskRepository(task);
     const previousApiKey = process.env.TEST_API_KEY;
     process.env.TEST_API_KEY = "secret";
 
     try {
-      const runner = new IssueWorkflowRunner(createAppConfig(rootDir, [repositoryConfig()]), tasks);
+      const runner = new IssueWorkflowRunner(
+        createAppConfig(rootDir, [repositoryConfig()]),
+        tasks,
+      );
       const result = await runner.run(task.id);
 
       expect(result.status).toBe("PRD_REVIEW_REQUIRED");
-      expect((await tasks.getTask(task.id))?.status).toBe("PRD_REVIEW_REQUIRED");
-      expect(tasks.events.map((event) => event.type)).toContain("HUMAN_REVIEW_REQUIRED");
+      const updated = await tasks.getTask(task.id);
+      expect(updated?.status).toBe("PRD_REVIEW_REQUIRED");
+      expect(updated?.sandbox?.repoDir).toBe(repoDir);
+      expect(tasks.events.map((event) => event.type)).toContain(
+        "HUMAN_REVIEW_REQUIRED",
+      );
+      expect(
+        tasks.events.some((event) =>
+          event.message.includes("Reusing persistent task sandbox"),
+        ),
+      ).toBe(true);
     } finally {
       if (previousApiKey === undefined) {
         delete process.env.TEST_API_KEY;
@@ -607,6 +859,77 @@ describe("workflow modules", () => {
         process.env.TEST_API_KEY = previousApiKey;
       }
     }
+  });
+
+  it("reuses the task sandbox for PR feedback instead of creating feedback sandboxes", async () => {
+    const rootDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-workflow-feedback-"),
+    );
+    const repoDir = path.join(
+      rootDir,
+      "sandboxes",
+      "task-acme-shop-12",
+      "repo",
+    );
+    const artifactDir = path.join(
+      rootDir,
+      "sandboxes",
+      "task-acme-shop-12",
+      "artifacts",
+    );
+    const logDir = path.join(rootDir, "sandboxes", "task-acme-shop-12", "logs");
+    await mkdir(repoDir, { recursive: true });
+    await mkdir(artifactDir, { recursive: true });
+    await mkdir(logDir, { recursive: true });
+    await runCommand({ cwd: repoDir, command: "git init" });
+    await runCommand({
+      cwd: repoDir,
+      command:
+        "git config user.email test@example.com && git config user.name Test",
+    });
+    await writeFile(path.join(repoDir, "README.md"), "demo\n");
+    await runCommand({
+      cwd: repoDir,
+      command:
+        "git add README.md && git commit -m init && git checkout -b agent/issue-12",
+    });
+    const task = {
+      ...createTask(issue),
+      planningDocument: highComplexityPlanningDocument(),
+      branchName: "agent/issue-12",
+      prUrl: "https://github.com/acme/shop/pull/12",
+      status: "HUMAN_REVIEW",
+      sandbox: {
+        repoDir,
+        artifactDir,
+        logDir,
+        mode: "worktree" as const,
+      },
+    } satisfies Task;
+    const tasks = new InMemoryTaskRepository(task);
+    const runner = new IssueWorkflowRunner(
+      createAppConfig(rootDir, [repositoryConfig()]),
+      tasks,
+    );
+    const privateRunner = runner as unknown as {
+      prepareExistingPrSandbox(
+        task: Task,
+        repositoryConfig: RepositoryConfig,
+      ): Promise<{ repoDir: string; artifactDir: string; logDir: string }>;
+    };
+
+    const sandbox = await privateRunner.prepareExistingPrSandbox(
+      task,
+      repositoryConfig(),
+    );
+
+    expect(sandbox.repoDir).toBe(repoDir);
+    expect(sandbox.artifactDir).toBe(artifactDir);
+    expect(
+      tasks.events.some((event) =>
+        event.message.includes("Persistent PR sandbox reused"),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -620,7 +943,7 @@ const issue: IssueContext = {
   body: "",
   labels: [],
   comments: [],
-  baseBranch: "main"
+  baseBranch: "main",
 };
 
 const highComplexityPrd: PrdDocument = {
@@ -636,9 +959,16 @@ const highComplexityPrd: PrdDocument = {
   complexity: {
     score: 80,
     requiresHumanReview: false,
-    reasons: ["large change"]
-  }
+    reasons: ["large change"],
+  },
 };
+
+function highComplexityPlanningDocument(): PlanningDocument {
+  return {
+    ...highComplexityPrd,
+    implementationPlan: minimalPlan(),
+  };
+}
 
 function minimalPlan() {
   return {
@@ -649,7 +979,7 @@ function minimalPlan() {
     testsToAddOrUpdate: ["src/change.test.ts"],
     commandsToRun: ["npm test"],
     explicitNonGoals: [],
-    riskNotes: []
+    riskNotes: [],
   };
 }
 
@@ -664,17 +994,17 @@ function compactableContextPack(): ContextPack {
       summary: "Relevant graph",
       relatedFiles: ["src/change.ts"],
       stats: { nodeCount: 1 },
-      codeBlocks: [{ content: "large code block" }]
+      codeBlocks: [{ content: "large code block" }],
     },
     knowledgeGraphContext: {
       provider: "Understand-Anything",
       graph: { nodes: 2, edges: 1 },
       files: ["src/change.ts"],
-      highlights: [{ path: "src/change.ts", label: "Change" }]
+      highlights: [{ path: "src/change.ts", label: "Change" }],
     },
     relevantFiles: [
       { path: "src/change.ts", reason: "plan", evidence: [], readMode: "full" },
-      { path: "src/read.ts", reason: "plan", evidence: [], readMode: "full" }
+      { path: "src/read.ts", reason: "plan", evidence: [], readMode: "full" },
     ],
     symbols: Array.from({ length: 50 }, (_, index) => `symbol-${index}`),
     tests: ["src/existing.test.ts"],
@@ -682,11 +1012,14 @@ function compactableContextPack(): ContextPack {
     nonRelevantAreas: [],
     openQuestions: [],
     tokenBudget: 1000,
-    createdAt: "2026-01-01T00:00:00.000Z"
+    createdAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
-function createAppConfig(rootDir: string, repositories: RepositoryConfig[] = []): AppConfig {
+function createAppConfig(
+  rootDir: string,
+  repositories: RepositoryConfig[] = [],
+): AppConfig {
   return {
     rootDir,
     agents: {
@@ -697,7 +1030,7 @@ function createAppConfig(rootDir: string, repositories: RepositoryConfig[] = [])
           api_key_env: "TEST_API_KEY",
           model: "model-default",
           supports_tools: true,
-          supports_structured_output: true
+          supports_structured_output: true,
         },
         large: {
           type: "openai-compatible",
@@ -705,29 +1038,29 @@ function createAppConfig(rootDir: string, repositories: RepositoryConfig[] = [])
           api_key_env: "TEST_API_KEY",
           model: "model-large",
           supports_tools: true,
-          supports_structured_output: true
-        }
+          supports_structured_output: true,
+        },
       },
       agents: {
         prd: {
           provider: "default",
           provider_by_complexity: {},
           system_prompt: "prompts/prd.md",
-          skills: ["prd"]
+          skills: ["prd"],
         },
         implementation: {
           provider: "default",
           provider_by_complexity: { high: "large" },
           system_prompt: "prompts/impl.md",
-          skills: ["implementation"]
+          skills: ["implementation"],
         },
         review: {
           provider: "default",
           provider_by_complexity: {},
           system_prompt: "prompts/review.md",
-          skills: ["review"]
-        }
-      }
+          skills: ["review"],
+        },
+      },
     },
     repositories,
     sandbox: {
@@ -739,8 +1072,8 @@ function createAppConfig(rootDir: string, repositories: RepositoryConfig[] = [])
         max_runtime_minutes: 90,
         max_diff_files: 30,
         max_diff_lines: 1200,
-        max_quality_gate_retries: 3
-      }
+        max_quality_gate_retries: 3,
+      },
     },
     policies: [
       {
@@ -749,25 +1082,25 @@ function createAppConfig(rootDir: string, repositories: RepositoryConfig[] = [])
         permissions: [],
         match_paths: [],
         match_commands: ["rm -rf"],
-        action: "block"
-      }
+        action: "block",
+      },
     ],
     tools: [
       {
         name: "repo.read_file",
         description: "Read",
         permission: "read",
-        policy_refs: []
-      }
+        policy_refs: [],
+      },
     ],
     storage: {
       driver: "file",
-      filePath: path.join(rootDir, "data", "tasks.json")
+      filePath: path.join(rootDir, "data", "tasks.json"),
     },
     memory: {
-      filePath: path.join(rootDir, "data", "memory.json")
+      filePath: path.join(rootDir, "data", "memory.json"),
     },
-    github: {}
+    github: {},
   };
 }
 
@@ -784,7 +1117,7 @@ function repositoryConfig(): RepositoryConfig {
       auto_events: [],
       label_allowlist: [],
       label_blocklist: [],
-      actor_allowlist: []
+      actor_allowlist: [],
     },
     codebase_intelligence: {
       codegraph: {
@@ -792,31 +1125,31 @@ function repositoryConfig(): RepositoryConfig {
         package: "@colbymchenry/codegraph@0.9.3",
         init_args: ["--index"],
         timeout_ms: 600_000,
-        fail_on_error: true
+        fail_on_error: true,
       },
       navigation_graph: {
         enabled: false,
         include_git_history: false,
         include_codeowners: false,
-        max_depth: 1
-      }
+        max_depth: 1,
+      },
     },
     queue: {
-      max_concurrent_issues: 1
+      max_concurrent_issues: 1,
     },
     permissions: {
       allowed_tools: [],
       blocked_tools: [],
       allowed_permissions: [],
-      blocked_permissions: []
+      blocked_permissions: [],
     },
     quality_gates: {},
     frontend: {
-      screenshot_urls: []
+      screenshot_urls: [],
     },
     pr: {
-      default_draft: true
-    }
+      default_draft: true,
+    },
   };
 }
 
@@ -836,7 +1169,13 @@ class InMemoryTaskRepository implements TaskRepository {
       throw new Error(`Task not found: ${id}`);
     }
 
-    this.task = { ...this.task, ...patch, id: this.task.id, createdAt: this.task.createdAt, updatedAt: new Date().toISOString() };
+    this.task = {
+      ...this.task,
+      ...patch,
+      id: this.task.id,
+      createdAt: this.task.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
     return this.task;
   }
 

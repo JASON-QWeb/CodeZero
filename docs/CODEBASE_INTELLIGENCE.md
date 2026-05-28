@@ -13,7 +13,7 @@
 - 项目业务 skill 持续维护。
 - 受控记忆检索：只把与当前任务相关、带来源和置信度的 memory 注入 ContextPack。
 - 证据驱动的文件选择。
-- 最小修改计划。
+- PRD/Plan 文档中的实现范围。
 
 一句话：Agent 应该像资深工程师一样先定位，再精读，再修改，而不是把仓库从头读到尾。
 
@@ -101,7 +101,7 @@ Agentic search 不是一次检索，而是一个循环：
 
 ```mermaid
 flowchart TD
-  A["Issue + PRD"] --> N["Create navigation route"]
+  A["Issue"] --> N["Create navigation route"]
   N --> B["Generate search hypotheses"]
   B --> C["Run hybrid search along graph route"]
   C --> D["Read top evidence snippets"]
@@ -109,7 +109,7 @@ flowchart TD
   E -->|No| F["Rewrite query or follow symbols"]
   F --> C
   E -->|Yes| G["Build context pack"]
-  G --> H["Create minimal change plan"]
+  G --> H["Draft one PRD/Plan document"]
 ```
 
 每轮检索组合：
@@ -226,8 +226,8 @@ Memory 只作为证据链的一部分，不能覆盖当前代码、PRD、测试�
 - Search Planner Agent：生成搜索假设和查询计划。
 - Explorer Agent：执行检索、读取片段、追踪符号和输出证据。
 - Context Curator Agent：把检索结果压缩成 `ContextPack`。
-- Implementation Agent：只基于 PRD、业务 skill、ContextPack 和最小修改计划工作。
-- Review Agent：检查实际 diff 是否超出 ContextPack 和修改计划所支持的范围。
+- Implementation Agent：只基于已批准 PRD/Plan 文档、业务 skill 和 ContextPack 工作。
+- Review Agent：检查实际 diff 是否超出 ContextPack 和 PRD/Plan 文档所支持的范围。
 
 ## 10. 避免上下文爆炸的规则
 
@@ -256,7 +256,7 @@ Memory 只作为证据链的一部分，不能覆盖当前代码、PRD、测试�
 
 Review subagent 必须检查：
 
-- diff 中每个文件是否在最小修改计划中。
+- diff 中每个文件是否在 PRD/Plan 文档的实现范围中。
 - 如果不在，是否有明确理由。
 - 是否存在未被业务 skill 或 PRD 支持的改动。
 - 是否修改了检索阶段标记为非相关区域的文件。

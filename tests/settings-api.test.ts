@@ -17,7 +17,11 @@ describe("settings api", () => {
 
     const list = await app.inject({ method: "GET", url: "/settings/config" });
     expect(list.statusCode).toBe(200);
-    expect(list.json<{ sections: Array<{ section: string }> }>().sections.map((section) => section.section)).toContain("agents");
+    expect(
+      list
+        .json<{ sections: Array<{ section: string }> }>()
+        .sections.map((section) => section.section),
+    ).toContain("agents");
 
     const valid = await app.inject({
       method: "POST",
@@ -35,10 +39,10 @@ describe("settings api", () => {
           "    provider: qwen",
           "    system_prompt: prompts/system/main-agent.md",
           "    skills:",
-          "      - minimal-change-planner",
-          ""
-        ].join("\n")
-      }
+          "      - implementation-scope-planner",
+          "",
+        ].join("\n"),
+      },
     });
     expect(valid.statusCode).toBe(200);
     expect(valid.json<{ valid: boolean }>().valid).toBe(true);
@@ -46,7 +50,7 @@ describe("settings api", () => {
     const invalid = await app.inject({
       method: "POST",
       url: "/settings/config/repositories/validate",
-      payload: { content: "repositories: bad" }
+      payload: { content: "repositories: bad" },
     });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json<{ valid: boolean }>().valid).toBe(false);
@@ -75,15 +79,33 @@ describe("settings api", () => {
           "  prd:",
           "    provider: qwen",
           "    system_prompt: prompts/system/prd-agent.md",
-          ""
-        ].join("\n")
-      }
+          "",
+        ].join("\n"),
+      },
     });
 
     expect(valid.statusCode).toBe(200);
-    expect(valid.json<{ valid: boolean; usedApiKeySource: string; statusCode: number }>().valid).toBe(true);
-    expect(valid.json<{ valid: boolean; usedApiKeySource: string; statusCode: number }>().usedApiKeySource).toBe("env");
-    expect(valid.json<{ valid: boolean; usedApiKeySource: string; statusCode: number }>().statusCode).toBe(200);
+    expect(
+      valid.json<{
+        valid: boolean;
+        usedApiKeySource: string;
+        statusCode: number;
+      }>().valid,
+    ).toBe(true);
+    expect(
+      valid.json<{
+        valid: boolean;
+        usedApiKeySource: string;
+        statusCode: number;
+      }>().usedApiKeySource,
+    ).toBe("env");
+    expect(
+      valid.json<{
+        valid: boolean;
+        usedApiKeySource: string;
+        statusCode: number;
+      }>().statusCode,
+    ).toBe(200);
 
     delete process.env.TEST_MODEL_API_KEY;
     const oneTimeKey = await app.inject({
@@ -103,14 +125,19 @@ describe("settings api", () => {
           "  prd:",
           "    provider: qwen",
           "    system_prompt: prompts/system/prd-agent.md",
-          ""
-        ].join("\n")
-      }
+          "",
+        ].join("\n"),
+      },
     });
 
     expect(oneTimeKey.statusCode).toBe(200);
-    expect(oneTimeKey.json<{ valid: boolean; usedApiKeySource: string }>().valid).toBe(true);
-    expect(oneTimeKey.json<{ valid: boolean; usedApiKeySource: string }>().usedApiKeySource).toBe("request");
+    expect(
+      oneTimeKey.json<{ valid: boolean; usedApiKeySource: string }>().valid,
+    ).toBe(true);
+    expect(
+      oneTimeKey.json<{ valid: boolean; usedApiKeySource: string }>()
+        .usedApiKeySource,
+    ).toBe("request");
 
     const missing = await app.inject({
       method: "POST",
@@ -128,14 +155,19 @@ describe("settings api", () => {
           "  prd:",
           "    provider: qwen",
           "    system_prompt: prompts/system/prd-agent.md",
-          ""
-        ].join("\n")
-      }
+          "",
+        ].join("\n"),
+      },
     });
 
     expect(missing.statusCode).toBe(200);
-    expect(missing.json<{ valid: boolean; usedApiKeySource: string }>().valid).toBe(false);
-    expect(missing.json<{ valid: boolean; usedApiKeySource: string }>().usedApiKeySource).toBe("missing");
+    expect(
+      missing.json<{ valid: boolean; usedApiKeySource: string }>().valid,
+    ).toBe(false);
+    expect(
+      missing.json<{ valid: boolean; usedApiKeySource: string }>()
+        .usedApiKeySource,
+    ).toBe("missing");
 
     await app.close();
     await modelServer.close();
@@ -153,11 +185,11 @@ describe("settings api", () => {
         "    github_repo: shop",
         "    trigger:",
         "      mode: mention",
-        "      mention: \"@agent-prd\"",
+        '      mention: "@agent-prd"',
         "    queue:",
         "      max_concurrent_issues: 1",
-        ""
-      ].join("\n")
+        "",
+      ].join("\n"),
     );
     process.env.PROJECT_ROOT = dir;
     const app = await buildServer();
@@ -170,15 +202,18 @@ describe("settings api", () => {
         mention: "@repo-agent",
         maxConcurrentIssues: 3,
         allowedPermissions: ["read", "repo_write"],
-        blockedPermissions: ["dangerous"]
-      }
+        blockedPermissions: ["dangerous"],
+      },
     });
     const body = response.json<{
       parsed: {
         repositories: Array<{
           trigger: { mode: string; mention: string };
           queue: { max_concurrent_issues: number };
-          permissions: { allowed_permissions: string[]; blocked_permissions: string[] };
+          permissions: {
+            allowed_permissions: string[];
+            blocked_permissions: string[];
+          };
         }>;
       };
     }>();
@@ -188,14 +223,20 @@ describe("settings api", () => {
     expect(repository?.trigger.mode).toBe("label");
     expect(repository?.trigger.mention).toBe("@repo-agent");
     expect(repository?.queue.max_concurrent_issues).toBe(3);
-    expect(repository?.permissions.allowed_permissions).toEqual(["read", "repo_write"]);
+    expect(repository?.permissions.allowed_permissions).toEqual([
+      "read",
+      "repo_write",
+    ]);
     expect(repository?.permissions.blocked_permissions).toEqual(["dangerous"]);
 
     await app.close();
   });
 });
 
-async function startModelServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+async function startModelServer(): Promise<{
+  baseUrl: string;
+  close: () => Promise<void>;
+}> {
   const server: Server = createServer((request, response) => {
     const authHeader = request.headers.authorization;
 
@@ -228,6 +269,6 @@ async function startModelServer(): Promise<{ baseUrl: string; close: () => Promi
     close: () =>
       new Promise((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
-      })
+      }),
   };
 }

@@ -1,6 +1,14 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
-import type { Artifact, IssueContext, JsonValue, PrdDocument, QualityGateResult, Task } from "@agent/shared";
+import type {
+  Artifact,
+  IssueContext,
+  JsonValue,
+  MinimalChangePlan,
+  PlanningDocument,
+  QualityGateResult,
+  Task,
+} from "@agent/shared";
 
 export type ConversationLocale = "zh" | "en";
 
@@ -79,15 +87,20 @@ const installCommandCandidates = [
   { file: "bun.lock", command: "bun install --frozen-lockfile" },
   { file: "uv.lock", command: "uv sync" },
   { file: "poetry.lock", command: "poetry install" },
-  { file: "requirements.txt", command: "python -m pip install -r requirements.txt" },
-  { file: "package.json", command: "npm install" }
+  {
+    file: "requirements.txt",
+    command: "python -m pip install -r requirements.txt",
+  },
+  { file: "package.json", command: "npm install" },
 ] as const;
 
-export async function detectInstallCommand(repoDir: string): Promise<string | undefined> {
+export async function detectInstallCommand(
+  repoDir: string,
+): Promise<string | undefined> {
   for (const candidate of installCommandCandidates) {
     const exists = await access(path.join(repoDir, candidate.file)).then(
       () => true,
-      () => false
+      () => false,
     );
 
     if (exists) {
@@ -98,39 +111,53 @@ export async function detectInstallCommand(repoDir: string): Promise<string | un
   return undefined;
 }
 
-export function createPrLocalVerificationPlan(input: PrLocalVerificationInput): PrLocalVerificationPlan {
-  const cloneUrl = input.cloneUrl ?? `https://github.com/${input.owner}/${input.repo}.git`;
+export function createPrLocalVerificationPlan(
+  input: PrLocalVerificationInput,
+): PrLocalVerificationPlan {
+  const cloneUrl =
+    input.cloneUrl ?? `https://github.com/${input.owner}/${input.repo}.git`;
   const qualityGates = dedupeQualityGateResults(input.qualityGateResults ?? []);
   const postCheckoutCommands = [
     input.installCommand,
     ...qualityGates.map((result) => result.command),
-    input.devCommand
+    input.devCommand,
   ].filter((command): command is string => Boolean(command));
 
   return {
     repository: {
       owner: input.owner,
       repo: input.repo,
-      cloneUrl
+      cloneUrl,
     },
     branches: {
       base: input.baseBranch,
       baseSha: input.baseSha,
-      agent: input.agentBranch
+      agent: input.agentBranch,
     },
     commands: {
-      githubCli: [`gh repo clone ${input.owner}/${input.repo}`, `cd ${input.repo}`, `gh pr checkout ${input.agentBranch}`, ...postCheckoutCommands],
-      plainGit: [`git clone ${cloneUrl}`, `cd ${input.repo}`, `git fetch origin ${input.agentBranch}`, `git checkout ${input.agentBranch}`, ...postCheckoutCommands],
+      githubCli: [
+        `gh repo clone ${input.owner}/${input.repo}`,
+        `cd ${input.repo}`,
+        `gh pr checkout ${input.agentBranch}`,
+        ...postCheckoutCommands,
+      ],
+      plainGit: [
+        `git clone ${cloneUrl}`,
+        `cd ${input.repo}`,
+        `git fetch origin ${input.agentBranch}`,
+        `git checkout ${input.agentBranch}`,
+        ...postCheckoutCommands,
+      ],
       install: input.installCommand,
       qualityGates,
-      dev: input.devCommand
+      dev: input.devCommand,
     },
     screenshots: (input.screenshotArtifacts ?? []).map((artifact) => ({
       url: metadataString(artifact.metadata?.url),
       viewport: metadataString(artifact.metadata?.viewport),
-      artifact: artifact.url ?? artifact.path ?? "task artifact"
+      artifact: artifact.url ?? artifact.path ?? "task artifact",
     })),
-    sandbox: input.sandbox ?? {}
+    sandbox: input.sandbox ?? {},
   };
 }
 
@@ -139,7 +166,10 @@ export function createAgentPrBody(input: AgentPrBodyInput): string {
   const locale = input.locale ?? detectIssueLocale(task.issue);
   const qualityGateLines =
     task.qualityGateResults && task.qualityGateResults.length > 0
-      ? task.qualityGateResults.map((result) => `- ${result.kind}: ${result.passed ? copy(locale).passed : copy(locale).failed} (${result.command})`)
+      ? task.qualityGateResults.map(
+          (result) =>
+            `- ${result.kind}: ${result.passed ? copy(locale).passed : copy(locale).failed} (${result.command})`,
+        )
       : [`- ${copy(locale).notRecorded}`];
   const reviewNotes = task.reviewResult?.prDescriptionNotes ?? [];
 
@@ -148,7 +178,9 @@ export function createAgentPrBody(input: AgentPrBodyInput): string {
     "",
     `## ${copy(locale).summary}`,
     goalsToMarkdown(task),
-    ...(input.updateReason ? ["", `## ${copy(locale).latestFeedback}`, input.updateReason] : []),
+    ...(input.updateReason
+      ? ["", `## ${copy(locale).latestFeedback}`, input.updateReason]
+      : []),
     "",
     formatPrLocalVerificationMarkdown(input.verification, locale),
     "",
@@ -161,18 +193,30 @@ export function createAgentPrBody(input: AgentPrBodyInput): string {
     `## ${copy(locale).reviewSubagent}`,
     `- ${copy(locale).approved}: ${task.reviewResult?.approved ?? false}`,
     `- ${copy(locale).risk}: ${task.reviewResult?.riskLevel ?? "unknown"}`,
-    ...(reviewNotes.length > 0 ? reviewNotes.map((note) => `- ${note}`) : [`- ${copy(locale).noAdditionalNotes}`])
+    ...(reviewNotes.length > 0
+      ? reviewNotes.map((note) => `- ${note}`)
+      : [`- ${copy(locale).noAdditionalNotes}`]),
   ].join("\n");
 }
 
-export function formatPrLocalVerificationMarkdown(plan: PrLocalVerificationPlan, locale: ConversationLocale = "en"): string {
+export function formatPrLocalVerificationMarkdown(
+  plan: PrLocalVerificationPlan,
+  locale: ConversationLocale = "en",
+): string {
   const text = copy(locale);
   const commandSummary =
     plan.commands.qualityGates.length > 0
-      ? plan.commands.qualityGates.map((gate) => `- ${gate.kind}: ${gate.passed ? text.passed : text.failed} (${gate.command})`)
+      ? plan.commands.qualityGates.map(
+          (gate) =>
+            `- ${gate.kind}: ${gate.passed ? text.passed : text.failed} (${gate.command})`,
+        )
       : [`- ${text.noQualityGateCommands}`];
   const screenshots =
-    plan.screenshots.length > 0 ? plan.screenshots.flatMap((screenshot) => formatScreenshotMarkdown(screenshot)) : [`- ${text.none}`];
+    plan.screenshots.length > 0
+      ? plan.screenshots.flatMap((screenshot) =>
+          formatScreenshotMarkdown(screenshot),
+        )
+      : [`- ${text.none}`];
 
   return [
     `## ${text.localVerification}`,
@@ -201,12 +245,18 @@ export function formatPrLocalVerificationMarkdown(plan: PrLocalVerificationPlan,
     "",
     `### ${text.frontendScreenshotVerification}`,
     "",
-    ...screenshots
+    ...screenshots,
   ].join("\n");
 }
 
 export function detectIssueLocale(issue: IssueContext): ConversationLocale {
-  const text = [issue.title, issue.body, ...issue.comments.map((comment) => comment.body)].join("\n").trim();
+  const text = [
+    issue.title,
+    issue.body,
+    ...issue.comments.map((comment) => comment.body),
+  ]
+    .join("\n")
+    .trim();
   if (/[\u3400-\u9fff]/.test(text)) {
     return "zh";
   }
@@ -223,14 +273,14 @@ export function languageInstruction(locale: ConversationLocale): string {
 
 export function createPrdIssueComment(input: {
   task: Task;
-  prd: PrdDocument;
+  planningDocument: PlanningDocument;
   requiresHumanReview: boolean;
   mention: string;
   locale?: ConversationLocale;
 }): string {
   const locale = input.locale ?? detectIssueLocale(input.task.issue);
   const text = prdCopy(locale);
-  const prd = input.prd;
+  const prd = input.planningDocument;
   const reviewLine = input.requiresHumanReview
     ? text.requiresReview(input.mention)
     : text.autoApproved;
@@ -251,6 +301,8 @@ export function createPrdIssueComment(input: {
     "",
     markdownList(text.acceptanceCriteria, prd.acceptanceCriteria, text.none),
     "",
+    formatMinimalChangePlan(prd.implementationPlan, text),
+    "",
     markdownList(text.risks, prd.risks, text.none),
     "",
     markdownList(text.unknowns, prd.unknowns, text.none),
@@ -259,27 +311,79 @@ export function createPrdIssueComment(input: {
     `- ${text.taskType}: ${prd.taskType}`,
     `- ${text.score}: ${prd.complexity.score}`,
     `- ${text.humanReview}: ${prd.complexity.requiresHumanReview ? text.yes : text.no}`,
-    ...prd.complexity.reasons.map((reason) => `- ${reason}`)
+    ...prd.complexity.reasons.map((reason) => `- ${reason}`),
   ].join("\n");
 }
 
-function markdownList(title: string, values: string[], fallback: string): string {
-  return [`### ${title}`, ...(values.length > 0 ? values.map((value) => `- ${value}`) : [`- ${fallback}`])].join("\n");
+function formatMinimalChangePlan(
+  plan: MinimalChangePlan,
+  text: ReturnType<typeof prdCopy>,
+): string {
+  return [
+    `### ${text.implementationPlan}`,
+    `- ${text.planGoal}: ${plan.goal}`,
+    "",
+    markdownList(
+      text.planAcceptanceCriteria,
+      plan.acceptanceCriteria,
+      text.none,
+    ),
+    "",
+    markdownList(text.filesToRead, plan.filesToRead, text.none),
+    "",
+    markdownList(
+      text.filesExpectedToChange,
+      plan.filesExpectedToChange,
+      text.none,
+    ),
+    "",
+    markdownList(text.testsToAddOrUpdate, plan.testsToAddOrUpdate, text.none),
+    "",
+    markdownList(text.commandsToRun, plan.commandsToRun, text.none),
+    "",
+    markdownList(text.planNonGoals, plan.explicitNonGoals, text.none),
+    "",
+    markdownList(text.planRiskNotes, plan.riskNotes, text.none),
+  ].join("\n");
 }
 
-export function validateAgentPrBodyCompleteness(input: AgentPrBodyInput & { body: string }): PrBodyCompletenessResult {
+function markdownList(
+  title: string,
+  values: string[],
+  fallback: string,
+): string {
+  return [
+    `### ${title}`,
+    ...(values.length > 0
+      ? values.map((value) => `- ${value}`)
+      : [`- ${fallback}`]),
+  ].join("\n");
+}
+
+export function validateAgentPrBodyCompleteness(
+  input: AgentPrBodyInput & { body: string },
+): PrBodyCompletenessResult {
   const locale = input.locale ?? detectIssueLocale(input.task.issue);
   const text = copy(locale);
   const errors: string[] = [];
 
-  const requiredSections = [text.summary, text.localVerification, text.prContentCompleteness, text.qualityGates, text.reviewSubagent];
+  const requiredSections = [
+    text.summary,
+    text.localVerification,
+    text.prContentCompleteness,
+    text.qualityGates,
+    text.reviewSubagent,
+  ];
   for (const section of requiredSections) {
     if (!input.body.includes(`## ${section}`)) {
       errors.push(`${text.missingPrSection}: ${section}`);
     }
   }
 
-  if (!input.task.qualityGateResults || input.task.qualityGateResults.length === 0) {
+  if (
+    !input.task.qualityGateResults ||
+    input.task.qualityGateResults.length === 0
+  ) {
     errors.push(text.missingQualityGates);
   } else if (input.task.qualityGateResults.some((result) => !result.passed)) {
     errors.push(text.failedQualityGates);
@@ -292,7 +396,9 @@ export function validateAgentPrBodyCompleteness(input: AgentPrBodyInput & { body
   const screenshotArtifacts = input.verification.screenshots;
   if (screenshotArtifacts.length > 0) {
     const missingEmbeddedScreenshots = screenshotArtifacts.filter(
-      (screenshot) => !isEmbeddableImageUrl(screenshot.artifact) || !input.body.includes(`](${screenshot.artifact})`)
+      (screenshot) =>
+        !isEmbeddableImageUrl(screenshot.artifact) ||
+        !input.body.includes(`](${screenshot.artifact})`),
     );
     if (missingEmbeddedScreenshots.length > 0) {
       errors.push(text.screenshotNotEmbedded);
@@ -301,14 +407,18 @@ export function validateAgentPrBodyCompleteness(input: AgentPrBodyInput & { body
 
   return {
     passed: errors.length === 0,
-    errors
+    errors,
   };
 }
 
-export function assertAgentPrBodyComplete(input: AgentPrBodyInput & { body: string }): void {
+export function assertAgentPrBodyComplete(
+  input: AgentPrBodyInput & { body: string },
+): void {
   const result = validateAgentPrBodyCompleteness(input);
   if (!result.passed) {
-    throw new Error(`PR content completeness check failed: ${result.errors.join("; ")}`);
+    throw new Error(
+      `PR content completeness check failed: ${result.errors.join("; ")}`,
+    );
   }
 }
 
@@ -328,7 +438,7 @@ export function createPrReadyIssueComment(input: {
     `- ${text.reviewSubagent}: ${input.task.reviewResult?.approved ? text.passed : text.failed}`,
     "",
     `### ${text.frontendScreenshotVerification}`,
-    ...formatVisibleScreenshotMarkdown(input.verification, locale)
+    ...formatVisibleScreenshotMarkdown(input.verification, locale),
   ].join("\n");
 }
 
@@ -349,26 +459,34 @@ export function createPrFeedbackUpdateComment(input: {
     `- ${text.reviewSubagent}: ${input.task.reviewResult?.approved ? text.passed : text.failed}`,
     "",
     `### ${text.frontendScreenshotVerification}`,
-    ...formatVisibleScreenshotMarkdown(input.verification, locale)
+    ...formatVisibleScreenshotMarkdown(input.verification, locale),
   ].join("\n");
 }
 
 function goalsToMarkdown(task: Task): string {
-  if (!task.prd || task.prd.goals.length === 0) {
+  const goals = task.planningDocument?.goals ?? [];
+  if (goals.length === 0) {
     return `- ${copy(detectIssueLocale(task.issue)).seePrdArtifact}`;
   }
 
-  return task.prd.goals.map((goal) => `- ${goal}`).join("\n");
+  return goals.map((goal) => `- ${goal}`).join("\n");
 }
 
-function formatPrContentChecklist(input: AgentPrBodyInput, locale: ConversationLocale): string[] {
+function formatPrContentChecklist(
+  input: AgentPrBodyInput,
+  locale: ConversationLocale,
+): string[] {
   const text = copy(locale);
-  const screenshotsEmbedded = input.verification.screenshots.length === 0 || input.verification.screenshots.every((screenshot) => isEmbeddableImageUrl(screenshot.artifact));
+  const screenshotsEmbedded =
+    input.verification.screenshots.length === 0 ||
+    input.verification.screenshots.every((screenshot) =>
+      isEmbeddableImageUrl(screenshot.artifact),
+    );
   return [
     `- ${text.languageMatched}: ${locale === "zh" ? "中文" : "English"}`,
     `- ${text.selfChecksBeforePr}: ${allRecordedChecksPassed(input.task) ? text.passed : text.failed}`,
     `- ${text.reviewSubagent}: ${input.task.reviewResult?.approved ? text.passed : text.failed}`,
-    `- ${text.screenshotArtifacts}: ${screenshotsEmbedded ? text.embeddedImages : text.needsEmbeddedImages}`
+    `- ${text.screenshotArtifacts}: ${screenshotsEmbedded ? text.embeddedImages : text.needsEmbeddedImages}`,
   ];
 }
 
@@ -377,20 +495,32 @@ function allRecordedChecksPassed(task: Task): boolean {
   return results.length > 0 && results.every((result) => result.passed);
 }
 
-function formatScreenshotMarkdown(screenshot: PrLocalVerificationPlan["screenshots"][number]): string[] {
-  const target = screenshot.url ? `${screenshot.url}${screenshot.viewport ? ` ${screenshot.viewport}` : ""}` : "screenshot";
+function formatScreenshotMarkdown(
+  screenshot: PrLocalVerificationPlan["screenshots"][number],
+): string[] {
+  const target = screenshot.url
+    ? `${screenshot.url}${screenshot.viewport ? ` ${screenshot.viewport}` : ""}`
+    : "screenshot";
   if (isEmbeddableImageUrl(screenshot.artifact)) {
     return [`- ${target}`, `![${target}](${screenshot.artifact})`];
   }
   return [`- ${target}: ${screenshot.artifact}`];
 }
 
-function formatVisibleScreenshotMarkdown(plan: PrLocalVerificationPlan, locale: ConversationLocale): string[] {
-  const images = plan.screenshots.flatMap((screenshot) => formatScreenshotMarkdown(screenshot)).filter((line) => line.startsWith("![") || line.startsWith("- "));
+function formatVisibleScreenshotMarkdown(
+  plan: PrLocalVerificationPlan,
+  locale: ConversationLocale,
+): string[] {
+  const images = plan.screenshots
+    .flatMap((screenshot) => formatScreenshotMarkdown(screenshot))
+    .filter((line) => line.startsWith("![") || line.startsWith("- "));
   return images.length > 0 ? images : [`- ${copy(locale).none}`];
 }
 
-function summarizeQualityGates(results: QualityGateResult[], locale: ConversationLocale): string {
+function summarizeQualityGates(
+  results: QualityGateResult[],
+  locale: ConversationLocale,
+): string {
   const text = copy(locale);
   if (results.length === 0) {
     return text.notRecorded;
@@ -400,7 +530,9 @@ function summarizeQualityGates(results: QualityGateResult[], locale: Conversatio
   return `${passed}/${results.length} ${passed === results.length ? text.passed : text.failed}`;
 }
 
-function dedupeQualityGateResults(results: QualityGateResult[]): PrLocalVerificationPlan["commands"]["qualityGates"] {
+function dedupeQualityGateResults(
+  results: QualityGateResult[],
+): PrLocalVerificationPlan["commands"]["qualityGates"] {
   const seen = new Set<string>();
   const deduped: PrLocalVerificationPlan["commands"]["qualityGates"] = [];
 
@@ -416,7 +548,7 @@ function dedupeQualityGateResults(results: QualityGateResult[]): PrLocalVerifica
       kind: result.kind,
       command: result.command,
       passed: result.passed,
-      exitCode: result.exitCode
+      exitCode: result.exitCode,
     });
   }
 
@@ -459,7 +591,8 @@ function copy(locale: ConversationLocale) {
         passed: "通过",
         plainGitOption: "方式 B：普通 Git",
         prContentCompleteness: "PR 内容完整性检查",
-        prFeedbackUpdated: "已根据最新 PR 评论更新同一个分支，并重新完成机器人自检。PR 正文已刷新为最新验证结果和直接可见截图。",
+        prFeedbackUpdated:
+          "已根据最新 PR 评论更新同一个分支，并重新完成机器人自检。PR 正文已刷新为最新验证结果和直接可见截图。",
         qualityGates: "质量门禁",
         reviewNotApproved: "Review agent 尚未批准",
         reviewSubagent: "机器人自检 Review",
@@ -472,7 +605,7 @@ function copy(locale: ConversationLocale) {
         selfChecksBeforePr: "创建 PR 前自检",
         summary: "摘要",
         unknown: "未知",
-        issueReady: (prUrl: string) => `机器人自检已完成并创建 PR：${prUrl}`
+        issueReady: (prUrl: string) => `机器人自检已完成并创建 PR：${prUrl}`,
       }
     : {
         agentVerification: "Agent Verification",
@@ -500,7 +633,8 @@ function copy(locale: ConversationLocale) {
         passed: "passed",
         plainGitOption: "Option B: Plain Git",
         prContentCompleteness: "PR Content Completeness Check",
-        prFeedbackUpdated: "Updated the same PR branch from the latest PR comment and reran agent verification. The PR body now contains the latest checks and directly visible screenshots.",
+        prFeedbackUpdated:
+          "Updated the same PR branch from the latest PR comment and reran agent verification. The PR body now contains the latest checks and directly visible screenshots.",
         qualityGates: "Quality Gates",
         reviewNotApproved: "Review agent has not approved the changes",
         reviewSubagent: "Review Subagent",
@@ -508,12 +642,14 @@ function copy(locale: ConversationLocale) {
         sandboxImage: "Sandbox image",
         sandboxMode: "Sandbox mode",
         screenshotArtifacts: "Screenshot artifacts",
-        screenshotNotEmbedded: "Screenshots are not embedded as Markdown images",
+        screenshotNotEmbedded:
+          "Screenshots are not embedded as Markdown images",
         seePrdArtifact: "See PRD artifact.",
         selfChecksBeforePr: "Self-checks before PR creation",
         summary: "Summary",
         unknown: "unknown",
-        issueReady: (prUrl: string) => `Agent self-checks completed and created the PR: ${prUrl}`
+        issueReady: (prUrl: string) =>
+          `Agent self-checks completed and created the PR: ${prUrl}`,
       };
 }
 
@@ -521,40 +657,62 @@ function prdCopy(locale: ConversationLocale) {
   return locale === "zh"
     ? {
         acceptanceCriteria: "验收标准",
-        autoApproved: "PRD 风险较低，已自动通过；CodeZero 会继续进入实现和自检阶段。",
+        autoApproved:
+          "PRD 风险较低，已自动通过；CodeZero 会继续进入实现和自检阶段。",
         background: "背景",
         complexity: "复杂度与审核",
+        commandsToRun: "计划运行命令",
+        filesExpectedToChange: "预计修改文件",
+        filesToRead: "计划阅读文件",
         goals: "目标",
         humanReview: "需要人工审核",
+        implementationPlan: "PRD 执行计划",
         no: "否",
         nonGoals: "非目标",
         none: "无。",
-        requiresReview: (mention: string) => `PRD 需要人工审核。确认可执行后，请在本 issue 回复 \`${mention} approve prd\` 或 \`${mention} 批准 PRD\`，也可以在看板点击批准。`,
+        planAcceptanceCriteria: "计划验收点",
+        planGoal: "计划目标",
+        planNonGoals: "计划不做",
+        planRiskNotes: "计划风险说明",
+        requiresReview: (mention: string) =>
+          `PRD 需要人工审核。确认可执行后，请在本 issue 回复 \`${mention} approve prd\` 或 \`${mention} 批准 PRD\`，也可以在看板点击批准。`,
         risks: "风险",
         score: "复杂度分数",
         taskType: "任务类型",
+        testsToAddOrUpdate: "计划新增或更新测试",
         title: "CodeZero PRD",
         unknowns: "未知项",
         userStories: "用户故事",
-        yes: "是"
+        yes: "是",
       }
     : {
         acceptanceCriteria: "Acceptance Criteria",
-        autoApproved: "The PRD is low risk and has been auto-approved; CodeZero will continue to implementation and self-checks.",
+        autoApproved:
+          "The PRD is low risk and has been auto-approved; CodeZero will continue to implementation and self-checks.",
         background: "Background",
         complexity: "Complexity And Review",
+        commandsToRun: "Commands To Run",
+        filesExpectedToChange: "Files Expected To Change",
+        filesToRead: "Files To Read",
         goals: "Goals",
         humanReview: "Requires human review",
+        implementationPlan: "PRD Execution Plan",
         no: "no",
         nonGoals: "Non-Goals",
         none: "None.",
-        requiresReview: (mention: string) => `The PRD requires human review. Reply with \`${mention} approve prd\` on this issue, or approve it from the dashboard, when it is ready to implement.`,
+        planAcceptanceCriteria: "Plan Acceptance Criteria",
+        planGoal: "Plan goal",
+        planNonGoals: "Plan Non-Goals",
+        planRiskNotes: "Plan Risk Notes",
+        requiresReview: (mention: string) =>
+          `The PRD requires human review. Reply with \`${mention} approve prd\` on this issue, or approve it from the dashboard, when it is ready to implement.`,
         risks: "Risks",
         score: "Complexity score",
         taskType: "Task type",
+        testsToAddOrUpdate: "Tests To Add Or Update",
         title: "CodeZero PRD",
         unknowns: "Unknowns",
         userStories: "User Stories",
-        yes: "yes"
+        yes: "yes",
       };
 }

@@ -69,13 +69,12 @@
 - 生成多个实现方向。
 - 输出 `BrainstormReport`。
 
-### 3.3 PRD Service
+### 3.3 Planning Service
 
 职责：
 
-- 生成 PRD。
-- 生成验收标准。
-- 生成复杂度评分。
+- 在 task sandbox 和 ContextPack 基础上生成同一份 PRD/Plan 文档。
+- 文档同时包含目标、验收标准、复杂度评分、预计文件、测试、验证命令和风险。
 - 决定 `auto_execute` 或 `requires_human_review`。
 
 ### 3.4 Orchestrator
@@ -91,12 +90,12 @@
 
 职责：
 
-- 创建隔离工作目录。
+- 创建或恢复同一个 task 工作目录。
 - checkout 指定分支。
 - 安装依赖。
 - 注入只读配置、prompt、skill。
 - 限制网络、密钥和文件访问。
-- 任务结束后归档产物并清理。
+- 审批等待和 PR feedback 期间保持同一 sandbox；任务完成或取消后再归档产物并清理。
 
 ### 3.6 Agent Runtime
 
@@ -106,7 +105,7 @@
 - 装载 skill。
 - 调用模型。
 - 通过 provider profile 接入 DeepSeek / Qwen 等国产 OpenAI-compatible API。
-- 把模型输出解析为 PRD、ContextPack、minimal change plan、review report 等 structured artifact。
+- 把模型输出解析为 PRD/Plan 文档、ContextPack、review report 等 structured artifact。
 - 在主线实现阶段启动内部 coding executor，让 executor 在隔离 sandbox 中读写文件并运行命令。
 - 实现阶段不解析 JSON edit action；Tool Gateway 仅承载读/search/shell 和高风险受控工具场景。
 - 上报事件。
@@ -248,11 +247,11 @@ Repo Navigation Graph 是 Agent 读大仓库的核心加速器。它不替代检
 
 ### 4.1 主控 Agent
 
-负责理解 PRD、规划实现、拆分任务、协调 subagent。
+负责理解已批准 PRD/Plan 文档、协调实现和 subagent。
 
-### 4.2 PRD Agent
+### 4.2 Planning Agent
 
-负责从 Issue 生成 PRD、验收标准、复杂度评分和待确认问题。
+负责从 Issue、ContextPack 和仓库证据生成同一份 PRD/Plan 文档，其中包含验收标准、复杂度评分、实现范围和待确认问题。
 
 ### 4.3 Frontend Agent
 
@@ -270,7 +269,7 @@ Repo Navigation Graph 是 Agent 读大仓库的核心加速器。它不替代检
 
 负责最终静态审查，输出风险、遗漏测试和 PR 说明建议。
 
-PR 创建前必须运行 Review Agent。Review Agent 不直接修改代码，只基于 PRD、最小修改计划、diff、测试结果和截图产物做阻断判断。
+PR 创建前必须运行 Review Agent。Review Agent 不直接修改代码，只基于 PRD/Plan 文档、diff、测试结果和截图产物做阻断判断。
 
 Review Agent 还必须检查当前 PR 是否只包含当前 Issue 的改动，以及 build/lint/test/typecheck 是否通过。
 
@@ -341,7 +340,8 @@ Review Agent 还必须检查当前 PR 是否只包含当前 Issue 的改动，�
 5. 加载平台 skill。
 6. 加载项目 `.agent` 业务 skill。
 7. 建立仓库索引，执行 agentic search，生成 ContextPack。
-8. 执行 Agent workflow。
+8. 生成同一份 PRD/Plan 文档并等待审批。
+9. 审批通过后在同一 sandbox 中执行 Agent workflow。
 
 ### 6.2 权限原则
 

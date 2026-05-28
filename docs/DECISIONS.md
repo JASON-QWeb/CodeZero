@@ -11,9 +11,8 @@ Skill 分为两层：
 第一批内置 skill：
 
 - `brainstorm-requirements`：从 Issue 做需求发散、澄清、风险识别。
-- `draft-prd`：生成 PRD、验收标准、复杂度评分。
+- `draft-prd-plan`：生成同一份 PRD/Plan 文档，包含验收标准、复杂度评分和实现范围。
 - `repo-context-compress`：基于仓库索引和 agentic search 生成 ContextPack。
-- `minimal-change-planner`：根据 PRD 生成最小修改计划。
 - `frontend-verification`：前端截图、控制台错误检查、单元测试。
 - `backend-verification`：后端单元测试、类型检查、接口测试建议。
 - `pr-compliance-review`：审核 PR 是否符合规范。
@@ -83,7 +82,7 @@ Skill 分为两层：
 
 不同角色可以配置不同模型：
 
-- PRD Agent
+- Planning Agent
 - Main Implementation Agent
 - Explorer Subagent
 - Frontend QA Subagent
@@ -103,8 +102,8 @@ Agent 必须先在沙箱中 clone 完整代码仓库，再进行分析和实现�
 5. 扫描仓库结构。
 6. 读取项目业务文档和 skill。
 7. 建立仓库索引，执行 agentic search，生成 ContextPack。
-8. 生成最小修改计划。
-9. 执行实现。
+8. 生成同一份 PRD/Plan 文档。
+9. 等待审批，通过后在同一 sandbox 中执行实现。
 10. 运行验证。
 11. Review subagent 审核。
 12. 创建 draft PR。
@@ -204,7 +203,7 @@ Repo Navigation Graph 确认为大仓库能力的核心模块。
 - 历史 PR changed-with 关系。
 - memory 到模块或符号的链接。
 
-每个任务应生成 `navigation-route.json`，作为 ContextPack 和最小修改计划的输入。Review subagent 必须检查实际 diff 是否偏离导航路线。
+每个任务应生成 `navigation-route.json`，作为 ContextPack 和 PRD/Plan 实现范围的输入。Review subagent 必须检查实际 diff 是否偏离导航路线。
 
 ## 12. 可观测、评估、工具与治理策略
 
@@ -235,7 +234,7 @@ Repo Navigation Graph 确认为大仓库能力的核心模块。
 模型接入原则：
 
 - CodeZero 编排层 provider 仍统一走 OpenAI-compatible abstraction。
-- PRD、ContextPack、minimal change plan、review report 等平台 artifact 使用结构化 JSON。
+- PRD/Plan 文档、ContextPack、review report 等平台 artifact 使用结构化 JSON。
 - 实现阶段主路径不是手写 JSON patch，而是在 sandbox 中启动内部 coding executor。默认 executor 通过 OpenCode CLI 执行，但它是内部实现细节，不能暴露到用户-facing issue、PR 或 dashboard 文案中。
 - `providers.<id>.coding_executor` 可以配置 `auto`、`custom` 或 `native`，让不同仓库/用户选择 OpenCode 支持的 native provider 或自定义 OpenAI-compatible 网关。
 - Tool Gateway 保留为读/search/shell、高风险工具治理和审计层；实现阶段删除 JSON edit fallback，普通编码任务只走 OpenCode executor。

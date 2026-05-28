@@ -134,7 +134,7 @@ ContextPack 不再只依赖 keyword score，而是结合：
 - owner/risk edge。
 - file size and generated status。
 
-### 4.3 实现前：生成最小修改计划
+### 4.3 实现前：写入 PRD/Plan 实现范围
 
 导航图帮助判断：
 
@@ -170,17 +170,17 @@ flowchart TD
 
 ## 6. 数据来源
 
-| 来源 | 用途 |
-| --- | --- |
-| file system | 文件节点、目录、生成文件识别 |
-| AST/parser | 符号、import/export、调用、组件引用 |
-| package files | workspace dependency、scripts、framework detection |
+| 来源              | 用途                                                  |
+| ----------------- | ----------------------------------------------------- |
+| file system       | 文件节点、目录、生成文件识别                          |
+| AST/parser        | 符号、import/export、调用、组件引用                   |
+| package files     | workspace dependency、scripts、framework detection    |
 | route conventions | Next.js routes、Express/Fastify routes、API endpoints |
-| test conventions | source-to-test mapping、test command suggestion |
-| `.agent/*` | 业务术语、模块说明、测试指南、ownership |
-| git history | changed-with edge、相似 PR、热点文件 |
-| CODEOWNERS | ownership 和风险区域 |
-| memory store | 历史经验和失败模式 |
+| test conventions  | source-to-test mapping、test command suggestion       |
+| `.agent/*`        | 业务术语、模块说明、测试指南、ownership               |
+| git history       | changed-with edge、相似 PR、热点文件                  |
+| CODEOWNERS        | ownership 和风险区域                                  |
+| memory store      | 历史经验和失败模式                                    |
 
 ## 7. 导航图产物
 
@@ -200,17 +200,9 @@ artifacts/{task_id}/navigation-route.json
 {
   "taskId": "task-acme-shop-42",
   "entrypoints": ["route:/orders/:id"],
-  "mustRead": [
-    "src/orders/order-detail.tsx",
-    "src/billing/refund-status.ts"
-  ],
-  "tests": [
-    "src/orders/order-detail.test.tsx"
-  ],
-  "doNotModify": [
-    "src/payments/**",
-    "src/ledger/**"
-  ],
+  "mustRead": ["src/orders/order-detail.tsx", "src/billing/refund-status.ts"],
+  "tests": ["src/orders/order-detail.test.tsx"],
+  "doNotModify": ["src/payments/**", "src/ledger/**"],
   "reasoning": [
     "Order detail route renders refund status component.",
     "Refund status formatter is imported by order detail.",

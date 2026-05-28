@@ -4,24 +4,24 @@ This document is the canonical product contract for CodeZero. Keep it current be
 
 ## Product Intent
 
-CodeZero is a GitHub Issue/PR automation product. A user should be able to mention the bot in an issue, review the bot's PRD, let the bot implement in an isolated sandbox, and then review a pull request that already contains self-check results and visible screenshots. The user decides when to merge unless auto-merge is explicitly configured later.
+CodeZero is a GitHub Issue/PR automation product. A user should be able to mention the bot in an issue, review the bot's planning document, let the bot implement in the same isolated sandbox, and then review a pull request that already contains self-check results and visible screenshots. The user decides when to merge unless auto-merge is explicitly configured later.
 
 ## Main Loop
 
 1. A GitHub issue or issue comment triggers the configured repository mention, for example `@codeZero`.
 2. CodeZero asynchronously imports the issue and creates one task for that repository/issue pair.
-3. The PRD agent generates a user-facing PRD from the issue, repository rules, repository skills, and available repository intelligence.
-4. CodeZero comments the PRD back to the GitHub issue.
-5. If the PRD is low-risk, CodeZero auto-approves it and continues. If it is complex, risky, or uncertain, CodeZero waits for human PRD approval from the dashboard or an issue comment such as `@codeZero approve prd`.
-6. After PRD approval, CodeZero prepares an isolated sandbox branch for the issue.
-7. CodeZero loads repository-level intelligence and updates issue-specific context:
+3. CodeZero creates or reuses the task sandbox and issue branch immediately. This sandbox is the task's persistent workspace until the PR is accepted or the task is cancelled.
+4. CodeZero loads repository-level intelligence and updates issue-specific context inside that sandbox:
    - CodeGraph database and task context.
    - Repo Navigation Graph and route.
    - Understand-Anything knowledge graph, when generated for the repository.
    - Repository project rules, testing guide, and `.agent/skills/*/SKILL.md`.
    - Approved memories from previous tasks.
-8. CodeZero creates an internal Execution Plan. This is not a second PRD; it is the implementation checklist for files, tests, commands, and risk notes.
-9. CodeZero invokes its internal coding executor in the sandbox. The default executor is a CLI coding agent configured from the user's CodeZero model/API settings, so it can read files, edit code, run local commands, and repair failures directly in the isolated worktree. The user-facing product remains CodeZero; the executor implementation is an internal runtime detail.
+5. The planning agent generates one planning document from the issue and code context. The document includes product intent, acceptance criteria, risks, complexity, files to read/change, tests, commands, and risk notes.
+6. CodeZero comments that planning document back to the GitHub issue.
+7. If the plan is low-risk, CodeZero auto-approves it and continues. If it is complex, risky, or uncertain, CodeZero waits for human approval from the dashboard or an issue comment such as `@codeZero approve prd`.
+8. Approval resumes the same task and the same sandbox. It must not create a duplicate task, duplicate branch, or feedback-specific sandbox.
+9. CodeZero invokes its internal coding executor in the persistent task sandbox. The default executor is a CLI coding agent configured from the user's CodeZero model/API settings, so it can read files, edit code, run local commands, and repair failures directly in the isolated worktree. The user-facing product remains CodeZero; the executor implementation is an internal runtime detail.
 10. CodeZero runs self-checks before creating or updating a PR:
     - Repository setup gate, when configured, to start local dependencies such as databases, caches, migrations, or seeded services.
     - Review agent.
@@ -34,27 +34,31 @@ CodeZero is a GitHub Issue/PR automation product. A user should be able to menti
 11. CodeZero creates a Draft or Ready PR only after self-checks pass.
 12. The PR body must include language-matched summary text, self-check results, direct visible screenshots, local verification commands, and review-agent conclusions.
 13. GitHub PR comments and review comments are synchronized back into the same task.
-14. CodeZero repeats `modify -> self-check -> update same PR -> reply to user` until the user is satisfied.
+14. CodeZero repeats `modify -> self-check -> update same PR -> reply to user` in the same sandbox until the user is satisfied.
 15. The user merges. CodeZero does not merge by itself unless a future repository setting explicitly allows it.
 
-## PRD Contract
+## Planning Document Contract
 
-The PRD is the external agreement with the user. It must be visible on the GitHub issue, not only stored as an internal artifact.
+The planning document is the external agreement with the user. It is the PRD and execution plan in one artifact. It must be visible on the GitHub issue, not only stored internally.
 
-The PRD comment should include:
+The planning comment should include:
 
 - Background.
 - Goals.
 - Non-goals.
 - User stories.
 - Acceptance criteria.
+- Files to read.
+- Files expected to change.
+- Tests to add or update.
+- Commands to run.
 - Risks.
 - Unknowns.
 - Task type.
 - Complexity score and review requirement.
 - Approval instructions when human review is required.
 
-The PRD should use the issue language. Chinese issues get Chinese PRDs and PR comments; English issues get English PRDs and PR comments. Code identifiers and shell commands stay in their original form.
+The planning document should use the issue language. Chinese issues get Chinese planning comments; English issues get English planning comments. Code identifiers and shell commands stay in their original form.
 
 ## Repository-Level Intelligence
 
@@ -64,7 +68,7 @@ CodeGraph:
 
 - Stores a repository cache under `data/codegraph/<owner--repo>/codegraph.db`.
 - Initializes once and syncs on later issue runs.
-- Produces task-specific CodeGraph context after PRD approval.
+- Produces task-specific CodeGraph context before planning so the planning document is grounded in code.
 
 Understand-Anything:
 
@@ -88,18 +92,18 @@ CodeZero reads:
 - `.agent/testing-guide.md` for verification expectations.
 - `.agent/skills/*/SKILL.md` for repository-specific skills.
 
-These rules and skills must be injected into PRD generation, context creation, implementation, and review. A repository skill is not just a name; its useful content must be available to the agents within a controlled token budget.
+These rules and skills must be injected into context creation, planning, implementation, and review. A repository skill is not just a name; its useful content must be available to the agents within a controlled token budget.
 
 ## Human Review Policy
 
-Human PRD review is required when the model marks the PRD as complex, risky, or uncertain and the repository policy allows review gates.
+Human planning review is required when the model marks the planning document as complex, risky, or uncertain and the repository policy allows review gates.
 
 Human approval can come from:
 
 - The dashboard PRD approval action.
 - A GitHub issue comment that includes the repository bot mention and an approval phrase such as `approve prd`, `批准 PRD`, or `同意执行`.
 
-Approval resumes the same task. It must not create a duplicate task.
+Approval resumes the same task and the same task sandbox. It must not create a duplicate task, duplicate branch, or new feedback sandbox.
 
 ## Implementation Contract
 
