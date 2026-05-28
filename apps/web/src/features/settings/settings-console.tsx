@@ -1,12 +1,33 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Save, SlidersHorizontal } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Save,
+  SlidersHorizontal,
+} from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchConfig, saveConfig, saveProviderApiKey, updateRepositoryRuntimeSettings, validateConfig, validateProviderConnection } from "./api";
+import {
+  fetchConfig,
+  saveConfig,
+  saveProviderApiKey,
+  updateRepositoryRuntimeSettings,
+  validateConfig,
+  validateProviderConnection,
+} from "./api";
 import { orderedSections, permissionLevels, triggerModes } from "./constants";
+import {
+  applyProviderPresetToAgentsYaml,
+  providerPresets,
+  type ProviderPreset,
+} from "./provider-presets";
 import { sectionMeta } from "./section-meta";
-import { buildSummary, collectProviderIds, collectRepositoryQuickConfigs } from "./summary";
+import {
+  buildSummary,
+  collectProviderIds,
+  collectRepositoryQuickConfigs,
+} from "./summary";
 import type {
   ConfigSectionName,
   ProviderValidationResponse,
@@ -15,56 +36,81 @@ import type {
   RepositoryRuntimeSettingsInput,
   ToolPermissionLevel,
   TriggerMode,
-  ValidationResponse
+  ValidationResponse,
 } from "./types";
 
 export function SettingsConsole() {
   const queryClient = useQueryClient();
-  const [selectedSection, setSelectedSection] = useState<ConfigSectionName>("agents");
+  const [selectedSection, setSelectedSection] =
+    useState<ConfigSectionName>("agents");
   const [draft, setDraft] = useState("");
-  const [validation, setValidation] = useState<ValidationResponse | undefined>();
+  const [validation, setValidation] = useState<
+    ValidationResponse | undefined
+  >();
   const [providerId, setProviderId] = useState("");
   const [providerApiKey, setProviderApiKey] = useState("");
   const configQuery = useQuery({
     queryKey: ["settings-config"],
     queryFn: fetchConfig,
     refetchInterval: false,
-    retry: 1
+    retry: 1,
   });
   const validateMutation = useMutation({
     mutationFn: validateConfig,
-    onSuccess: setValidation
+    onSuccess: setValidation,
   });
   const saveMutation = useMutation({
     mutationFn: saveConfig,
     onSuccess: async (section) => {
-      setValidation({ section: section.section, valid: true, parsed: section.parsed });
+      setValidation({
+        section: section.section,
+        valid: true,
+        parsed: section.parsed,
+      });
       await queryClient.invalidateQueries({ queryKey: ["settings-config"] });
-    }
+    },
   });
   const providerTestMutation = useMutation({
-    mutationFn: validateProviderConnection
+    mutationFn: validateProviderConnection,
   });
   const providerKeyMutation = useMutation({
     mutationFn: saveProviderApiKey,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["settings-config"] });
-    }
+    },
   });
   const repositoryRuntimeMutation = useMutation({
     mutationFn: updateRepositoryRuntimeSettings,
     onSuccess: async (section) => {
       setDraft(section.content);
-      setValidation({ section: section.section, valid: true, parsed: section.parsed });
+      setValidation({
+        section: section.section,
+        valid: true,
+        parsed: section.parsed,
+      });
       await queryClient.invalidateQueries({ queryKey: ["settings-config"] });
       await queryClient.invalidateQueries({ queryKey: ["task-repositories"] });
-    }
+    },
   });
   const sections = configQuery.data?.sections ?? [];
-  const selected = sections.find((section) => section.section === selectedSection);
+  const selected = sections.find(
+    (section) => section.section === selectedSection,
+  );
   const summary = useMemo(() => buildSummary(selected), [selected]);
-  const providerIds = useMemo(() => (selected?.section === "agents" ? collectProviderIds(selected.parsed, draft) : []), [draft, selected?.parsed, selected?.section]);
-  const repositories = useMemo(() => (selected?.section === "repositories" ? collectRepositoryQuickConfigs(selected.parsed) : []), [selected?.parsed, selected?.section]);
+  const providerIds = useMemo(
+    () =>
+      selected?.section === "agents"
+        ? collectProviderIds(selected.parsed, draft)
+        : [],
+    [draft, selected?.parsed, selected?.section],
+  );
+  const repositories = useMemo(
+    () =>
+      selected?.section === "repositories"
+        ? collectRepositoryQuickConfigs(selected.parsed)
+        : [],
+    [selected?.parsed, selected?.section],
+  );
 
   useEffect(() => {
     if (selected) {
@@ -89,11 +135,25 @@ export function SettingsConsole() {
         <div>
           <p className="eyebrow">Configuration Center</p>
           <h1>Settings Console</h1>
-          <span>{configQuery.data ? configQuery.data.rootDir : "Connect API to edit runtime configuration"}</span>
+          <span>
+            {configQuery.data
+              ? configQuery.data.rootDir
+              : "Connect API to edit runtime configuration"}
+          </span>
         </div>
-        <div className={`settingsHealth ${configQuery.isError ? "settingsBad" : "settingsGood"}`}>
-          {configQuery.isError ? <AlertCircle size={18} aria-hidden /> : <SlidersHorizontal size={18} aria-hidden />}
-          <span>{configQuery.isError ? "Settings API offline" : "Editable YAML config"}</span>
+        <div
+          className={`settingsHealth ${configQuery.isError ? "settingsBad" : "settingsGood"}`}
+        >
+          {configQuery.isError ? (
+            <AlertCircle size={18} aria-hidden />
+          ) : (
+            <SlidersHorizontal size={18} aria-hidden />
+          )}
+          <span>
+            {configQuery.isError
+              ? "Settings API offline"
+              : "Editable YAML config"}
+          </span>
         </div>
       </div>
 
@@ -124,13 +184,22 @@ export function SettingsConsole() {
                 <div>
                   <h2>{sectionMeta[selected.section].title}</h2>
                   <p>{sectionMeta[selected.section].description}</p>
-                  <span>{selected.exists ? selected.path : `Template: ${selected.templatePath}`}</span>
+                  <span>
+                    {selected.exists
+                      ? selected.path
+                      : `Template: ${selected.templatePath}`}
+                  </span>
                 </div>
                 <div className="editorActions">
                   <button
                     className="iconButton neutral"
                     disabled={validateMutation.isPending}
-                    onClick={() => validateMutation.mutate({ section: selected.section, content: draft })}
+                    onClick={() =>
+                      validateMutation.mutate({
+                        section: selected.section,
+                        content: draft,
+                      })
+                    }
                     type="button"
                   >
                     <CheckCircle2 size={16} aria-hidden />
@@ -139,7 +208,12 @@ export function SettingsConsole() {
                   <button
                     className="iconButton positive"
                     disabled={saveMutation.isPending}
-                    onClick={() => saveMutation.mutate({ section: selected.section, content: draft })}
+                    onClick={() =>
+                      saveMutation.mutate({
+                        section: selected.section,
+                        content: draft,
+                      })
+                    }
                     type="button"
                   >
                     <Save size={16} aria-hidden />
@@ -171,23 +245,53 @@ export function SettingsConsole() {
                     providerTestMutation.reset();
                     providerKeyMutation.reset();
                   }}
+                  onProviderPresetChange={(preset) => {
+                    const nextDraft = applyProviderPresetToAgentsYaml(
+                      draft,
+                      preset,
+                      providerId || "default",
+                    );
+                    setDraft(nextDraft);
+                    setProviderId(providerId || "default");
+                    setProviderApiKey("");
+                    setValidation(undefined);
+                    providerTestMutation.reset();
+                    providerKeyMutation.reset();
+                  }}
                   onSaveApiKey={() =>
                     providerKeyMutation.mutate({
                       content: draft,
                       providerId,
-                      apiKey: providerApiKey.trim()
+                      apiKey: providerApiKey.trim(),
                     })
                   }
                   onTest={() =>
                     providerTestMutation.mutate({
                       content: draft,
                       providerId,
-                      apiKey: providerApiKey.trim() || undefined
+                      apiKey: providerApiKey.trim() || undefined,
                     })
+                  }
+                  onSaveProvider={() =>
+                    saveMutation.mutate(
+                      { section: "agents", content: draft },
+                      {
+                        onSuccess: () => {
+                          if (providerApiKey.trim()) {
+                            providerKeyMutation.mutate({
+                              content: draft,
+                              providerId,
+                              apiKey: providerApiKey.trim(),
+                            });
+                          }
+                        },
+                      },
+                    )
                   }
                   providerId={providerId}
                   providerIds={providerIds}
                   result={providerTestMutation.data}
+                  saveConfigPending={saveMutation.isPending}
                   savePending={providerKeyMutation.isPending}
                   saveResult={providerKeyMutation.data}
                 />
@@ -195,7 +299,11 @@ export function SettingsConsole() {
 
               {selected.section === "repositories" ? (
                 <RepositoryQuickSettings
-                  errorMessage={repositoryRuntimeMutation.error instanceof Error ? repositoryRuntimeMutation.error.message : undefined}
+                  errorMessage={
+                    repositoryRuntimeMutation.error instanceof Error
+                      ? repositoryRuntimeMutation.error.message
+                      : undefined
+                  }
                   isPending={repositoryRuntimeMutation.isPending}
                   onSave={(input) => repositoryRuntimeMutation.mutate(input)}
                   repositories={repositories}
@@ -215,14 +323,27 @@ export function SettingsConsole() {
                 value={draft}
               />
 
-              <div className={`validationBar ${validation?.valid ? "validationGood" : validation ? "validationBad" : ""}`}>
+              <div
+                className={`validationBar ${validation?.valid ? "validationGood" : validation ? "validationBad" : ""}`}
+              >
                 {validation ? (
                   <>
-                    {validation.valid ? <CheckCircle2 size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
-                    <span>{validation.valid ? "Config is valid and ready to save." : validation.message ?? "Config validation failed."}</span>
+                    {validation.valid ? (
+                      <CheckCircle2 size={16} aria-hidden />
+                    ) : (
+                      <AlertCircle size={16} aria-hidden />
+                    )}
+                    <span>
+                      {validation.valid
+                        ? "Config is valid and ready to save."
+                        : (validation.message ?? "Config validation failed.")}
+                    </span>
                   </>
                 ) : (
-                  <span>Validate before saving when changing model routing, repositories, tools or policies.</span>
+                  <span>
+                    Validate before saving when changing model routing,
+                    repositories, tools or policies.
+                  </span>
                 )}
               </div>
             </>
@@ -240,23 +361,29 @@ function ProviderConnectionTest({
   isPending,
   onApiKeyChange,
   onProviderChange,
+  onProviderPresetChange,
   onSaveApiKey,
+  onSaveProvider,
   onTest,
   providerId,
   providerIds,
   result,
+  saveConfigPending,
   savePending,
-  saveResult
+  saveResult,
 }: {
   apiKey: string;
   isPending: boolean;
   onApiKeyChange: (value: string) => void;
   onProviderChange: (value: string) => void;
+  onProviderPresetChange: (preset: ProviderPreset) => void;
   onSaveApiKey: () => void;
+  onSaveProvider: () => void;
   onTest: () => void;
   providerId: string;
   providerIds: string[];
   result?: ProviderValidationResponse;
+  saveConfigPending: boolean;
   savePending: boolean;
   saveResult?: ProviderApiKeySaveResponse;
 }) {
@@ -264,12 +391,43 @@ function ProviderConnectionTest({
     <div className="providerVerifier" aria-label="Provider connection test">
       <div>
         <h3>Provider Connection Test</h3>
-        <span>Use a one-time key here, or leave it empty to use the provider's api_key_env on the API server.</span>
+        <span>
+          Use a one-time key here, or leave it empty to use the provider's
+          api_key_env on the API server.
+        </span>
       </div>
       <div className="providerVerifierControls">
         <label>
+          <span>Service</span>
+          <select
+            onChange={(event) => {
+              const preset = providerPresets.find(
+                (item) => item.id === event.target.value,
+              );
+
+              if (preset) {
+                onProviderPresetChange(preset);
+              }
+            }}
+            defaultValue=""
+          >
+            <option disabled value="">
+              Choose provider
+            </option>
+            {providerPresets.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           <span>Provider</span>
-          <select disabled={providerIds.length === 0} onChange={(event) => onProviderChange(event.target.value)} value={providerId}>
+          <select
+            disabled={providerIds.length === 0}
+            onChange={(event) => onProviderChange(event.target.value)}
+            value={providerId}
+          >
             {providerIds.map((id) => (
               <option key={id} value={id}>
                 {id}
@@ -287,31 +445,77 @@ function ProviderConnectionTest({
             value={apiKey}
           />
         </label>
-        <button className="iconButton neutral" disabled={providerIds.length === 0 || !providerId || isPending} onClick={onTest} type="button">
+        <button
+          className="iconButton neutral"
+          disabled={providerIds.length === 0 || !providerId || isPending}
+          onClick={onTest}
+          type="button"
+        >
           <CheckCircle2 size={16} aria-hidden />
           <span>{isPending ? "Testing" : "Test"}</span>
         </button>
-        <button className="iconButton positive" disabled={providerIds.length === 0 || !providerId || !apiKey.trim() || savePending} onClick={onSaveApiKey} type="button">
+        <button
+          className="iconButton positive"
+          disabled={
+            providerIds.length === 0 ||
+            !providerId ||
+            !apiKey.trim() ||
+            savePending
+          }
+          onClick={onSaveApiKey}
+          type="button"
+        >
           <Save size={16} aria-hidden />
           <span>{savePending ? "Saving" : "Save Key"}</span>
         </button>
+        <button
+          className="iconButton positive"
+          disabled={
+            providerIds.length === 0 ||
+            !providerId ||
+            saveConfigPending ||
+            savePending
+          }
+          onClick={onSaveProvider}
+          type="button"
+        >
+          <Save size={16} aria-hidden />
+          <span>
+            {saveConfigPending || savePending ? "Saving" : "Save Provider"}
+          </span>
+        </button>
       </div>
-      <div className={`validationBar ${result?.valid || saveResult?.saved ? "validationGood" : result || saveResult ? "validationBad" : ""}`}>
+      <div
+        className={`validationBar ${result?.valid || saveResult?.saved ? "validationGood" : result || saveResult ? "validationBad" : ""}`}
+      >
         {saveResult ? (
           <>
-            {saveResult.saved ? <CheckCircle2 size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
+            {saveResult.saved ? (
+              <CheckCircle2 size={16} aria-hidden />
+            ) : (
+              <AlertCircle size={16} aria-hidden />
+            )}
             <span>{saveResult.message}</span>
           </>
         ) : result ? (
           <>
-            {result.valid ? <CheckCircle2 size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
+            {result.valid ? (
+              <CheckCircle2 size={16} aria-hidden />
+            ) : (
+              <AlertCircle size={16} aria-hidden />
+            )}
             <span>
               {result.message}
-              {result.model && result.latencyMs !== undefined ? ` Model: ${result.model}. Latency: ${result.latencyMs}ms.` : ""}
+              {result.model && result.latencyMs !== undefined
+                ? ` Model: ${result.model}. Latency: ${result.latencyMs}ms.`
+                : ""}
             </span>
           </>
         ) : (
-          <span>Provider test sends one minimal chat completion request and never saves the one-time key.</span>
+          <span>
+            Provider test sends one minimal chat completion request and never
+            saves the one-time key.
+          </span>
         )}
       </div>
     </div>
@@ -322,7 +526,7 @@ function RepositoryQuickSettings({
   errorMessage,
   isPending,
   onSave,
-  repositories
+  repositories,
 }: {
   errorMessage?: string;
   isPending: boolean;
@@ -330,7 +534,10 @@ function RepositoryQuickSettings({
   repositories: RepositoryQuickConfig[];
 }) {
   return (
-    <div className="repositoryQuickEditor" aria-label="Repository quick settings">
+    <div
+      className="repositoryQuickEditor"
+      aria-label="Repository quick settings"
+    >
       <div className="repositoryQuickHeader">
         <div>
           <h3>Repository Quick Settings</h3>
@@ -345,7 +552,12 @@ function RepositoryQuickSettings({
       </div>
       <div className="repositoryQuickList">
         {repositories.map((repository) => (
-          <RepositoryQuickSettingsItem isPending={isPending} key={repository.id} onSave={onSave} repository={repository} />
+          <RepositoryQuickSettingsItem
+            isPending={isPending}
+            key={repository.id}
+            onSave={onSave}
+            repository={repository}
+          />
         ))}
       </div>
     </div>
@@ -355,18 +567,28 @@ function RepositoryQuickSettings({
 function RepositoryQuickSettingsItem({
   isPending,
   onSave,
-  repository
+  repository,
 }: {
   isPending: boolean;
   onSave: (input: RepositoryRuntimeSettingsInput) => void;
   repository: RepositoryQuickConfig;
 }) {
-  const [triggerMode, setTriggerMode] = useState<TriggerMode>(repository.triggerMode);
+  const [triggerMode, setTriggerMode] = useState<TriggerMode>(
+    repository.triggerMode,
+  );
   const [mention, setMention] = useState(repository.mention);
-  const [maxConcurrentIssues, setMaxConcurrentIssues] = useState(String(repository.maxConcurrentIssues));
-  const [projectSkillPath, setProjectSkillPath] = useState(repository.projectSkillPath);
-  const [allowedPermissions, setAllowedPermissions] = useState<ToolPermissionLevel[]>(repository.allowedPermissions);
-  const [blockedPermissions, setBlockedPermissions] = useState<ToolPermissionLevel[]>(repository.blockedPermissions);
+  const [maxConcurrentIssues, setMaxConcurrentIssues] = useState(
+    String(repository.maxConcurrentIssues),
+  );
+  const [projectSkillPath, setProjectSkillPath] = useState(
+    repository.projectSkillPath,
+  );
+  const [allowedPermissions, setAllowedPermissions] = useState<
+    ToolPermissionLevel[]
+  >(repository.allowedPermissions);
+  const [blockedPermissions, setBlockedPermissions] = useState<
+    ToolPermissionLevel[]
+  >(repository.blockedPermissions);
 
   useEffect(() => {
     setTriggerMode(repository.triggerMode);
@@ -389,7 +611,12 @@ function RepositoryQuickSettingsItem({
       <div className="repositoryQuickControls">
         <label>
           <span>Trigger</span>
-          <select onChange={(event) => setTriggerMode(event.target.value as TriggerMode)} value={triggerMode}>
+          <select
+            onChange={(event) =>
+              setTriggerMode(event.target.value as TriggerMode)
+            }
+            value={triggerMode}
+          >
             {triggerModes.map((mode) => (
               <option key={mode} value={mode}>
                 {mode}
@@ -400,36 +627,67 @@ function RepositoryQuickSettingsItem({
 
         <label>
           <span>Mention</span>
-          <input onChange={(event) => setMention(event.target.value)} type="text" value={mention} />
+          <input
+            onChange={(event) => setMention(event.target.value)}
+            type="text"
+            value={mention}
+          />
         </label>
 
         <label>
           <span>Max Running</span>
-          <input min={1} onChange={(event) => setMaxConcurrentIssues(event.target.value)} step={1} type="number" value={maxConcurrentIssues} />
+          <input
+            min={1}
+            onChange={(event) => setMaxConcurrentIssues(event.target.value)}
+            step={1}
+            type="number"
+            value={maxConcurrentIssues}
+          />
         </label>
 
         <label>
           <span>Skill Path</span>
-          <input onChange={(event) => setProjectSkillPath(event.target.value)} type="text" value={projectSkillPath} />
+          <input
+            onChange={(event) => setProjectSkillPath(event.target.value)}
+            type="text"
+            value={projectSkillPath}
+          />
         </label>
       </div>
 
-      <PermissionChecklist label="Allowed Permissions" onChange={setAllowedPermissions} selected={allowedPermissions} />
-      <PermissionChecklist label="Blocked Permissions" onChange={setBlockedPermissions} selected={blockedPermissions} />
+      <PermissionChecklist
+        label="Allowed Permissions"
+        onChange={setAllowedPermissions}
+        selected={allowedPermissions}
+      />
+      <PermissionChecklist
+        label="Blocked Permissions"
+        onChange={setBlockedPermissions}
+        selected={blockedPermissions}
+      />
 
       <div className="repositoryQuickActions">
         <button
           className="iconButton positive"
-          disabled={isPending || !Number.isFinite(Number(maxConcurrentIssues)) || Number(maxConcurrentIssues) < 1 || !mention.trim() || !projectSkillPath.trim()}
+          disabled={
+            isPending ||
+            !Number.isFinite(Number(maxConcurrentIssues)) ||
+            Number(maxConcurrentIssues) < 1 ||
+            !mention.trim() ||
+            !projectSkillPath.trim()
+          }
           onClick={() =>
             onSave({
               repositoryId: repository.id,
               triggerMode,
               mention: mention.trim(),
-              maxConcurrentIssues: Math.max(1, Math.floor(Number(maxConcurrentIssues))),
+              maxConcurrentIssues: Math.max(
+                1,
+                Math.floor(Number(maxConcurrentIssues)),
+              ),
               projectSkillPath: projectSkillPath.trim(),
               allowedPermissions,
-              blockedPermissions
+              blockedPermissions,
             })
           }
           type="button"
@@ -445,7 +703,7 @@ function RepositoryQuickSettingsItem({
 function PermissionChecklist({
   label,
   onChange,
-  selected
+  selected,
 }: {
   label: string;
   onChange: (value: ToolPermissionLevel[]) => void;
@@ -462,7 +720,11 @@ function PermissionChecklist({
               <input
                 checked={checked}
                 onChange={(event) => {
-                  onChange(event.target.checked ? [...selected, permission] : selected.filter((item) => item !== permission));
+                  onChange(
+                    event.target.checked
+                      ? [...selected, permission]
+                      : selected.filter((item) => item !== permission),
+                  );
                 }}
                 type="checkbox"
               />

@@ -2,13 +2,13 @@
 
 # CodeZero
 
-### GitHub Issue 进来，验证过的 Pull Request 出去。
+### 无需人工编码，从需求到代码落地的自动化工作流
 
 [English](README.md) · **中文**
 
 </div>
 
-CodeZero 是一个面向 GitHub 的工程 Agent 平台，用来把产品意图推进成可审核、可验证的 Pull Request。你可以创建 Issue、评论里 `@agent`，也可以交给仓库策略自动触发。CodeZero 会创建一个持续复用的 task sandbox，阅读仓库，构建聚焦的上下文包，生成一份 PRD/Plan 文档；批准后把实现交给同一个沙箱里的 coding agent，实时把执行进度显示到看板，跑完验证、复审 diff，最后创建带本地验证指令的 draft PR。
+CodeZero：把产品意图推进成可审核、可验证的 Pull Request。你可以创建 Issue、评论里 `@agent`，也可以交给仓库策略自动触发。CodeZero 会创建一个持续复用的 task sandbox，阅读仓库，构建聚焦的上下文包，生成一份 PRD/Plan 文档；批准后把实现交给同一个沙箱里的 coding agent，实时把执行进度显示到看板，跑完验证、复审 diff，最后创建带本地验证指令的 draft PR。
 
 它处理的是从“我有个想法”到“这份 PR 可以让人 review 了”之间那段最容易卡住的工程过程。CodeZero 不把代码生成当成一次性 prompt，而是把它放进 durable workflow、仓库智能理解、隔离执行、质量门禁、可追踪事件和必要的人审节点里。
 
@@ -102,7 +102,7 @@ pnpm install
 cp .env.example .env
 ```
 
-编辑 `.env`，配置 OpenAI-compatible 模型服务和 GitHub token：
+编辑 `.env`，配置默认 provider 和 GitHub token。之后可以在 Settings Console 里切换活跃 provider 并保存对应 API key。
 
 ```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
@@ -110,7 +110,7 @@ OPENAI_API_KEY=...
 OPENAI_MODEL=...
 GITHUB_TOKEN=...
 GITHUB_WEBHOOK_SECRET=...
-AGENT_TRIGGER_MENTION=@agent-prd
+AGENT_TRIGGER_MENTION=@codezero
 ```
 
 启动本地依赖和服务：
@@ -141,7 +141,7 @@ OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
   --file="$CODEZERO_PROMPT_FILE"
 ```
 
-把 OpenCode 安装到 `PATH`，或在 `.env` 里设置 `OPENCODE_BIN` 指向本机 OpenCode 二进制。对 OpenAI-compatible 网关，CodeZero 会写入临时 `OPENCODE_CONFIG`，把 provider/model 映射给 OpenCode，同时不把 API key 写进产物。provider 级别的 executor 覆盖可以配置在 `providers.<id>.coding_executor`，包括 DeepSeek 这类 OpenCode native provider。
+把 OpenCode 安装到 `PATH`，或在 `.env` 里设置 `OPENCODE_BIN` 指向本机 OpenCode 二进制。对 OpenAI-compatible 网关，CodeZero 会写入临时 `OPENCODE_CONFIG`，把 provider/model 映射给 OpenCode，同时不把 API key 写进产物。Anthropic、Google Gemini、xAI、Mistral、Groq 这类 AI SDK 原生 provider 默认走 OpenCode native provider。高级 executor 覆盖仍可配置在 `providers.<id>.coding_executor`。
 
 ## 项目知识图
 
@@ -181,7 +181,6 @@ pnpm eval:golden
 
 - [文档索引](docs/README.md)
 - [当前架构](docs/ARCHITECTURE.md)
-- [Refactor 方案](docs/REFACTOR_PLAN.md)
 
 ## 当前状态
 

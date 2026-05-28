@@ -102,7 +102,7 @@ pnpm install
 cp .env.example .env
 ```
 
-Edit `.env` with an OpenAI-compatible model provider and GitHub token:
+Edit `.env` with the default provider and GitHub token. You can switch the active provider and save its API key later from Settings Console.
 
 ```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
@@ -110,7 +110,7 @@ OPENAI_API_KEY=...
 OPENAI_MODEL=...
 GITHUB_TOKEN=...
 GITHUB_WEBHOOK_SECRET=...
-AGENT_TRIGGER_MENTION=@agent-prd
+AGENT_TRIGGER_MENTION=@codezero
 ```
 
 Start local dependencies and services:
@@ -141,7 +141,7 @@ OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
   --file="$CODEZERO_PROMPT_FILE"
 ```
 
-Install OpenCode on `PATH`, or set `OPENCODE_BIN` in `.env` to a local OpenCode binary. For OpenAI-compatible gateways, CodeZero writes a temporary `OPENCODE_CONFIG` file that maps the configured provider/model into OpenCode without placing API keys in artifacts. Provider-specific executor overrides can live under `providers.<id>.coding_executor`, including OpenCode native providers such as DeepSeek.
+Install OpenCode on `PATH`, or set `OPENCODE_BIN` in `.env` to a local OpenCode binary. For OpenAI-compatible gateways, CodeZero writes a temporary `OPENCODE_CONFIG` file that maps the configured provider/model into OpenCode without placing API keys in artifacts. Native AI SDK providers such as Anthropic, Google Gemini, xAI, Mistral and Groq use OpenCode's native provider path by default. Advanced executor overrides can live under `providers.<id>.coding_executor`.
 
 ## Knowledge Graphs
 

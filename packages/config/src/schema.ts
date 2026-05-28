@@ -1,8 +1,21 @@
 import { z } from "zod";
 
-export const codingExecutorProviderModes = ["auto", "custom", "native"] as const;
+export const codingExecutorProviderModes = [
+  "auto",
+  "custom",
+  "native",
+] as const;
+export const modelProviderTypes = [
+  "openai-compatible",
+  "anthropic",
+  "google",
+  "xai",
+  "mistral",
+  "groq",
+] as const;
 
 const codingExecutorProviderModeSchema = z.enum(codingExecutorProviderModes);
+const modelProviderTypeSchema = z.enum(modelProviderTypes);
 const codingExecutorProviderSchema = z
   .object({
     mode: codingExecutorProviderModeSchema.default("auto"),
@@ -12,27 +25,39 @@ const codingExecutorProviderSchema = z
     name: z.string().min(1).optional(),
     options: z.record(z.string(), z.unknown()).default({}),
     model_options: z.record(z.string(), z.unknown()).default({}),
-    env: z.record(z.string(), z.string()).default({})
+    env: z.record(z.string(), z.string()).default({}),
   })
   .default({
     mode: "auto",
     options: {},
     model_options: {},
-    env: {}
+    env: {},
   });
 
-export const providerSchema = z.object({
-  type: z.literal("openai-compatible").default("openai-compatible"),
-  base_url: z.string().min(1),
-  api_key_env: z.string().min(1),
-  model: z.string().min(1),
-  supports_tools: z.boolean().default(true),
-  supports_structured_output: z.boolean().default(true),
-  temperature: z.number().optional(),
-  max_tokens: z.number().optional(),
-  timeout_ms: z.number().optional(),
-  coding_executor: codingExecutorProviderSchema.optional()
-});
+export const providerSchema = z
+  .object({
+    type: modelProviderTypeSchema.default("openai-compatible"),
+    base_url: z.string().min(1).optional(),
+    api_key_env: z.string().min(1),
+    model: z.string().min(1),
+    supports_tools: z.boolean().default(true),
+    supports_structured_output: z.boolean().default(true),
+    temperature: z.number().optional(),
+    max_tokens: z.number().optional(),
+    timeout_ms: z.number().optional(),
+    coding_executor: codingExecutorProviderSchema.optional(),
+  })
+  .superRefine((provider, context) => {
+    if (provider.type !== "openai-compatible" || provider.base_url) {
+      return;
+    }
+
+    context.addIssue({
+      code: "custom",
+      path: ["base_url"],
+      message: "base_url is required for openai-compatible providers",
+    });
+  });
 
 export const agentSchema = z.object({
   provider: z.string().min(1),
@@ -40,43 +65,74 @@ export const agentSchema = z.object({
     .object({
       low: z.string().optional(),
       medium: z.string().optional(),
-      high: z.string().optional()
+      high: z.string().optional(),
     })
     .default({}),
   system_prompt: z.string().min(1),
-  skills: z.array(z.string()).default([])
+  skills: z.array(z.string()).default([]),
 });
 
 const agentsFileBaseSchema = z.object({
   providers: z.record(z.string(), providerSchema),
-  agents: z.record(z.string(), agentSchema)
+  agents: z.record(z.string(), agentSchema),
 });
 
-function validateAgentProviderRefs(config: z.infer<typeof agentsFileBaseSchema>, context: z.RefinementCtx): void {
+function validateAgentProviderRefs(
+  config: z.infer<typeof agentsFileBaseSchema>,
+  context: z.RefinementCtx,
+): void {
   const providerIds = new Set(Object.keys(config.providers));
 
   for (const [agentName, agent] of Object.entries(config.agents)) {
-    validateAgentProviderRef(context, providerIds, ["agents", agentName, "provider"], agent.provider);
+    validateAgentProviderRef(
+      context,
+      providerIds,
+      ["agents", agentName, "provider"],
+      agent.provider,
+    );
 
-    for (const [complexity, providerId] of Object.entries(agent.provider_by_complexity)) {
+    for (const [complexity, providerId] of Object.entries(
+      agent.provider_by_complexity,
+    )) {
       if (providerId) {
-        validateAgentProviderRef(context, providerIds, ["agents", agentName, "provider_by_complexity", complexity], providerId);
+        validateAgentProviderRef(
+          context,
+          providerIds,
+          ["agents", agentName, "provider_by_complexity", complexity],
+          providerId,
+        );
       }
     }
   }
 }
 
-export const agentsFileSchema = agentsFileBaseSchema.superRefine(validateAgentProviderRefs);
+export const agentsFileSchema = agentsFileBaseSchema.superRefine(
+  validateAgentProviderRefs,
+);
 
 export const codezeroFileSchema = agentsFileBaseSchema
   .merge(z.object({ repositories: z.array(z.lazy(() => repositorySchema)) }))
   .merge(z.object({ sandbox: z.lazy(() => sandboxFileSchema.shape.sandbox) }))
-  .merge(z.object({ policies: z.array(z.lazy(() => policySchema)).default([]) }))
+  .merge(
+    z.object({ policies: z.array(z.lazy(() => policySchema)).default([]) }),
+  )
   .merge(z.object({ tools: z.array(z.lazy(() => toolSchema)).default([]) }))
   .superRefine(validateAgentProviderRefs);
 
-export const repositoryTriggerModes = ["auto", "mention", "label", "manual", "disabled"] as const;
-export const toolPermissionLevels = ["read", "safe_write", "repo_write", "external_write", "dangerous"] as const;
+export const repositoryTriggerModes = [
+  "auto",
+  "mention",
+  "label",
+  "manual",
+  "disabled",
+] as const;
+export const toolPermissionLevels = [
+  "read",
+  "safe_write",
+  "repo_write",
+  "external_write",
+  "dangerous",
+] as const;
 export const implementationExecutorModes = ["cli"] as const;
 
 const triggerModeSchema = z.enum(repositoryTriggerModes);
@@ -87,10 +143,12 @@ const repositoryTriggerSchema = z
   .object({
     mode: triggerModeSchema.default("auto"),
     mention: z.string().min(1).default("@agent-prd"),
-    auto_events: z.array(z.string()).default(["issues.opened", "issues.labeled", "issues.reopened"]),
+    auto_events: z
+      .array(z.string())
+      .default(["issues.opened", "issues.labeled", "issues.reopened"]),
     label_allowlist: z.array(z.string()).default([]),
     label_blocklist: z.array(z.string()).default([]),
-    actor_allowlist: z.array(z.string()).default([])
+    actor_allowlist: z.array(z.string()).default([]),
   })
   .default({
     mode: "auto",
@@ -98,7 +156,7 @@ const repositoryTriggerSchema = z
     auto_events: ["issues.opened", "issues.labeled", "issues.reopened"],
     label_allowlist: [],
     label_blocklist: [],
-    actor_allowlist: []
+    actor_allowlist: [],
   });
 
 const repositoryCodebaseIntelligenceSchema = z
@@ -108,29 +166,33 @@ const repositoryCodebaseIntelligenceSchema = z
         enabled: z.boolean().default(true),
         package: z.string().min(1).default("@colbymchenry/codegraph@0.9.3"),
         init_args: z.array(z.string()).default(["--index"]),
-        timeout_ms: z.number().int().positive().default(10 * 60_000),
-        fail_on_error: z.boolean().default(true)
+        timeout_ms: z
+          .number()
+          .int()
+          .positive()
+          .default(10 * 60_000),
+        fail_on_error: z.boolean().default(true),
       })
       .default({
         enabled: true,
         package: "@colbymchenry/codegraph@0.9.3",
         init_args: ["--index"],
         timeout_ms: 10 * 60_000,
-        fail_on_error: true
+        fail_on_error: true,
       }),
     navigation_graph: z
       .object({
         enabled: z.boolean().default(true),
         include_git_history: z.boolean().default(true),
         include_codeowners: z.boolean().default(true),
-        max_depth: z.number().int().positive().default(4)
+        max_depth: z.number().int().positive().default(4),
       })
       .default({
         enabled: true,
         include_git_history: true,
         include_codeowners: true,
-        max_depth: 4
-      })
+        max_depth: 4,
+      }),
   })
   .default({
     codegraph: {
@@ -138,14 +200,14 @@ const repositoryCodebaseIntelligenceSchema = z
       package: "@colbymchenry/codegraph@0.9.3",
       init_args: ["--index"],
       timeout_ms: 10 * 60_000,
-      fail_on_error: true
+      fail_on_error: true,
     },
     navigation_graph: {
       enabled: true,
       include_git_history: true,
       include_codeowners: true,
-      max_depth: 4
-    }
+      max_depth: 4,
+    },
   });
 
 const repositoryPermissionsSchema = z
@@ -153,21 +215,21 @@ const repositoryPermissionsSchema = z
     allowed_tools: z.array(z.string()).default([]),
     blocked_tools: z.array(z.string()).default([]),
     allowed_permissions: z.array(toolPermissionSchema).default([]),
-    blocked_permissions: z.array(toolPermissionSchema).default([])
+    blocked_permissions: z.array(toolPermissionSchema).default([]),
   })
   .default({
     allowed_tools: [],
     blocked_tools: [],
     allowed_permissions: [],
-    blocked_permissions: []
+    blocked_permissions: [],
   });
 
 const repositoryWorkflowSchema = z
   .object({
-    require_prd_review: z.boolean().default(true)
+    require_prd_review: z.boolean().default(true),
   })
   .default({
-    require_prd_review: true
+    require_prd_review: true,
   });
 
 export const repositorySchema = z.object({
@@ -180,10 +242,10 @@ export const repositorySchema = z.object({
   codebase_intelligence: repositoryCodebaseIntelligenceSchema,
   queue: z
     .object({
-      max_concurrent_issues: z.number().int().positive().default(1)
+      max_concurrent_issues: z.number().int().positive().default(1),
     })
     .default({
-      max_concurrent_issues: 1
+      max_concurrent_issues: 1,
     }),
   workflow: repositoryWorkflowSchema,
   permissions: repositoryPermissionsSchema,
@@ -193,24 +255,24 @@ export const repositorySchema = z.object({
       build: z.string().optional(),
       lint: z.string().optional(),
       typecheck: z.string().optional(),
-      unit_test: z.string().optional()
+      unit_test: z.string().optional(),
     })
     .default({}),
   frontend: z
     .object({
       dev_command: z.string().optional(),
-      screenshot_urls: z.array(z.string()).default([])
+      screenshot_urls: z.array(z.string()).default([]),
     })
     .default({ screenshot_urls: [] }),
   pr: z
     .object({
-      default_draft: z.boolean().default(true)
+      default_draft: z.boolean().default(true),
     })
-    .default({ default_draft: true })
+    .default({ default_draft: true }),
 });
 
 export const repositoriesFileSchema = z.object({
-  repositories: z.array(repositorySchema)
+  repositories: z.array(repositorySchema),
 });
 
 const implementationExecutorSchema = z
@@ -221,10 +283,14 @@ const implementationExecutorSchema = z
       .string()
       .min(1)
       .default(
-        'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
+        'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
       ),
-    timeout_ms: z.number().int().positive().default(60 * 60_000),
-    env: z.record(z.string(), z.string()).default({})
+    timeout_ms: z
+      .number()
+      .int()
+      .positive()
+      .default(60 * 60_000),
+    env: z.record(z.string(), z.string()).default({}),
   })
   .default({
     mode: "cli",
@@ -232,7 +298,7 @@ const implementationExecutorSchema = z
     command:
       'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
     timeout_ms: 60 * 60_000,
-    env: {}
+    env: {},
   });
 
 export const sandboxFileSchema = z.object({
@@ -242,7 +308,7 @@ export const sandboxFileSchema = z.object({
     root_dir: z.string().default("./sandboxes"),
     network: z
       .object({
-        allow: z.array(z.string()).default([])
+        allow: z.array(z.string()).default([]),
       })
       .default({ allow: [] }),
     limits: z
@@ -250,19 +316,24 @@ export const sandboxFileSchema = z.object({
         max_runtime_minutes: z.number().default(90),
         max_diff_files: z.number().default(30),
         max_diff_lines: z.number().default(1200),
-        max_quality_gate_retries: z.number().default(6)
+        max_quality_gate_retries: z.number().default(6),
       })
       .default({
         max_runtime_minutes: 90,
         max_diff_files: 30,
         max_diff_lines: 1200,
-        max_quality_gate_retries: 6
+        max_quality_gate_retries: 6,
       }),
-    implementation_executor: implementationExecutorSchema.optional()
-  })
+    implementation_executor: implementationExecutorSchema.optional(),
+  }),
 });
 
-const policyActionSchema = z.enum(["allow", "audit", "require_approval", "block"]);
+const policyActionSchema = z.enum([
+  "allow",
+  "audit",
+  "require_approval",
+  "block",
+]);
 
 export const policySchema = z.object({
   id: z.string().min(1),
@@ -271,11 +342,11 @@ export const policySchema = z.object({
   permissions: z.array(toolPermissionSchema).default([]),
   match_paths: z.array(z.string()).default([]),
   match_commands: z.array(z.string()).default([]),
-  action: policyActionSchema
+  action: policyActionSchema,
 });
 
 export const policiesFileSchema = z.object({
-  policies: z.array(policySchema).default([])
+  policies: z.array(policySchema).default([]),
 });
 
 export const toolSchema = z.object({
@@ -283,19 +354,30 @@ export const toolSchema = z.object({
   description: z.string().default(""),
   permission: toolPermissionSchema,
   timeout_ms: z.number().int().positive().optional(),
-  policy_refs: z.array(z.string()).default([])
+  policy_refs: z.array(z.string()).default([]),
 });
 
 export const toolsFileSchema = z.object({
-  tools: z.array(toolSchema).default([])
+  tools: z.array(toolSchema).default([]),
 });
 
-export const configSectionNames = ["agents", "repositories", "sandbox", "policies", "tools"] as const;
+export const configSectionNames = [
+  "agents",
+  "repositories",
+  "sandbox",
+  "policies",
+  "tools",
+] as const;
 
 export type AgentsFileConfig = z.infer<typeof agentsFileSchema>;
 export type CodeZeroFileConfig = z.infer<typeof codezeroFileSchema>;
-export type CodingExecutorProviderConfig = z.infer<typeof codingExecutorProviderSchema>;
-export type ImplementationExecutorConfig = z.infer<typeof implementationExecutorSchema>;
+export type CodingExecutorProviderConfig = z.infer<
+  typeof codingExecutorProviderSchema
+>;
+export type ImplementationExecutorConfig = z.infer<
+  typeof implementationExecutorSchema
+>;
+export type ModelProviderType = z.infer<typeof modelProviderTypeSchema>;
 export type RepositoryConfig = z.infer<typeof repositorySchema>;
 export type RepositoryTriggerConfig = RepositoryConfig["trigger"];
 export type RepositoryTriggerMode = RepositoryTriggerConfig["mode"];
@@ -315,7 +397,9 @@ export type ToolsFileConfig = z.infer<typeof toolsFileSchema>;
 export type ToolConfig = z.infer<typeof toolSchema>;
 export type ConfigSectionName = (typeof configSectionNames)[number];
 
-export function schemaForSection(section: ConfigSectionName): z.ZodType<unknown> {
+export function schemaForSection(
+  section: ConfigSectionName,
+): z.ZodType<unknown> {
   switch (section) {
     case "agents":
       return agentsFileSchema;
@@ -330,7 +414,12 @@ export function schemaForSection(section: ConfigSectionName): z.ZodType<unknown>
   }
 }
 
-function validateAgentProviderRef(context: z.RefinementCtx, providerIds: Set<string>, path: (string | number)[], providerId: string): void {
+function validateAgentProviderRef(
+  context: z.RefinementCtx,
+  providerIds: Set<string>,
+  path: (string | number)[],
+  providerId: string,
+): void {
   if (providerIds.has(providerId)) {
     return;
   }
@@ -338,6 +427,6 @@ function validateAgentProviderRef(context: z.RefinementCtx, providerIds: Set<str
   context.addIssue({
     code: "custom",
     path,
-    message: `Unknown provider '${providerId}'`
+    message: `Unknown provider '${providerId}'`,
   });
 }

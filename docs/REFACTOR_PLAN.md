@@ -50,6 +50,7 @@ Tasks:
 Acceptance:
 
 - PRD and review agents no longer call hand-written `/chat/completions`.
+- Runtime supports native AI SDK providers plus OpenAI-compatible gateways from the same `providers.default` block.
 - Split config files are removed; runtime reads only `config/codezero.yaml`.
 - OpenCode config generation keeps raw API keys out of artifacts.
 

@@ -13,26 +13,29 @@ import {
   upsertProjectEnv,
   writeConfigSection,
   type AgentsFileConfig,
-  type ConfigSectionName
+  type ConfigSectionName,
 } from "@agent/config";
 import { AiSdkModelProvider } from "@agent/model-runtime";
 import { reloadServices } from "../services/task-services.js";
 import { startConfiguredRepositoryOnboarding } from "../services/repository-onboarding.js";
 
 const updateConfigBodySchema = z.object({
-  content: z.string().min(1)
+  content: z.string().min(1),
 });
 
 const validateProviderBodySchema = z.object({
   content: z.string().min(1),
   providerId: z.string().min(1),
-  apiKey: z.string().optional()
+  apiKey: z.string().optional(),
 });
 
 const saveProviderApiKeyBodySchema = z.object({
   content: z.string().optional(),
   providerId: z.string().min(1),
-  apiKey: z.string().min(1).refine((value) => value.trim().length > 0, "API key cannot be blank")
+  apiKey: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0, "API key cannot be blank"),
 });
 
 const repositoryRuntimeSettingsSchema = z
@@ -42,18 +45,31 @@ const repositoryRuntimeSettingsSchema = z
     maxConcurrentIssues: z.number().int().positive().max(50).optional(),
     projectSkillPath: z.string().min(1).optional(),
     allowedPermissions: z.array(z.enum(toolPermissionLevels)).optional(),
-    blockedPermissions: z.array(z.enum(toolPermissionLevels)).optional()
+    blockedPermissions: z.array(z.enum(toolPermissionLevels)).optional(),
   })
-  .refine((value) => Object.values(value).some((entry) => entry !== undefined), "At least one repository setting must be provided");
+  .refine(
+    (value) => Object.values(value).some((entry) => entry !== undefined),
+    "At least one repository setting must be provided",
+  );
 
-export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
+export async function registerSettingsRoutes(
+  app: FastifyInstance,
+): Promise<void> {
   app.get("/settings/config", async () => loadEditableConfig());
 
-  app.post<{ Body: { content?: string; providerId?: string; apiKey?: string } }>("/settings/providers/validate", async (request, reply) => {
+  app.post<{
+    Body: { content?: string; providerId?: string; apiKey?: string };
+  }>("/settings/providers/validate", async (request, reply) => {
     const parsed = validateProviderBodySchema.safeParse(request.body);
 
     if (!parsed.success) {
-      return reply.code(400).send({ valid: false, message: "Invalid provider validation payload", issues: parsed.error.issues });
+      return reply
+        .code(400)
+        .send({
+          valid: false,
+          message: "Invalid provider validation payload",
+          issues: parsed.error.issues,
+        });
     }
 
     try {
@@ -62,61 +78,81 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       return reply.code(400).send({
         providerId: parsed.data.providerId,
         valid: false,
-        message: error instanceof Error ? error.message : String(error)
+        message: error instanceof Error ? error.message : String(error),
       });
     }
   });
 
-  app.put<{ Body: { content?: string; providerId?: string; apiKey?: string } }>("/settings/providers/api-key", async (request, reply) => {
-    const parsed = saveProviderApiKeyBodySchema.safeParse(request.body);
+  app.put<{ Body: { content?: string; providerId?: string; apiKey?: string } }>(
+    "/settings/providers/api-key",
+    async (request, reply) => {
+      const parsed = saveProviderApiKeyBodySchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.code(400).send({ saved: false, message: "Invalid provider API key payload", issues: parsed.error.issues });
-    }
-
-    try {
-      const rootDir = await resolveRootDir();
-      const agentsConfig = parsed.data.content
-        ? (parseConfigSection("agents", parsed.data.content) as AgentsFileConfig)
-        : ((await readConfigSection(rootDir, "agents")).parsed as AgentsFileConfig);
-      const provider = agentsConfig.providers[parsed.data.providerId];
-
-      if (!provider) {
-        return reply.code(404).send({
-          providerId: parsed.data.providerId,
-          saved: false,
-          message: `Provider '${parsed.data.providerId}' is not defined in agents config`
-        });
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({
+            saved: false,
+            message: "Invalid provider API key payload",
+            issues: parsed.error.issues,
+          });
       }
 
-      await upsertProjectEnv(rootDir, provider.api_key_env, parsed.data.apiKey.trim());
-      const services = await reloadServices();
-      void startConfiguredRepositoryOnboarding(services.config);
+      try {
+        const rootDir = await resolveRootDir();
+        const agentsConfig = parsed.data.content
+          ? (parseConfigSection(
+              "agents",
+              parsed.data.content,
+            ) as AgentsFileConfig)
+          : ((await readConfigSection(rootDir, "agents"))
+              .parsed as AgentsFileConfig);
+        const provider = agentsConfig.providers[parsed.data.providerId];
 
-      return {
-        providerId: parsed.data.providerId,
-        apiKeyEnv: provider.api_key_env,
-        saved: true,
-        message: `Saved API key to ${provider.api_key_env} and reloaded runtime config.`
-      };
-    } catch (error) {
-      return reply.code(400).send({
-        providerId: parsed.data.providerId,
-        saved: false,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
-  });
+        if (!provider) {
+          return reply.code(404).send({
+            providerId: parsed.data.providerId,
+            saved: false,
+            message: `Provider '${parsed.data.providerId}' is not defined in agents config`,
+          });
+        }
 
-  app.get<{ Params: { section: string } }>("/settings/config/:section", async (request, reply) => {
-    const section = parseSection(request.params.section);
+        await upsertProjectEnv(
+          rootDir,
+          provider.api_key_env,
+          parsed.data.apiKey.trim(),
+        );
+        const services = await reloadServices();
+        void startConfiguredRepositoryOnboarding(services.config);
 
-    if (!section) {
-      return reply.code(404).send({ message: "Unknown config section" });
-    }
+        return {
+          providerId: parsed.data.providerId,
+          apiKeyEnv: provider.api_key_env,
+          saved: true,
+          message: `Saved API key to ${provider.api_key_env} and reloaded runtime config.`,
+        };
+      } catch (error) {
+        return reply.code(400).send({
+          providerId: parsed.data.providerId,
+          saved: false,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
 
-    return readConfigSection(await resolveRootDir(), section);
-  });
+  app.get<{ Params: { section: string } }>(
+    "/settings/config/:section",
+    async (request, reply) => {
+      const section = parseSection(request.params.section);
+
+      if (!section) {
+        return reply.code(404).send({ message: "Unknown config section" });
+      }
+
+      return readConfigSection(await resolveRootDir(), section);
+    },
+  );
 
   app.put<{
     Params: { repositoryId: string };
@@ -132,61 +168,109 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     const parsed = repositoryRuntimeSettingsSchema.safeParse(request.body);
 
     if (!parsed.success) {
-      return reply.code(400).send({ message: "Invalid repository runtime settings", issues: parsed.error.issues });
+      return reply
+        .code(400)
+        .send({
+          message: "Invalid repository runtime settings",
+          issues: parsed.error.issues,
+        });
     }
 
     try {
-      const section = await updateRepositoryRuntimeSettings(await resolveRootDir(), request.params.repositoryId, parsed.data);
+      const section = await updateRepositoryRuntimeSettings(
+        await resolveRootDir(),
+        request.params.repositoryId,
+        parsed.data,
+      );
       const services = await reloadServices();
       void startConfiguredRepositoryOnboarding(services.config);
       return section;
     } catch (error) {
-      return reply.code(400).send({ message: error instanceof Error ? error.message : String(error) });
+      return reply
+        .code(400)
+        .send({
+          message: error instanceof Error ? error.message : String(error),
+        });
     }
   });
 
-  app.post<{ Params: { section: string }; Body: { content?: string } }>("/settings/config/:section/validate", async (request, reply) => {
-    const section = parseSection(request.params.section);
+  app.post<{ Params: { section: string }; Body: { content?: string } }>(
+    "/settings/config/:section/validate",
+    async (request, reply) => {
+      const section = parseSection(request.params.section);
 
-    if (!section) {
-      return reply.code(404).send({ message: "Unknown config section" });
-    }
+      if (!section) {
+        return reply.code(404).send({ message: "Unknown config section" });
+      }
 
-    const parsed = updateConfigBodySchema.safeParse(request.body);
+      const parsed = updateConfigBodySchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.code(400).send({ message: "Invalid config payload", issues: parsed.error.issues });
-    }
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({
+            message: "Invalid config payload",
+            issues: parsed.error.issues,
+          });
+      }
 
-    try {
-      return { section, valid: true, parsed: parseConfigSection(section, parsed.data.content) };
-    } catch (error) {
-      return reply.code(400).send({ section, valid: false, message: error instanceof Error ? error.message : String(error) });
-    }
-  });
+      try {
+        return {
+          section,
+          valid: true,
+          parsed: parseConfigSection(section, parsed.data.content),
+        };
+      } catch (error) {
+        return reply
+          .code(400)
+          .send({
+            section,
+            valid: false,
+            message: error instanceof Error ? error.message : String(error),
+          });
+      }
+    },
+  );
 
-  app.put<{ Params: { section: string }; Body: { content?: string } }>("/settings/config/:section", async (request, reply) => {
-    const section = parseSection(request.params.section);
+  app.put<{ Params: { section: string }; Body: { content?: string } }>(
+    "/settings/config/:section",
+    async (request, reply) => {
+      const section = parseSection(request.params.section);
 
-    if (!section) {
-      return reply.code(404).send({ message: "Unknown config section" });
-    }
+      if (!section) {
+        return reply.code(404).send({ message: "Unknown config section" });
+      }
 
-    const parsed = updateConfigBodySchema.safeParse(request.body);
+      const parsed = updateConfigBodySchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      return reply.code(400).send({ message: "Invalid config payload", issues: parsed.error.issues });
-    }
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({
+            message: "Invalid config payload",
+            issues: parsed.error.issues,
+          });
+      }
 
-    try {
-      const saved = await writeConfigSection(await resolveRootDir(), section, parsed.data.content);
-      const services = await reloadServices();
-      void startConfiguredRepositoryOnboarding(services.config);
-      return saved;
-    } catch (error) {
-      return reply.code(400).send({ section, message: error instanceof Error ? error.message : String(error) });
-    }
-  });
+      try {
+        const saved = await writeConfigSection(
+          await resolveRootDir(),
+          section,
+          parsed.data.content,
+        );
+        const services = await reloadServices();
+        void startConfiguredRepositoryOnboarding(services.config);
+        return saved;
+      } catch (error) {
+        return reply
+          .code(400)
+          .send({
+            section,
+            message: error instanceof Error ? error.message : String(error),
+          });
+      }
+    },
+  );
 }
 
 function parseSection(value: string): ConfigSectionName | undefined {
@@ -197,26 +281,37 @@ async function resolveRootDir(): Promise<string> {
   return process.env.PROJECT_ROOT ?? (await findWorkspaceRoot(process.cwd()));
 }
 
-async function validateProviderConnection(input: { content: string; providerId: string; apiKey?: string }) {
+async function validateProviderConnection(input: {
+  content: string;
+  providerId: string;
+  apiKey?: string;
+}) {
   await loadProjectEnv(await resolveRootDir());
-  const agentsConfig = parseConfigSection("agents", input.content) as AgentsFileConfig;
+  const agentsConfig = parseConfigSection(
+    "agents",
+    input.content,
+  ) as AgentsFileConfig;
   const provider = agentsConfig.providers[input.providerId];
 
   if (!provider) {
     return {
       providerId: input.providerId,
       valid: false,
-      message: `Provider '${input.providerId}' is not defined in agents config`
+      message: `Provider '${input.providerId}' is not defined in agents config`,
     };
   }
 
-  if (hasUnresolvedPlaceholder(provider.base_url) || hasUnresolvedPlaceholder(provider.model)) {
+  if (
+    hasUnresolvedPlaceholder(provider.base_url) ||
+    hasUnresolvedPlaceholder(provider.model)
+  ) {
     return {
       providerId: input.providerId,
       valid: false,
       baseUrl: provider.base_url,
       model: provider.model,
-      message: "Provider base_url or model still contains unresolved environment placeholders"
+      message:
+        "Provider base_url or model still contains unresolved environment placeholders",
     };
   }
 
@@ -229,7 +324,7 @@ async function validateProviderConnection(input: { content: string; providerId: 
       baseUrl: provider.base_url,
       model: provider.model,
       usedApiKeySource: "missing",
-      message: `Missing API key. Set ${provider.api_key_env} in the API server environment or enter a one-time key in WebUI.`
+      message: `Missing API key. Set ${provider.api_key_env} in the API server environment or enter a one-time key in WebUI.`,
     };
   }
 
@@ -242,15 +337,15 @@ async function validateProviderConnection(input: { content: string; providerId: 
       apiKey,
       temperature: provider.temperature ?? 0,
       max_tokens: Math.min(provider.max_tokens ?? 4, 16),
-      timeout_ms: Math.min(provider.timeout_ms ?? 15_000, 30_000)
+      timeout_ms: Math.min(provider.timeout_ms ?? 15_000, 30_000),
     });
 
     await runtimeProvider.generate({
       messages: [{ role: "user", content: "Reply with ok." }],
       metadata: {
         operation: "settings.provider.validate",
-        provider_id: input.providerId
-      }
+        provider_id: input.providerId,
+      },
     });
     const latencyMs = Date.now() - startedAt;
 
@@ -262,7 +357,7 @@ async function validateProviderConnection(input: { content: string; providerId: 
       statusCode: 200,
       latencyMs,
       usedApiKeySource: input.apiKey?.trim() ? "request" : "env",
-      message: `Provider '${input.providerId}' responded successfully in ${latencyMs}ms.`
+      message: `Provider '${input.providerId}' responded successfully in ${latencyMs}ms.`,
     };
   } catch (error) {
     const latencyMs = Date.now() - startedAt;
@@ -276,13 +371,13 @@ async function validateProviderConnection(input: { content: string; providerId: 
       statusCode,
       latencyMs,
       usedApiKeySource: input.apiKey?.trim() ? "request" : "env",
-      message: error instanceof Error ? error.message : String(error)
+      message: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
-function hasUnresolvedPlaceholder(value: string): boolean {
-  return value.includes("${");
+function hasUnresolvedPlaceholder(value: string | undefined): boolean {
+  return value?.includes("${") ?? false;
 }
 
 function extractStatusCode(error: unknown): number | undefined {
@@ -295,7 +390,8 @@ function extractStatusCode(error: unknown): number | undefined {
     status?: unknown;
     response?: { status?: unknown };
   };
-  const statusCode = candidate.statusCode ?? candidate.status ?? candidate.response?.status;
+  const statusCode =
+    candidate.statusCode ?? candidate.status ?? candidate.response?.status;
 
   return typeof statusCode === "number" ? statusCode : undefined;
 }

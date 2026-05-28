@@ -622,13 +622,8 @@ export class IssueWorkflowRunner {
       sandbox.repoDir,
       repositoryConfig.project_skill_path,
     );
-    const knowledgeGraphContext = await this.loadUnderstandAnythingContext(
-      task,
-      repositoryConfig,
-    );
     const businessRules = [
       summarizeProjectContext(projectContext),
-      formatKnowledgeGraphBusinessRule(knowledgeGraphContext),
     ].filter((entry): entry is string => Boolean(entry));
     const memoryStore = new FileMemoryStore(this.config.memory.filePath);
     const memoryResults = await memoryStore.search(task.issue, 8);
@@ -659,7 +654,6 @@ export class IssueWorkflowRunner {
       businessRules,
       memories,
       codeGraphContext: codeGraphContext?.context,
-      knowledgeGraphContext,
       navigationRoute,
     });
     await this.writeArtifact(
@@ -901,63 +895,6 @@ export class IssueWorkflowRunner {
       repositoryStorageKey(repositoryConfig),
       "codegraph.db",
     );
-  }
-
-  private async loadUnderstandAnythingContext(
-    task: Task,
-    repositoryConfig: RepositoryConfig,
-  ): Promise<JsonObject | undefined> {
-    const graphFile = path.join(
-      this.config.rootDir,
-      "data",
-      "understand-anything",
-      repositoryStorageKey(repositoryConfig),
-      "repo",
-      ".understand-anything",
-      "knowledge-graph.json",
-    );
-    const content = await readFile(graphFile, "utf8").catch(() => "");
-
-    if (!content) {
-      await this.event(
-        task.id,
-        "CODEBASE_INDEXED",
-        "Understand-Anything knowledge graph is not available for this repository",
-        "debug",
-        {
-          graphFile,
-        },
-      );
-      return undefined;
-    }
-
-    try {
-      const parsed = JSON.parse(content) as unknown;
-      const context = summarizeUnderstandAnythingGraph(parsed);
-      await this.event(
-        task.id,
-        "CODEBASE_INDEXED",
-        "Understand-Anything knowledge graph loaded for task context",
-        "info",
-        {
-          graphFile,
-          files: Array.isArray(context.files) ? context.files.length : 0,
-        },
-      );
-      return context;
-    } catch (error) {
-      await this.event(
-        task.id,
-        "CODEBASE_INDEXED",
-        "Understand-Anything knowledge graph could not be parsed",
-        "warn",
-        {
-          graphFile,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      );
-      return undefined;
-    }
   }
 
   private async createNavigationRoute(
@@ -2241,9 +2178,6 @@ export function compactContextPackForImplementation(
   const codeGraphContext = compactCodeGraphContext(
     contextPack.codeGraphContext,
   );
-  const knowledgeGraphContext = compactKnowledgeGraphContext(
-    contextPack.knowledgeGraphContext,
-  );
   return {
     id: contextPack.id,
     taskSummary: contextPack.taskSummary,
@@ -2257,7 +2191,6 @@ export function compactContextPackForImplementation(
       confidence: memory.confidence,
     })),
     ...(codeGraphContext ? { codeGraphContext } : {}),
-    ...(knowledgeGraphContext ? { knowledgeGraphContext } : {}),
     relevantFiles: contextPack.relevantFiles.map((file) => ({
       path: file.path,
       reason: file.reason,
@@ -2266,25 +2199,6 @@ export function compactContextPackForImplementation(
     symbols: contextPack.symbols.slice(0, 40),
     tests: contextPack.tests,
     openQuestions: contextPack.openQuestions,
-  };
-}
-
-function compactKnowledgeGraphContext(
-  value: JsonValue | undefined,
-): JsonObject | undefined {
-  if (!isJsonObject(value)) {
-    return undefined;
-  }
-
-  return {
-    provider: "Understand-Anything",
-    ...(isJsonObject(value.graph) ? { graph: value.graph } : {}),
-    ...(Array.isArray(value.files)
-      ? { files: value.files.slice(0, 30) as JsonValue[] }
-      : {}),
-    ...(Array.isArray(value.highlights)
-      ? { highlights: value.highlights.slice(0, 20) as JsonValue[] }
-      : {}),
   };
 }
 
@@ -2384,99 +2298,4 @@ async function pathExists(filePath: string): Promise<boolean> {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-function summarizeUnderstandAnythingGraph(value: unknown): JsonObject {
-  const graph = isUnknownRecord(value) ? value : {};
-  const project = isUnknownRecord(graph.project) ? graph.project : {};
-  const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
-  const edges = Array.isArray(graph.edges) ? graph.edges : [];
-  const highlights = nodes
-    .map(summarizeKnowledgeGraphNode)
-    .filter(isJsonObject)
-    .slice(0, 80);
-  const files = highlights
-    .map((node) => (typeof node.path === "string" ? node.path : ""))
-    .filter(uniqueString)
-    .slice(0, 80);
-
-  return {
-    provider: "Understand-Anything",
-    graph: {
-      projectName: typeof project.name === "string" ? project.name : undefined,
-      analyzedAt:
-        typeof project.analyzedAt === "string" ? project.analyzedAt : undefined,
-      nodes: nodes.length,
-      edges: edges.length,
-    },
-    files,
-    highlights,
-  } as JsonObject;
-}
-
-function summarizeKnowledgeGraphNode(value: unknown): JsonObject | undefined {
-  if (!isUnknownRecord(value)) {
-    return undefined;
-  }
-
-  const pathValue =
-    typeof value.path === "string" ? value.path : inferPathFromNodeId(value.id);
-  const label = [value.label, value.name, value.title].find(
-    (entry): entry is string => typeof entry === "string",
-  );
-  const kind = [value.kind, value.type, value.category].find(
-    (entry): entry is string => typeof entry === "string",
-  );
-  const description = [value.description, value.summary].find(
-    (entry): entry is string => typeof entry === "string",
-  );
-
-  if (!pathValue && !label && !kind) {
-    return undefined;
-  }
-
-  return {
-    ...(pathValue ? { path: normalizeGraphPath(pathValue) } : {}),
-    ...(label ? { label } : {}),
-    ...(kind ? { kind } : {}),
-    ...(description ? { description: description.slice(0, 500) } : {}),
-  };
-}
-
-function inferPathFromNodeId(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const match =
-    /(?:^|:)((?:apps|packages|src|frontend|backend|internal|cmd|lib|components|pages|app)\/[^#?]+)/.exec(
-      value,
-    );
-  return match?.[1];
-}
-
-function normalizeGraphPath(value: string): string {
-  return value.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-
-function formatKnowledgeGraphBusinessRule(
-  context: JsonObject | undefined,
-): string | undefined {
-  if (!context) {
-    return undefined;
-  }
-
-  return [
-    "# Repository Knowledge Graph",
-    "Understand-Anything graph is available for this repository.",
-    `Files highlighted: ${Array.isArray(context.files) ? context.files.slice(0, 30).join(", ") : "none"}`,
-  ].join("\n");
-}
-
-function isUnknownRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function uniqueString(value: string, index: number, array: string[]): boolean {
-  return value.length > 0 && array.indexOf(value) === index;
 }

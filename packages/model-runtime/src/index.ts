@@ -1,4 +1,9 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGroq } from "@ai-sdk/groq";
+import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createXai } from "@ai-sdk/xai";
 import type { AppConfig } from "@agent/config";
 import type { AgentRole, JsonObject, JsonValue } from "@agent/shared";
 import { generateText, type LanguageModel } from "ai";
@@ -53,12 +58,7 @@ export class AiSdkModelProvider implements ModelProvider {
 
   constructor(private readonly config: ModelProviderConfig) {
     this.id = config.id;
-    const provider = createOpenAICompatible({
-      name: config.id,
-      baseURL: config.base_url,
-      apiKey: config.apiKey,
-    });
-    this.model = provider(config.model);
+    this.model = createConfiguredLanguageModel(config);
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
@@ -101,6 +101,40 @@ export class AiSdkModelProvider implements ModelProvider {
   }
 }
 
+function createConfiguredLanguageModel(
+  config: ModelProviderConfig,
+): LanguageModel {
+  const providerOptions = {
+    apiKey: config.apiKey,
+    ...(config.base_url ? { baseURL: config.base_url } : {}),
+  };
+  const modelId = config.model as never;
+
+  switch (config.type) {
+    case "openai-compatible": {
+      if (!config.base_url) {
+        throw new Error(`Provider ${config.id} requires base_url`);
+      }
+
+      return createOpenAICompatible({
+        name: config.id,
+        baseURL: config.base_url,
+        apiKey: config.apiKey,
+      })(config.model);
+    }
+    case "anthropic":
+      return createAnthropic(providerOptions)(modelId);
+    case "google":
+      return createGoogleGenerativeAI(providerOptions)(modelId);
+    case "xai":
+      return createXai(providerOptions)(modelId);
+    case "mistral":
+      return createMistral(providerOptions)(modelId);
+    case "groq":
+      return createGroq(providerOptions)(modelId);
+  }
+}
+
 export class AgentRunner {
   constructor(private readonly providers: Map<string, ModelProvider>) {}
 
@@ -136,11 +170,15 @@ export function createModelRuntimeProviders(
       const apiKey = env[provider.api_key_env] ?? "";
 
       if (!apiKey) {
-        throw new Error(`${provider.api_key_env} is required for provider ${id}`);
+        throw new Error(
+          `${provider.api_key_env} is required for provider ${id}`,
+        );
       }
 
-      if (provider.model.includes("${") || provider.base_url.includes("${")) {
-        throw new Error(`Provider ${id} has unresolved environment placeholders`);
+      if (provider.model.includes("${") || provider.base_url?.includes("${")) {
+        throw new Error(
+          `Provider ${id} has unresolved environment placeholders`,
+        );
       }
 
       return [
@@ -188,28 +226,45 @@ export function resolveCodingExecutorProvider(
   env: NodeJS.ProcessEnv;
 } {
   const executorProvider = provider.coding_executor;
-  const mode = executorProvider?.mode ?? "auto";
+  const requestedMode = executorProvider?.mode ?? "auto";
+  const nativeProviderId = toNativeOpenCodeProviderId(provider.type);
+  const mode =
+    requestedMode === "auto" && nativeProviderId ? "native" : requestedMode;
   const model = executorProvider?.model ?? provider.model;
   const resolvedProviderId =
     executorProvider?.provider_id ??
     inferOpenCodeProviderId(mode, model) ??
+    nativeProviderId ??
     "codezero";
   const modelKey = toOpenCodeProviderModelKey(resolvedProviderId, model);
   const modelRef = toOpenCodeModelRef(resolvedProviderId, modelKey);
   const env = executorProvider?.env ?? {};
 
-  if (mode === "native" && !shouldWriteNativeProviderConfig(executorProvider)) {
+  if (mode !== "native" && !provider.base_url) {
+    throw new Error(
+      `Provider ${providerId} requires base_url for OpenCode custom config`,
+    );
+  }
+
+  if (
+    mode === "native" &&
+    !provider.base_url &&
+    !shouldWriteNativeProviderConfig(executorProvider)
+  ) {
     return { mode, providerId: resolvedProviderId, modelRef, env };
   }
 
   const providerOptions =
     mode === "native"
-      ? toJsonObject(executorProvider?.options ?? {})
-      : {
+      ? toJsonObject({
           baseURL: provider.base_url,
+          ...toJsonObject(executorProvider?.options ?? {}),
+        })
+      : toJsonObject({
+          baseURL: provider.base_url ?? "",
           apiKey: "{env:OPENAI_API_KEY}",
           ...toJsonObject(executorProvider?.options ?? {}),
-        };
+        });
   const modelOptions = {
     name: modelKey,
     ...toJsonObject(executorProvider?.model_options ?? {}),
@@ -331,13 +386,13 @@ function stripTrailingCommasOutsideStrings(content: string): string {
         escaped = false;
       } else if (char === "\\") {
         escaped = true;
-      } else if (char === "\"") {
+      } else if (char === '"') {
         inString = false;
       }
       continue;
     }
 
-    if (char === "\"") {
+    if (char === '"') {
       inString = true;
       repaired += char;
       continue;
@@ -389,13 +444,13 @@ function stripJsonCommentsOutsideStrings(content: string): string {
         escaped = false;
       } else if (char === "\\") {
         escaped = true;
-      } else if (char === "\"") {
+      } else if (char === '"') {
         inString = false;
       }
       continue;
     }
 
-    if (char === "\"") {
+    if (char === '"') {
       inString = true;
       repaired += char;
       continue;
@@ -427,7 +482,7 @@ function escapeControlCharactersInJsonStrings(content: string): string {
   for (const char of content) {
     if (!inString) {
       repaired += char;
-      if (char === "\"") {
+      if (char === '"') {
         inString = true;
       }
       continue;
@@ -445,7 +500,7 @@ function escapeControlCharactersInJsonStrings(content: string): string {
       continue;
     }
 
-    if (char === "\"") {
+    if (char === '"') {
       repaired += char;
       inString = false;
       continue;
@@ -458,7 +513,10 @@ function escapeControlCharactersInJsonStrings(content: string): string {
   return repaired;
 }
 
-function nextNonWhitespace(content: string, startIndex: number): string | undefined {
+function nextNonWhitespace(
+  content: string,
+  startIndex: number,
+): string | undefined {
   for (let index = startIndex; index < content.length; index += 1) {
     const char = content[index];
     if (char && !/\s/.test(char)) {
@@ -514,9 +572,9 @@ function shouldWriteNativeProviderConfig(
 ): boolean {
   return Boolean(
     executorProvider?.npm ||
-      executorProvider?.name ||
-      Object.keys(executorProvider?.options ?? {}).length > 0 ||
-      Object.keys(executorProvider?.model_options ?? {}).length > 0,
+    executorProvider?.name ||
+    Object.keys(executorProvider?.options ?? {}).length > 0 ||
+    Object.keys(executorProvider?.model_options ?? {}).length > 0,
   );
 }
 
@@ -530,6 +588,25 @@ function inferOpenCodeProviderId(
 
   const [providerId] = model.split("/");
   return providerId && providerId !== model ? providerId : undefined;
+}
+
+function toNativeOpenCodeProviderId(
+  providerType: AgentProviderConfig["type"],
+): string | undefined {
+  switch (providerType) {
+    case "anthropic":
+      return "anthropic";
+    case "google":
+      return "google";
+    case "xai":
+      return "xai";
+    case "mistral":
+      return "mistral";
+    case "groq":
+      return "groq";
+    case "openai-compatible":
+      return undefined;
+  }
 }
 
 function toOpenCodeProviderModelKey(providerId: string, model: string): string {

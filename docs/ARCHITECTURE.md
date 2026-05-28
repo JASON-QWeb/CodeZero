@@ -65,6 +65,7 @@ It does not handle:
 
 Official references:
 
+- AI SDK providers: https://ai-sdk.dev/docs/providers
 - AI SDK provider registry: https://ai-sdk.dev/docs/reference/ai-sdk-core/provider-registry
 - AI SDK structured output: https://ai-sdk.dev/docs/ai-sdk-core/generating-structured-data
 - AI SDK tool calling: https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling
@@ -121,10 +122,19 @@ OpenCode uses AI SDK and Models.dev for provider support, so CodeZero's single p
 
 ## Single Provider Configuration
 
-There is one user-facing provider config. CodeZero compiles it into two runtime views:
+There is one active user-facing provider config. Settings Console updates `providers.default`, saves the selected API key env var, and CodeZero compiles that single provider into two runtime views:
 
 - AI SDK registry for platform agents.
 - OpenCode config for sandbox implementation.
+
+Supported provider types are:
+
+- `openai-compatible`: OpenAI, DeepSeek, Qwen compatible mode, Xiaomi MiMo, OpenRouter, and any compatible gateway.
+- `anthropic`: Claude through `@ai-sdk/anthropic`.
+- `google`: Gemini through `@ai-sdk/google`.
+- `xai`: Grok through `@ai-sdk/xai`.
+- `mistral`: Mistral through `@ai-sdk/mistral`.
+- `groq`: Groq through `@ai-sdk/groq`.
 
 Example:
 
@@ -133,14 +143,26 @@ providers:
   default:
     type: openai-compatible
     base_url: "${OPENAI_BASE_URL}"
-    api_key_env: "DEEPSEEK_API_KEY"
+    api_key_env: "OPENAI_API_KEY"
     model: "${OPENAI_MODEL}"
     supports_tools: true
     supports_structured_output: true
     coding_executor:
-      mode: native
-      provider_id: deepseek
-      model: "${DEEPSEEK_MODEL}"
+      mode: auto
+```
+
+Native provider example:
+
+```yaml
+providers:
+  default:
+    type: anthropic
+    api_key_env: "ANTHROPIC_API_KEY"
+    model: "claude-sonnet-4-5"
+    supports_tools: true
+    supports_structured_output: true
+    coding_executor:
+      mode: auto
 
 agents:
   prd:

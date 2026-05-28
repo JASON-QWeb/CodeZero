@@ -18,7 +18,12 @@
   "dependencies": {
     "@agent/config": "workspace:*",
     "@agent/shared": "workspace:*",
+    "@ai-sdk/anthropic": "^3.0.80",
+    "@ai-sdk/google": "^3.0.80",
+    "@ai-sdk/groq": "^3.0.39",
+    "@ai-sdk/mistral": "^3.0.37",
     "@ai-sdk/openai-compatible": "^2.0.48",
+    "@ai-sdk/xai": "^3.0.92",
     "ai": "^6.0.191"
   },
   "devDependencies": {

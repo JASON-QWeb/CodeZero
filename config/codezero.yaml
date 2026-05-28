@@ -8,13 +8,7 @@ providers:
     supports_structured_output: true
     timeout_ms: 900000
     coding_executor:
-      mode: native
-      provider_id: deepseek
-      model: "${DEEPSEEK_MODEL}"
-      options:
-        apiKey: "{env:DEEPSEEK_API_KEY}"
-      env:
-        DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY}"
+      mode: auto
 
 agents:
   prd:

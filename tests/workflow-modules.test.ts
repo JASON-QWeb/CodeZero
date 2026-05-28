@@ -278,8 +278,19 @@ describe("workflow modules", () => {
     };
 
     try {
+      const baseRepository = repositoryConfig();
+      const codeGraphRepository: RepositoryConfig = {
+        ...baseRepository,
+        codebase_intelligence: {
+          ...baseRepository.codebase_intelligence,
+          codegraph: {
+            ...baseRepository.codebase_intelligence.codegraph,
+            enabled: true,
+          },
+        },
+      };
       const result = await runCodingCliExecutor({
-        config: createAppConfig(repoDir),
+        config: createAppConfig(repoDir, [codeGraphRepository]),
         executor,
         agent,
         task: {
@@ -310,6 +321,15 @@ describe("workflow modules", () => {
             models: Record<string, unknown>;
           };
         };
+        mcp: {
+          codegraph: {
+            type: string;
+            command: string[];
+            environment: Record<string, string>;
+            enabled: boolean;
+            timeout: number;
+          };
+        };
       };
       expect(openCodeConfig.model).toBe("codezero/model-default");
       expect(openCodeConfig.provider.codezero.options.baseURL).toBe(
@@ -321,6 +341,23 @@ describe("workflow modules", () => {
       expect(
         openCodeConfig.provider.codezero.models["model-default"],
       ).toBeDefined();
+      expect(openCodeConfig.mcp.codegraph).toEqual({
+        type: "local",
+        command: [
+          "npx",
+          "-y",
+          "@colbymchenry/codegraph@0.9.3",
+          "serve",
+          "--mcp",
+          "--path",
+          repoDir,
+        ],
+        environment: {
+          CODEGRAPH_FORCE_WATCH: "1",
+        },
+        enabled: true,
+        timeout: 30_000,
+      });
       expect(JSON.stringify(openCodeConfig)).not.toContain("secret");
     } finally {
       if (previousApiKey === undefined) {
@@ -734,12 +771,7 @@ describe("workflow modules", () => {
       relatedFiles: ["src/change.ts"],
       stats: { nodeCount: 1 },
     });
-    expect(compact.knowledgeGraphContext).toEqual({
-      provider: "Understand-Anything",
-      graph: { nodes: 2, edges: 1 },
-      files: ["src/change.ts"],
-      highlights: [{ path: "src/change.ts", label: "Change" }],
-    });
+    expect(JSON.stringify(compact)).not.toContain("Understand-Anything");
   });
 
   it("writes task artifacts through the shared artifact helper", async () => {
@@ -1105,12 +1137,6 @@ function compactableContextPack(): ContextPack {
       relatedFiles: ["src/change.ts"],
       stats: { nodeCount: 1 },
       codeBlocks: [{ content: "large code block" }],
-    },
-    knowledgeGraphContext: {
-      provider: "Understand-Anything",
-      graph: { nodes: 2, edges: 1 },
-      files: ["src/change.ts"],
-      highlights: [{ path: "src/change.ts", label: "Change" }],
     },
     relevantFiles: [
       { path: "src/change.ts", reason: "plan", evidence: [], readMode: "full" },

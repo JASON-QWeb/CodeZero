@@ -204,7 +204,6 @@ export type ContextPack = {
   businessRules: string[];
   memories: ContextMemory[];
   codeGraphContext?: JsonObject;
-  knowledgeGraphContext?: JsonObject;
   relevantFiles: RelevantFile[];
   symbols: string[];
   tests: string[];

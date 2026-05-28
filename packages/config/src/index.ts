@@ -4,19 +4,35 @@ export {
   parseConfigSection,
   readConfigSection,
   updateRepositoryRuntimeSettings,
-  writeConfigSection
+  writeConfigSection,
 } from "./editable-config.js";
-export type { EditableConfigSection, EditableConfigSnapshot } from "./editable-config.js";
-export { findRepository, findWorkspaceRoot, interpolateEnv, loadAppConfig, loadProjectEnv, readCodeZeroConfig, toRuntimeConfigSections, upsertProjectEnv } from "./loader.js";
+export type {
+  EditableConfigSection,
+  EditableConfigSnapshot,
+} from "./editable-config.js";
+export {
+  findRepository,
+  findWorkspaceRoot,
+  interpolateEnv,
+  loadAppConfig,
+  loadProjectEnv,
+  readCodeZeroConfig,
+  toRuntimeConfigSections,
+  upsertProjectEnv,
+} from "./loader.js";
 export type { AppConfig } from "./loader.js";
 export { evaluateRepositoryTrigger } from "./repository-trigger.js";
-export type { RepositoryTriggerDecision, RepositoryTriggerDecisionInput } from "./repository-trigger.js";
+export type {
+  RepositoryTriggerDecision,
+  RepositoryTriggerDecisionInput,
+} from "./repository-trigger.js";
 export {
   agentsFileSchema,
   codezeroFileSchema,
   codingExecutorProviderModes,
   configSectionNames,
   implementationExecutorModes,
+  modelProviderTypes,
   policiesFileSchema,
   policySchema,
   repositoriesFileSchema,
@@ -26,7 +42,7 @@ export {
   schemaForSection,
   toolPermissionLevels,
   toolSchema,
-  toolsFileSchema
+  toolsFileSchema,
 } from "./schema.js";
 export type {
   AgentsFileConfig,
@@ -34,6 +50,7 @@ export type {
   CodeZeroFileConfig,
   ConfigSectionName,
   ImplementationExecutorConfig,
+  ModelProviderType,
   PoliciesFileConfig,
   PolicyConfig,
   RepositoryConfig,
@@ -43,5 +60,5 @@ export type {
   SandboxFileConfig,
   ToolConfig,
   ToolPermissionLevel,
-  ToolsFileConfig
+  ToolsFileConfig,
 } from "./schema.js";

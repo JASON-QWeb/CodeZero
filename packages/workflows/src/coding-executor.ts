@@ -1,6 +1,10 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AppConfig, ImplementationExecutorConfig } from "@agent/config";
+import {
+  findRepository,
+  type AppConfig,
+  type ImplementationExecutorConfig,
+} from "@agent/config";
 import {
   buildOpenCodeProviderConfig,
   resolveCodingExecutorProvider,
@@ -87,6 +91,7 @@ export function buildCodingExecutorEnv(input: {
     : undefined;
   const providerEnv = provider
     ? {
+        ...buildNativeProviderExecutorEnv(provider, providerApiKey),
         [provider.api_key_env]: providerApiKey,
         OPENAI_API_KEY: providerApiKey,
         OPENAI_BASE_URL: provider.base_url,
@@ -107,6 +112,36 @@ export function buildCodingExecutorEnv(input: {
     ...(codingProvider?.env ?? {}),
     ...input.executor.env,
   };
+}
+
+type AgentProviderRuntimeConfig = AppConfig["agents"]["providers"][string];
+
+function buildNativeProviderExecutorEnv(
+  provider: AgentProviderRuntimeConfig,
+  apiKey: string | undefined,
+): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    nativeProviderApiKeyEnvNames(provider.type).map((key) => [key, apiKey]),
+  );
+}
+
+function nativeProviderApiKeyEnvNames(
+  providerType: AgentProviderRuntimeConfig["type"],
+): string[] {
+  switch (providerType) {
+    case "anthropic":
+      return ["ANTHROPIC_API_KEY"];
+    case "google":
+      return ["GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"];
+    case "xai":
+      return ["XAI_API_KEY"];
+    case "mistral":
+      return ["MISTRAL_API_KEY"];
+    case "groq":
+      return ["GROQ_API_KEY"];
+    case "openai-compatible":
+      return [];
+  }
 }
 
 export function buildCodingExecutorPrompt(
@@ -132,6 +167,9 @@ export function buildCodingExecutorPrompt(
     "",
     "## Repository Context",
     JSON.stringify(input.implementationContext, null, 2),
+    "",
+    "## CodeGraph",
+    "When CodeGraph MCP tools are available, use them for code discovery before broad filesystem search. They read the sandbox's prebuilt `.codegraph` index and stay current while you edit.",
     "",
     "## Current File Snippets",
     JSON.stringify(input.fileSnippets, null, 2),
@@ -180,7 +218,12 @@ export async function runCodingCliExecutor(
   await mkdir(openCodeDataHome, { recursive: true });
   await mkdir(openCodeConfigHome, { recursive: true });
   await writeFile(promptPath, input.prompt, "utf8");
-  const openCodeConfig = buildOpenCodeProviderConfig(input.config, input.agent);
+  const openCodeConfig = buildOpenCodeExecutorConfig({
+    config: input.config,
+    agent: input.agent,
+    task: input.task,
+    repoDir: input.repoDir,
+  });
 
   if (openCodeConfig) {
     await writeFile(
@@ -311,6 +354,69 @@ function createCodingExecutorProgressReporter(
       await Promise.all(pending);
     },
   };
+}
+
+function buildOpenCodeExecutorConfig(input: {
+  config: AppConfig;
+  agent: AgentDefinition;
+  task: Task;
+  repoDir: string;
+}): JsonObject | undefined {
+  return addCodeGraphMcpConfig(
+    buildOpenCodeProviderConfig(input.config, input.agent),
+    input,
+  );
+}
+
+function addCodeGraphMcpConfig(
+  config: JsonObject | undefined,
+  input: {
+    config: AppConfig;
+    task: Task;
+    repoDir: string;
+  },
+): JsonObject | undefined {
+  const repository = findRepository(
+    input.config,
+    input.task.issue.owner,
+    input.task.issue.repo,
+  );
+  const codeGraph = repository?.codebase_intelligence.codegraph;
+
+  if (!codeGraph?.enabled) {
+    return config;
+  }
+
+  const base = config ?? {};
+  const existingMcp = isJsonObject(base.mcp) ? base.mcp : {};
+
+  return {
+    ...base,
+    mcp: {
+      ...existingMcp,
+      codegraph: {
+        type: "local",
+        command: [
+          "npx",
+          "-y",
+          codeGraph.package,
+          "serve",
+          "--mcp",
+          "--path",
+          input.repoDir,
+        ],
+        environment: {
+          CODEGRAPH_FORCE_WATCH: "1",
+        },
+        enabled: true,
+        timeout: Math.min(codeGraph.timeout_ms, 30_000),
+      },
+    },
+  };
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function normalizeCodingExecutorProgressLine(
