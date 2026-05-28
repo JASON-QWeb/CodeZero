@@ -135,16 +135,18 @@ Open the web console at `http://localhost:3000`.
 CodeZero's implementation path is CLI-first. The default sandbox executor runs OpenCode with a generated prompt file:
 
 ```bash
-npx -y opencode-ai@latest run \
+OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
+"$OPENCODE_BIN" run \
   --agent build \
   --model "$CODEZERO_OPENCODE_MODEL" \
+  --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" \
   --format json \
   --dangerously-skip-permissions \
   "Implement the CodeZero request in the attached prompt file." \
   --file="$CODEZERO_PROMPT_FILE"
 ```
 
-For OpenAI-compatible gateways, CodeZero writes a temporary `OPENCODE_CONFIG` file that maps the configured provider/model into OpenCode without placing API keys in artifacts. Provider-specific executor overrides can live under `providers.<id>.coding_executor`.
+Install OpenCode on `PATH`, or set `OPENCODE_BIN` in `.env` to a local OpenCode binary. For OpenAI-compatible gateways, CodeZero writes a temporary `OPENCODE_CONFIG` file that maps the configured provider/model into OpenCode without placing API keys in artifacts. Provider-specific executor overrides can live under `providers.<id>.coding_executor`, including OpenCode native providers such as DeepSeek.
 
 ## Knowledge Graphs
 
@@ -160,7 +162,7 @@ The Run Console invokes the official `$understand` multi-agent pipeline and star
 
 The Run Console defaults to Chinese and includes a Chinese/English switch. Agent PRDs, plans, review notes, and PR descriptions follow the Issue or PR comment language.
 
-Frontend screenshots are committed to `.agent/screenshots/` on the PR branch and embedded directly in the PR description as images. After PR creation, human comments in the same PR conversation update the same branch, rerun verification, refresh the original PR, and repeat until the user is ready to merge.
+Frontend screenshots are stored as CodeZero task artifacts and referenced from the PR verification section without committing image files to the target repository branch. If an external public image URL is configured, CodeZero can still render it inline in the PR description. After PR creation, human comments in the same PR conversation update the same branch, rerun verification, refresh the original PR, and repeat until the user is ready to merge.
 
 ## Validation
 

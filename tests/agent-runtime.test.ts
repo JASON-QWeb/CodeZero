@@ -124,6 +124,37 @@ describe("agent runtime", () => {
     });
   });
 
+  it("repairs invalid JSON agent responses with one follow-up call", async () => {
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        content: '{"approved": false, "blockingFindings": [{"title" "missing colon"}]}',
+        raw: {}
+      })
+      .mockResolvedValueOnce({
+        content: '{"approved":false,"blockingFindings":[{"title":"missing colon"}]}',
+        raw: {}
+      });
+    const runner = new AgentRunner(
+      new Map([
+        [
+          "test-provider",
+          {
+            id: "test-provider",
+            generate
+          }
+        ]
+      ])
+    );
+
+    await expect(runJsonAgent({ runner, agent, userPrompt: "Review", context: { issue: "demo" } })).resolves.toEqual({
+      approved: false,
+      blockingFindings: [{ title: "missing colon" }]
+    });
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[1]?.[0].messages.at(-1)?.content).toContain("The previous response was invalid JSON");
+  });
+
   it("surfaces provider errors with response status and body", async () => {
     vi.stubGlobal(
       "fetch",

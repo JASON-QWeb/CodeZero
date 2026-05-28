@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentDefinition } from "@agent/agent-runtime";
 import type { AppConfig, ImplementationExecutorConfig } from "@agent/config";
@@ -63,7 +63,7 @@ export function normalizeImplementationExecutorConfig(
     name: value?.name ?? "codezero-coding-cli",
     command:
       value?.command ??
-      'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
+      'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
     timeout_ms: value?.timeout_ms ?? 60 * 60_000,
     env: value?.env ?? {},
   };
@@ -114,7 +114,7 @@ export function buildCodingExecutorPrompt(
     "",
     "You are CodeZero's internal implementation executor running inside an isolated Git worktree.",
     "Modify the repository files directly. Do not commit, push, create pull requests, or change branches.",
-    "CodeZero will run the final quality gates, review the diff, publish screenshots, and create or update the GitHub PR.",
+    "CodeZero will run the final quality gates, review the diff, record screenshot artifacts, and create or update the GitHub PR.",
     "Keep the diff focused on the approved PRD/Plan document and latest feedback. Do not include unrelated refactors.",
     "",
     "## Issue",
@@ -171,6 +171,11 @@ export async function runCodingCliExecutor(
     `opencode-attempt-${input.attempt}.json`,
   );
   const logPath = path.join(executorDir, `run-attempt-${input.attempt}.json`);
+  const openCodeHome = path.join(executorDir, `home-attempt-${input.attempt}`);
+  const openCodeDataHome = path.join(openCodeHome, ".local", "share");
+  const openCodeConfigHome = path.join(openCodeHome, ".config");
+  await mkdir(openCodeDataHome, { recursive: true });
+  await mkdir(openCodeConfigHome, { recursive: true });
   await writeFile(promptPath, input.prompt, "utf8");
   const openCodeConfig = buildOpenCodeProviderConfig(input.config, input.agent);
 
@@ -181,6 +186,7 @@ export async function runCodingCliExecutor(
       "utf8",
     );
   }
+  await resetOpenCodeProjectMarker(input.repoDir);
 
   const progressReporter = createCodingExecutorProgressReporter(
     input.onProgress,
@@ -201,6 +207,10 @@ export async function runCodingCliExecutor(
       CODEZERO_ARTIFACT_DIR: input.artifactDir,
       CODEZERO_ISSUE_URL: input.task.issue.url,
       CODEZERO_EXECUTOR_NAME: input.executor.name,
+      HOME: openCodeHome,
+      XDG_DATA_HOME: openCodeDataHome,
+      XDG_CONFIG_HOME: openCodeConfigHome,
+      OPENCODE_DISABLE_AUTOUPDATE: "true",
       ...(openCodeConfig
         ? {
             OPENCODE_CONFIG: openCodeConfigPath,
@@ -239,6 +249,12 @@ export async function runCodingCliExecutor(
     logPath,
     diff,
   };
+}
+
+async function resetOpenCodeProjectMarker(repoDir: string): Promise<void> {
+  await rm(path.join(repoDir, ".git", "opencode"), { force: true }).catch(
+    () => undefined,
+  );
 }
 
 function createCodingExecutorProgressReporter(

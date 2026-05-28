@@ -42,10 +42,44 @@ import {
   selectProviderForComplexity,
   shouldExtendQualityGateSelfCheck,
   shouldExtendSelfCheckAfterFailureKindChange,
+  planningDocumentSchema,
   writeTaskArtifact,
 } from "@agent/workflows";
 
 describe("workflow modules", () => {
+  it("normalizes planning JSON variants from fast models", () => {
+    const planningDocument = planningDocumentSchema.parse({
+      title: "Make GitHub upload asynchronous",
+      background: "The upload flow currently blocks the request.",
+      goals: "Move the blocking GitHub upload work behind a background task.",
+      acceptanceCriteria: "The UI can observe async upload status.",
+      risks: "Avoid duplicate upload jobs.",
+      unknowns: "",
+      complexity: {
+        score: 45,
+        requiresHumanReview: false,
+        reasons: "Touches backend and UI status handling.",
+      },
+      implementationPlan: {
+        filesExpectedToChange: "backend/internal/service/github_sync_service.go",
+        riskNotes: "Keep upload retries idempotent.",
+      },
+    });
+
+    expect(planningDocument.goals).toEqual([
+      "Move the blocking GitHub upload work behind a background task.",
+    ]);
+    expect(planningDocument.implementationPlan.goal).toBe(
+      "Move the blocking GitHub upload work behind a background task.",
+    );
+    expect(planningDocument.implementationPlan.filesExpectedToChange).toEqual([
+      "backend/internal/service/github_sync_service.go",
+    ]);
+    expect(planningDocument.implementationPlan.riskNotes).toEqual([
+      "Keep upload retries idempotent.",
+    ]);
+  });
+
   it("selects providers by task complexity with a conservative fallback", () => {
     const providerByComplexity = {
       low: "small",
@@ -102,7 +136,9 @@ describe("workflow modules", () => {
       });
 
       expect(executor.mode).toBe("cli");
-      expect(executor.command).toContain("opencode-ai");
+      expect(executor.command).toContain("OPENCODE_BIN");
+      expect(executor.command).toContain("opencode");
+      expect(executor.command).toContain("--variant");
       expect(executor.command).toContain('--file="$CODEZERO_PROMPT_FILE"');
       expect(executor.command).toContain(
         '"Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
@@ -219,13 +255,14 @@ describe("workflow modules", () => {
       cwd: repoDir,
       command: "git add app.txt && git commit -m init",
     });
+    await writeFile(path.join(repoDir, ".git", "opencode"), "stale-project");
     const previousApiKey = process.env.TEST_API_KEY;
     process.env.TEST_API_KEY = "secret";
     const executor = normalizeImplementationExecutorConfig({
       mode: "cli",
       name: "test-cli",
       command:
-        "node -e \"const fs=require('fs'); if(!process.env.OPENAI_API_KEY || !process.env.CODEZERO_PROMPT_FILE || !process.env.OPENCODE_CONFIG) process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
+        "node -e \"const fs=require('fs'); if(!process.env.OPENAI_API_KEY || !process.env.CODEZERO_PROMPT_FILE || !process.env.OPENCODE_CONFIG || !process.env.HOME.includes('coding-executor') || !process.env.XDG_DATA_HOME || !process.env.XDG_CONFIG_HOME || fs.existsSync('.git/opencode')) process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
       timeout_ms: 30_000,
       env: {},
     });

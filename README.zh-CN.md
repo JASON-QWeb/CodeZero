@@ -135,16 +135,18 @@ pnpm dev:web
 CodeZero 的实现路径是 CLI-first。默认沙箱 executor 会带着生成好的 prompt file 运行 OpenCode：
 
 ```bash
-npx -y opencode-ai@latest run \
+OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
+"$OPENCODE_BIN" run \
   --agent build \
   --model "$CODEZERO_OPENCODE_MODEL" \
+  --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" \
   --format json \
   --dangerously-skip-permissions \
   "Implement the CodeZero request in the attached prompt file." \
   --file="$CODEZERO_PROMPT_FILE"
 ```
 
-对 OpenAI-compatible 网关，CodeZero 会写入临时 `OPENCODE_CONFIG`，把 provider/model 映射给 OpenCode，同时不把 API key 写进产物。provider 级别的 executor 覆盖可以配置在 `providers.<id>.coding_executor`。
+把 OpenCode 安装到 `PATH`，或在 `.env` 里设置 `OPENCODE_BIN` 指向本机 OpenCode 二进制。对 OpenAI-compatible 网关，CodeZero 会写入临时 `OPENCODE_CONFIG`，把 provider/model 映射给 OpenCode，同时不把 API key 写进产物。provider 级别的 executor 覆盖可以配置在 `providers.<id>.coding_executor`，包括 DeepSeek 这类 OpenCode native provider。
 
 ## 项目知识图
 
@@ -160,7 +162,7 @@ Run Console 的项目知识图操作会运行官方 `$understand` 多 Agent pipe
 
 Run Console 默认中文并提供中英文切换。机器人会按 Issue/PR 评论语言生成 PRD、计划、Review 说明和 PR 正文。
 
-前端截图会随 PR 分支提交到 `.agent/screenshots/`，并在 PR 描述中直接以内嵌图片展示。PR 创建后，用户在同一个 PR conversation 中继续评论，机器人会更新同一个分支、重新验证并刷新原 PR，直到用户满意后自行合并。
+前端截图会保存为 CodeZero task artifact，并在 PR 验证区引用，不再把图片文件提交到目标仓库分支。如果之后配置了外部公开图片 URL，CodeZero 仍可在 PR 描述中直接渲染图片。PR 创建后，用户在同一个 PR conversation 中继续评论，机器人会更新同一个分支、重新验证并刷新原 PR，直到用户满意后自行合并。
 
 ## 验证命令
 

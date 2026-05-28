@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -80,6 +80,30 @@ describe("file task repository", () => {
 
     expect((await repository.listTasks()).map((task) => task.id)).toEqual(["task-newer", "task-older"]);
     expect((await repository.listEvents(older.id)).map((event) => event.id)).toEqual(["event-1", "event-2"]);
+  });
+
+  it("serializes concurrent mutations without corrupting the store file", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-store-concurrent-"));
+    const storePath = path.join(dir, "tasks.json");
+    const repository = new FileTaskRepository(storePath);
+    const task = await repository.createTask(createTask(issue));
+
+    await Promise.all(
+      Array.from({ length: 40 }, (_, index) =>
+        repository.appendEvent(
+          createTaskEvent({
+            taskId: task.id,
+            type: "AGENT_RUN_PROGRESS",
+            message: `progress ${index}`
+          })
+        )
+      )
+    );
+
+    const parsed = JSON.parse(await readFile(storePath, "utf8")) as {
+      events: unknown[];
+    };
+    expect(parsed.events).toHaveLength(40);
   });
 
   it("creates task events with default level and metadata", () => {

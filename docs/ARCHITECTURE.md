@@ -141,7 +141,7 @@
 - 提交 commit。
 - 推送远端。
 - 创建 draft PR。
-- 写入 PR 描述、自检结果和直接可见截图。
+- 写入 PR 描述、自检结果和截图 artifact 引用，避免把截图文件提交到业务仓库分支。
 - 生成 `pr-local-verification.json`，并写入本地验证指令，包括 `gh pr checkout`、plain Git checkout、安装命令、质量门禁命令、启动命令、base commit 和 sandbox image。
 
 ### 3.10 Memory Service

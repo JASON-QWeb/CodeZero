@@ -1487,13 +1487,8 @@ export class IssueWorkflowRunner {
     const baseSha = await getCurrentCommitSha(sandbox.repoDir);
     const installCommand = await detectInstallCommand(sandbox.repoDir);
     const artifacts = await this.tasks.listArtifacts(task.id);
-    const screenshotArtifacts = await this.publishScreenshotArtifactsToBranch(
-      task,
-      sandbox,
-      repositoryConfig,
-      agentBranch,
-      artifacts,
-    );
+    const screenshotArtifacts =
+      this.collectScreenshotArtifactsForPr(artifacts);
     const verification = createPrLocalVerificationPlan({
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
@@ -1602,13 +1597,8 @@ export class IssueWorkflowRunner {
     const agentBranch = task.branchName ?? `agent/issue-${task.issue.number}`;
     const baseSha = await getCurrentCommitSha(sandbox.repoDir);
     const artifacts = await this.tasks.listArtifacts(task.id);
-    const screenshotArtifacts = await this.publishScreenshotArtifactsToBranch(
-      task,
-      sandbox,
-      repositoryConfig,
-      agentBranch,
-      artifacts,
-    );
+    const screenshotArtifacts =
+      this.collectScreenshotArtifactsForPr(artifacts);
     const installCommand = await detectInstallCommand(sandbox.repoDir);
     const verification = createPrLocalVerificationPlan({
       owner: repositoryConfig.github_owner,
@@ -1697,59 +1687,20 @@ export class IssueWorkflowRunner {
     );
   }
 
-  private async publishScreenshotArtifactsToBranch(
-    task: Task,
-    sandbox: Sandbox,
-    repositoryConfig: RepositoryConfig,
-    agentBranch: string,
+  private collectScreenshotArtifactsForPr(
     artifacts: Artifact[],
-  ): Promise<Array<Pick<Artifact, "path" | "url" | "metadata">>> {
-    const screenshots = artifacts.filter(
-      (artifact) => artifact.type === "screenshot" && artifact.path,
-    );
-    const targetDir = path.join(
-      sandbox.repoDir,
-      ".agent",
-      "screenshots",
-      `issue-${task.issue.number}`,
-    );
-
-    if (screenshots.length === 0) {
-      return [];
-    }
-
-    await mkdir(targetDir, { recursive: true });
-
-    return Promise.all(
-      screenshots.map(async (artifact, index) => {
-        const source = artifact.path ?? "";
-        const extension = path.extname(source) || ".png";
-        const viewport =
-          typeof artifact.metadata?.viewport === "string"
-            ? artifact.metadata.viewport
-            : `shot-${index + 1}`;
-        const filename = `${String(index + 1).padStart(2, "0")}-${safePathSegment(viewport)}${extension}`;
-        const relativePath = path.posix.join(
-          ".agent",
-          "screenshots",
-          `issue-${task.issue.number}`,
-          filename,
-        );
-        const target = path.join(targetDir, filename);
-        await copyFile(source, target);
-
-        return {
-          path: relativePath,
-          url: rawGitHubUrl(
-            repositoryConfig.github_owner,
-            repositoryConfig.github_repo,
-            agentBranch,
-            relativePath,
-          ),
-          metadata: artifact.metadata,
-        };
-      }),
-    );
+  ): Array<Pick<Artifact, "id" | "path" | "url" | "metadata">> {
+    return artifacts
+      .filter(
+        (artifact) =>
+          artifact.type === "screenshot" && (artifact.path || artifact.url),
+      )
+      .map((artifact) => ({
+        id: artifact.id,
+        path: artifact.path,
+        url: artifact.url,
+        metadata: artifact.metadata,
+      }));
   }
 
   private latestReviewerFeedback(task: Task): string {
@@ -2407,17 +2358,6 @@ function parseGitHubIssueNumber(url: string): number | undefined {
   return match?.[1] ? Number(match[1]) : undefined;
 }
 
-function rawGitHubUrl(
-  owner: string,
-  repo: string,
-  branch: string,
-  relativePath: string,
-): string {
-  return encodeURI(
-    `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${branch}/${relativePath}`,
-  );
-}
-
 function repositoryStorageKey(
   repositoryConfig: Pick<RepositoryConfig, "github_owner" | "github_repo">,
 ): string {
@@ -2436,16 +2376,6 @@ async function pathExists(filePath: string): Promise<boolean> {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-function safePathSegment(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 64) || "screenshot"
-  );
 }
 
 function summarizeUnderstandAnythingGraph(value: unknown): JsonObject {

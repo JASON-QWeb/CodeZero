@@ -188,7 +188,7 @@ describe("PR local verification", () => {
     expect(detectIssueLocale(task.issue)).toBe("en");
   });
 
-  it("fails PR content completeness when screenshot artifacts are not embedded images", () => {
+  it("passes PR content completeness when screenshots are referenced as task artifacts", () => {
     const verification = createPrLocalVerificationPlan({
       owner: "acme",
       repo: "shop",
@@ -198,6 +198,7 @@ describe("PR local verification", () => {
       qualityGateResults,
       screenshotArtifacts: [
         {
+          id: "artifact-screen-1",
           path: "/tmp/order-detail-desktop.png",
           metadata: {
             url: "http://localhost:3000/orders/7",
@@ -208,8 +209,9 @@ describe("PR local verification", () => {
     });
     const body = createAgentPrBody({ task, verification });
 
+    expect(body).toContain("CodeZero artifact artifact-screen-1");
     expect(
       validateAgentPrBodyCompleteness({ task, verification, body }).passed,
-    ).toBe(false);
+    ).toBe(true);
   });
 });

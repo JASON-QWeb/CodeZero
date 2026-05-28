@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Artifact, Task, TaskEvent } from "@agent/shared";
 import type { TaskPatch, TaskRepository } from "./types.js";
@@ -14,45 +15,50 @@ function emptyStore(): StoreFile {
 }
 
 export class FileTaskRepository implements TaskRepository {
-  constructor(private readonly filePath: string) {}
+  private static readonly mutationQueues = new Map<string, Promise<void>>();
+  private readonly filePath: string;
+
+  constructor(filePath: string) {
+    this.filePath = path.resolve(filePath);
+  }
 
   async createTask(task: Task): Promise<Task> {
-    const store = await this.read();
-    const existing = store.tasks.find((entry) => entry.id === task.id);
+    return this.mutate((store) => {
+      const existing = store.tasks.find((entry) => entry.id === task.id);
 
-    if (existing) {
-      return existing;
-    }
+      if (existing) {
+        return existing;
+      }
 
-    store.tasks.push(task);
-    await this.write(store);
-    return task;
+      store.tasks.push(task);
+      return task;
+    });
   }
 
   async updateTask(id: string, patch: TaskPatch): Promise<Task> {
-    const store = await this.read();
-    const index = store.tasks.findIndex((task) => task.id === id);
+    return this.mutate((store) => {
+      const index = store.tasks.findIndex((task) => task.id === id);
 
-    if (index < 0) {
-      throw new Error(`Task not found: ${id}`);
-    }
+      if (index < 0) {
+        throw new Error(`Task not found: ${id}`);
+      }
 
-    const current = store.tasks[index];
-    if (!current) {
-      throw new Error(`Task not found: ${id}`);
-    }
-    const next: Task = {
-      ...current,
-      ...patch,
-      id: current.id,
-      createdAt: current.createdAt,
-      issue: patch.issue ?? current.issue,
-      updatedAt: new Date().toISOString()
-    };
+      const current = store.tasks[index];
+      if (!current) {
+        throw new Error(`Task not found: ${id}`);
+      }
+      const next: Task = {
+        ...current,
+        ...patch,
+        id: current.id,
+        createdAt: current.createdAt,
+        issue: patch.issue ?? current.issue,
+        updatedAt: new Date().toISOString()
+      };
 
-    store.tasks[index] = next;
-    await this.write(store);
-    return next;
+      store.tasks[index] = next;
+      return next;
+    });
   }
 
   async getTask(id: string): Promise<Task | undefined> {
@@ -66,9 +72,9 @@ export class FileTaskRepository implements TaskRepository {
   }
 
   async appendEvent(event: TaskEvent): Promise<void> {
-    const store = await this.read();
-    store.events.push(event);
-    await this.write(store);
+    await this.mutate((store) => {
+      store.events.push(event);
+    });
   }
 
   async listEvents(taskId: string): Promise<TaskEvent[]> {
@@ -77,9 +83,9 @@ export class FileTaskRepository implements TaskRepository {
   }
 
   async addArtifact(artifact: Artifact): Promise<void> {
-    const store = await this.read();
-    store.artifacts.push(artifact);
-    await this.write(store);
+    await this.mutate((store) => {
+      store.artifacts.push(artifact);
+    });
   }
 
   async listArtifacts(taskId: string): Promise<Artifact[]> {
@@ -97,10 +103,36 @@ export class FileTaskRepository implements TaskRepository {
     return JSON.parse(content) as StoreFile;
   }
 
+  private async mutate<T>(operation: (store: StoreFile) => T | Promise<T>): Promise<T> {
+    const previous = FileTaskRepository.mutationQueues.get(this.filePath) ?? Promise.resolve();
+    const mutation = previous.catch(() => undefined).then(async () => {
+      const store = await this.read();
+      const result = await operation(store);
+      await this.write(store);
+      return result;
+    });
+
+    FileTaskRepository.mutationQueues.set(
+      this.filePath,
+      mutation.then(
+        () => undefined,
+        () => undefined
+      )
+    );
+
+    return mutation;
+  }
+
   private async write(store: StoreFile): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
-    const tempPath = `${this.filePath}.tmp`;
-    await writeFile(tempPath, JSON.stringify(store, null, 2));
-    await rename(tempPath, this.filePath);
+    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+
+    try {
+      await writeFile(tempPath, JSON.stringify(store, null, 2));
+      await rename(tempPath, this.filePath);
+    } catch (error) {
+      await rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 }

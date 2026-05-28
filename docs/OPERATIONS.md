@@ -456,9 +456,9 @@ git checkout <agent-branch>
 - Sandbox mode: `<docker|worktree>`
 - Sandbox image: `<sandbox-image>`
 - Quality gates: `<build/lint/typecheck/test summary>`
-- Screenshots: `![viewport](https://raw.githubusercontent.com/.../.agent/screenshots/...)`
+- Screenshots: `CodeZero artifact <artifact-id>` unless an external public image URL is configured.
 ````
 
-当前实现会从 lockfile 推导安装命令，从 `repositories.yaml` 的 `quality_gates` 和 `frontend.dev_command` 推导验证/启动命令，并写入质量门禁结果和截图 artifact。前端截图会复制进 PR 分支的 `.agent/screenshots/issue-<number>/`，PR 正文使用 GitHub raw URL 直接嵌图，避免只给本地路径或不可渲染链接。后续 Review subagent 会阻断缺少本地验证说明的 PR。
+当前实现会从 lockfile 推导安装命令，从 `repositories.yaml` 的 `quality_gates` 和 `frontend.dev_command` 推导验证/启动命令，并写入质量门禁结果和截图 artifact。前端截图保留在 CodeZero task artifact 中，PR 正文只引用 artifact id；除非配置外部公开图片 URL，否则不会把截图复制进目标仓库 PR 分支。后续 Review subagent 会阻断缺少本地验证说明的 PR。
 
 PR 创建后，GitHub PR conversation 中的人工评论会被 webhook 映射回已有 task。系统不会新建另一个 Issue task，也不会新开 feedback sandbox；它会恢复同一个 task sandbox 和同一个 PR 分支，应用用户反馈、重新跑质量门禁和 review subagent，通过后 push 并更新原 PR 正文，再在 PR 里回复本轮已处理。用户继续评论时重复这一轮，直到用户满意并自行合并。

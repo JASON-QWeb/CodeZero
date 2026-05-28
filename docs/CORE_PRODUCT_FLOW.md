@@ -4,7 +4,7 @@ This document is the canonical product contract for CodeZero. Keep it current be
 
 ## Product Intent
 
-CodeZero is a GitHub Issue/PR automation product. A user should be able to mention the bot in an issue, review the bot's planning document, let the bot implement in the same isolated sandbox, and then review a pull request that already contains self-check results and visible screenshots. The user decides when to merge unless auto-merge is explicitly configured later.
+CodeZero is a GitHub Issue/PR automation product. A user should be able to mention the bot in an issue, review the bot's planning document, let the bot implement in the same isolated sandbox, and then review a pull request that already contains self-check results and screenshot artifact references. The user decides when to merge unless auto-merge is explicitly configured later.
 
 ## Main Loop
 
@@ -32,7 +32,7 @@ CodeZero is a GitHub Issue/PR automation product. A user should be able to menti
     - Frontend screenshot verification when configured.
     - PR body completeness check.
 11. CodeZero creates a Draft or Ready PR only after self-checks pass.
-12. The PR body must include language-matched summary text, self-check results, direct visible screenshots, local verification commands, and review-agent conclusions.
+12. The PR body must include language-matched summary text, self-check results, screenshot artifact references, local verification commands, and review-agent conclusions. Screenshot files must stay in CodeZero artifacts or an explicitly configured external asset host, not in the target repository PR branch.
 13. GitHub PR comments and review comments are synchronized back into the same task.
 14. CodeZero repeats `modify -> self-check -> update same PR -> reply to user` in the same sandbox until the user is satisfied.
 15. The user merges. CodeZero does not merge by itself unless a future repository setting explicitly allows it.
@@ -119,7 +119,7 @@ The default implementation path is:
 4. The executor modifies the Git worktree directly and exits.
 5. CodeZero reads `git diff`, stores artifacts, syncs repo intelligence, and runs quality gates.
 
-The current default executor command is configured in `config/sandbox.yaml` under `sandbox.implementation_executor`. It uses OpenCode internally through `npx -y opencode-ai@latest`, attaches the generated CodeZero request as a prompt file, and runs non-interactively inside the isolated sandbox. For OpenAI-compatible gateways, CodeZero writes a temporary `OPENCODE_CONFIG` artifact that registers the configured model as `codezero/<model>` while keeping the API key in environment variables. Users can also override `providers.<id>.coding_executor` to select any native or custom OpenCode provider/model for sandbox implementation work. This must not leak into PR bodies or user-facing issue comments. PRs, issue comments, and dashboard summaries should describe the work as CodeZero implementation.
+The current default executor command is configured in `config/sandbox.yaml` under `sandbox.implementation_executor`. It uses OpenCode internally through `OPENCODE_BIN`/`opencode`, attaches the generated CodeZero request as a prompt file, and runs non-interactively inside an isolated OpenCode home under the task artifact directory. For OpenAI-compatible gateways, CodeZero writes a temporary `OPENCODE_CONFIG` artifact that registers the configured model while keeping the API key in environment variables. Users can also override `providers.<id>.coding_executor` to select any native or custom OpenCode provider/model for sandbox implementation work, such as DeepSeek through `deepseek/<model>`. This must not leak into PR bodies or user-facing issue comments. PRs, issue comments, and dashboard summaries should describe the work as CodeZero implementation.
 
 There is no JSON edit fallback in the implementation phase. CodeZero must fail fast and surface executor diagnostics if OpenCode cannot produce a diff, rather than applying self-built file replacement tools.
 
@@ -151,7 +151,7 @@ The PR must include:
 - Self-check results.
 - Review-agent result.
 - Local verification commands.
-- Directly embedded screenshots when screenshots exist.
+- Screenshot artifact references when screenshots exist, without committing screenshot files to the target repository branch.
 - The same branch for later feedback iterations.
 
 ## Dashboard Contract

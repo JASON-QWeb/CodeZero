@@ -22,7 +22,9 @@ export type PrLocalVerificationInput = {
   installCommand?: string;
   qualityGateResults?: QualityGateResult[];
   devCommand?: string;
-  screenshotArtifacts?: Array<Pick<Artifact, "path" | "url" | "metadata">>;
+  screenshotArtifacts?: Array<
+    Pick<Artifact, "id" | "path" | "url" | "metadata">
+  >;
   sandbox?: {
     mode?: "docker" | "worktree";
     image?: string;
@@ -155,7 +157,11 @@ export function createPrLocalVerificationPlan(
     screenshots: (input.screenshotArtifacts ?? []).map((artifact) => ({
       url: metadataString(artifact.metadata?.url),
       viewport: metadataString(artifact.metadata?.viewport),
-      artifact: artifact.url ?? artifact.path ?? "task artifact",
+      artifact:
+        artifact.url ??
+        (artifact.id ? `CodeZero artifact ${artifact.id}` : undefined) ??
+        artifact.path ??
+        "task artifact",
     })),
     sandbox: input.sandbox ?? {},
   };
@@ -395,13 +401,11 @@ export function validateAgentPrBodyCompleteness(
 
   const screenshotArtifacts = input.verification.screenshots;
   if (screenshotArtifacts.length > 0) {
-    const missingEmbeddedScreenshots = screenshotArtifacts.filter(
-      (screenshot) =>
-        !isEmbeddableImageUrl(screenshot.artifact) ||
-        !input.body.includes(`](${screenshot.artifact})`),
+    const missingReferencedScreenshots = screenshotArtifacts.filter(
+      (screenshot) => !input.body.includes(screenshot.artifact),
     );
-    if (missingEmbeddedScreenshots.length > 0) {
-      errors.push(text.screenshotNotEmbedded);
+    if (missingReferencedScreenshots.length > 0) {
+      errors.push(text.screenshotNotReferenced);
     }
   }
 
@@ -477,16 +481,15 @@ function formatPrContentChecklist(
   locale: ConversationLocale,
 ): string[] {
   const text = copy(locale);
-  const screenshotsEmbedded =
-    input.verification.screenshots.length === 0 ||
-    input.verification.screenshots.every((screenshot) =>
-      isEmbeddableImageUrl(screenshot.artifact),
-    );
+  const screenshotStatus =
+    input.verification.screenshots.length === 0
+      ? text.none
+      : text.referencedArtifacts;
   return [
     `- ${text.languageMatched}: ${locale === "zh" ? "中文" : "English"}`,
     `- ${text.selfChecksBeforePr}: ${allRecordedChecksPassed(input.task) ? text.passed : text.failed}`,
     `- ${text.reviewSubagent}: ${input.task.reviewResult?.approved ? text.passed : text.failed}`,
-    `- ${text.screenshotArtifacts}: ${screenshotsEmbedded ? text.embeddedImages : text.needsEmbeddedImages}`,
+    `- ${text.screenshotArtifacts}: ${screenshotStatus}`,
   ];
 }
 
@@ -573,7 +576,6 @@ function copy(locale: ConversationLocale) {
         baseCommit: "基线提交",
         closes: "关联",
         commandsRunByAgent: "机器人已运行命令",
-        embeddedImages: "已直接嵌入图片",
         failed: "失败",
         failedQualityGates: "存在失败的质量门禁",
         frontendScreenshotVerification: "前端截图验证",
@@ -583,7 +585,6 @@ function copy(locale: ConversationLocale) {
         localVerification: "本地验证",
         missingPrSection: "PR 缺少章节",
         missingQualityGates: "缺少质量门禁结果",
-        needsEmbeddedImages: "需要直接嵌入图片",
         noAdditionalNotes: "无额外说明。",
         noQualityGateCommands: "没有记录质量门禁命令。",
         none: "无。",
@@ -592,15 +593,16 @@ function copy(locale: ConversationLocale) {
         plainGitOption: "方式 B：普通 Git",
         prContentCompleteness: "PR 内容完整性检查",
         prFeedbackUpdated:
-          "已根据最新 PR 评论更新同一个分支，并重新完成机器人自检。PR 正文已刷新为最新验证结果和直接可见截图。",
+          "已根据最新 PR 评论更新同一个分支，并重新完成机器人自检。PR 正文已刷新为最新验证结果和截图产物引用。",
         qualityGates: "质量门禁",
+        referencedArtifacts: "已记录为任务产物（不提交到代码分支）",
         reviewNotApproved: "Review agent 尚未批准",
         reviewSubagent: "机器人自检 Review",
         risk: "风险",
         sandboxImage: "沙箱镜像",
         sandboxMode: "沙箱模式",
         screenshotArtifacts: "截图",
-        screenshotNotEmbedded: "截图没有以 Markdown 图片直接嵌入",
+        screenshotNotReferenced: "截图产物没有在 PR 正文中引用",
         seePrdArtifact: "见 PRD 产物。",
         selfChecksBeforePr: "创建 PR 前自检",
         summary: "摘要",
@@ -615,7 +617,6 @@ function copy(locale: ConversationLocale) {
         baseCommit: "Base commit",
         closes: "Closes",
         commandsRunByAgent: "Commands run by agent",
-        embeddedImages: "embedded as visible images",
         failed: "failed",
         failedQualityGates: "One or more quality gates failed",
         frontendScreenshotVerification: "Frontend Screenshot Verification",
@@ -625,7 +626,6 @@ function copy(locale: ConversationLocale) {
         localVerification: "Local Verification",
         missingPrSection: "PR body is missing section",
         missingQualityGates: "Missing quality gate results",
-        needsEmbeddedImages: "needs embedded images",
         noAdditionalNotes: "No additional notes.",
         noQualityGateCommands: "No quality gate commands were recorded.",
         none: "None.",
@@ -634,16 +634,17 @@ function copy(locale: ConversationLocale) {
         plainGitOption: "Option B: Plain Git",
         prContentCompleteness: "PR Content Completeness Check",
         prFeedbackUpdated:
-          "Updated the same PR branch from the latest PR comment and reran agent verification. The PR body now contains the latest checks and directly visible screenshots.",
+          "Updated the same PR branch from the latest PR comment and reran agent verification. The PR body now contains the latest checks and screenshot artifact references.",
         qualityGates: "Quality Gates",
+        referencedArtifacts: "recorded as task artifacts (not committed to the code branch)",
         reviewNotApproved: "Review agent has not approved the changes",
         reviewSubagent: "Review Subagent",
         risk: "risk",
         sandboxImage: "Sandbox image",
         sandboxMode: "Sandbox mode",
         screenshotArtifacts: "Screenshot artifacts",
-        screenshotNotEmbedded:
-          "Screenshots are not embedded as Markdown images",
+        screenshotNotReferenced:
+          "Screenshot artifacts are not referenced in the PR body",
         seePrdArtifact: "See PRD artifact.",
         selfChecksBeforePr: "Self-checks before PR creation",
         summary: "Summary",

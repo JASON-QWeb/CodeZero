@@ -176,6 +176,8 @@ export async function runCommand(input: {
     if (input.stdin !== undefined) {
       child.stdin.write(input.stdin);
       child.stdin.end();
+    } else {
+      child.stdin.end();
     }
   });
   await Promise.all(outputCallbacks);

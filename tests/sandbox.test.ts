@@ -66,6 +66,19 @@ describe("sandbox command runner", () => {
     expect(chunks).toEqual(["stdout:hello", "stderr:warn"]);
   });
 
+  it("closes stdin for commands that do not receive input", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-sandbox-stdin-"));
+    const result = await runCommand({
+      cwd: dir,
+      command:
+        "node -e \"process.stdin.on('end',()=>process.stdout.write('closed')); process.stdin.resume()\"",
+      timeoutMs: 1_000
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("closed");
+  });
+
   it("terminates nested child processes when commands time out", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-sandbox-timeout-"));
     const result = await runCommand({ cwd: dir, command: "sh -c 'sleep 1; printf alive > child.txt'", timeoutMs: 100 });

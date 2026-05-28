@@ -219,9 +219,9 @@ CodeZero workflow
   -> create/update PR
 ```
 
-默认 executor 由 `sandbox.implementation_executor` 配置，当前命令通过 `npx -y opencode-ai@latest` 使用 OpenCode，并用 prompt 文件附件传入 CodeZero 请求，避免长上下文被 shell 参数长度限制截断。CodeZero 会把用户在 `agents.yaml` 中配置的 provider API key、base URL、model 映射到 executor 环境变量，例如 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`CODEZERO_OPENCODE_MODEL`。
+默认 executor 由 `sandbox.implementation_executor` 配置，当前命令通过 `OPENCODE_BIN`/`opencode` 使用 OpenCode，并用 prompt 文件附件传入 CodeZero 请求，避免长上下文被 shell 参数长度限制截断。每次 executor run 都会使用 task artifact 目录下隔离的 OpenCode home/data/config，避免复用用户全局 OpenCode DB。CodeZero 会把用户在 `agents.yaml` 中配置的 provider API key、base URL、model 映射到 executor 环境变量，例如 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`CODEZERO_OPENCODE_MODEL`。
 
-对 OpenAI-compatible 自定义网关，CodeZero 会在 task artifact 目录生成临时 `OPENCODE_CONFIG` 文件，注册内部 `codezero/<model>` provider。配置文件只包含 base URL、model 和 `{env:OPENAI_API_KEY}` 引用，不写入真实 API key，也不会进入被测仓库 diff。用户也可以在 `providers.<id>.coding_executor` 里把 sandbox coding executor 切换到任意 OpenCode native/custom provider，例如 OpenRouter、Anthropic、DeepSeek、Qwen 或私有网关。底层 CLI 是内部实现细节，不能出现在用户-facing PR body 或 issue comment 中。
+对 OpenAI-compatible 自定义网关，CodeZero 会在 task artifact 目录生成临时 `OPENCODE_CONFIG` 文件，注册内部 `codezero/<model>` provider。配置文件只包含 base URL、model 和 `{env:OPENAI_API_KEY}` 引用，不写入真实 API key，也不会进入被测仓库 diff。用户也可以在 `providers.<id>.coding_executor` 里把 sandbox coding executor 切换到任意 OpenCode native/custom provider，例如 OpenRouter、Anthropic、DeepSeek、Qwen 或私有网关。DeepSeek 这类 OpenCode 原生 provider 应优先配置为 `deepseek/<model>`。底层 CLI 是内部实现细节，不能出现在用户-facing PR body 或 issue comment 中。
 
 ### 6.2 Implementation Editing Boundary
 

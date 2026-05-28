@@ -414,5 +414,26 @@ function escapeJsonControlCharacter(char: string, code: number): string {
 
 export async function runJsonAgent(input: AgentRunInput & { runner: AgentRunner }): Promise<JsonObject> {
   const result = await input.runner.run(input);
-  return parseJsonObject(result.content);
+
+  try {
+    return parseJsonObject(result.content);
+  } catch (error) {
+    const repairResult = await input.runner.run({
+      agent: input.agent,
+      userPrompt: [
+        input.userPrompt,
+        "",
+        "The previous response was invalid JSON and could not be parsed.",
+        `Parser error: ${error instanceof Error ? error.message : String(error)}`,
+        "Convert the previous response into one strict JSON object that matches the requested schema.",
+        "Return only valid JSON. Do not include markdown, comments, prose, or trailing commas.",
+        "",
+        "Previous response:",
+        result.content
+      ].join("\n"),
+      context: input.context
+    });
+
+    return parseJsonObject(repairResult.content);
+  }
 }
