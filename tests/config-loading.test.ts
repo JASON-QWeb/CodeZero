@@ -155,6 +155,46 @@ describe("app config loading", () => {
     expect(() => parseConfigSection("agents", "providers: []")).toThrow();
   });
 
+  it("parses optional coding executor provider overrides", () => {
+    const parsed = parseConfigSection(
+      "agents",
+      [
+        "providers:",
+        "  default:",
+        "    type: openai-compatible",
+        "    base_url: https://api.example.test/v1",
+        "    api_key_env: TEST_API_KEY",
+        "    model: planner-model",
+        "    coding_executor:",
+        "      mode: native",
+        "      provider_id: anthropic",
+        "      model: claude-sonnet-4-5",
+        "      env:",
+        "        ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}",
+        "agents:",
+        "  implementation:",
+        "    provider: default",
+        "    system_prompt: prompts/system/main-agent.md",
+        ""
+      ].join("\n")
+    ) as {
+      providers: {
+        default: {
+          coding_executor?: {
+            mode: string;
+            provider_id?: string;
+            model?: string;
+            env: Record<string, string>;
+          };
+        };
+      };
+    };
+
+    expect(parsed.providers.default.coding_executor?.mode).toBe("native");
+    expect(parsed.providers.default.coding_executor?.provider_id).toBe("anthropic");
+    expect(parsed.providers.default.coding_executor?.model).toBe("claude-sonnet-4-5");
+  });
+
   it("interpolates environment placeholders without hiding unresolved values", () => {
     process.env.AGENT_CONFIG_TEST_VALUE = "resolved";
 

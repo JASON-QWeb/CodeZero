@@ -7,6 +7,17 @@ providers:
     supports_tools: true
     supports_structured_output: true
     timeout_ms: 900000
+    # Optional: override only the sandbox coding executor provider/model.
+    # mode:
+    #   auto   - default; wraps this OpenAI-compatible provider for the executor.
+    #   custom - register any custom OpenCode provider config for the executor.
+    #   native - use an OpenCode built-in provider/model directly.
+    # coding_executor:
+    #   mode: native
+    #   provider_id: anthropic
+    #   model: claude-sonnet-4-5
+    #   env:
+    #     ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
   # Optional extra providers for cost/quality routing.
   # qwen_fast:
   #   type: openai-compatible

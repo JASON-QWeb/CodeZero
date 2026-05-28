@@ -163,6 +163,7 @@ Settings Console 会保存到实际 `config/*.yaml`，保存前使用同一套 Z
 - 大模型连通性验证：选择 provider 后点击 Test，会真实请求 `/chat/completions` 验证 base URL、model 和 API key 是否可用。
 - Agent step routing：`prd`、`implementation`、`review` 等步骤选择 provider。
 - Complexity routing：`provider_by_complexity.low|medium|high`，让简单任务走快速/便宜模型，复杂任务走强模型。
+- Sandbox coding executor routing：`providers.<id>.coding_executor` 可覆盖实现阶段沙箱内 coding executor 使用的 provider/model。默认 `auto` 会复用当前 OpenAI-compatible provider；`native` 可直接使用 OpenCode 支持的 provider/model；`custom` 可注册任意 OpenAI-compatible 或第三方网关。
 - GitHub 仓库配置：owner、repo、default branch、trigger mode、quality gates、frontend screenshot URLs。
 - 仓库级运行上限：`queue.max_concurrent_issues` 控制每个仓库最多同时执行几个 issue。
 - 仓库级权限：每个 repository 可配置 tool allowlist/blocklist 和 permission allowlist/blocklist，执行时会合成 Tool Gateway policy。
@@ -199,6 +200,38 @@ agents:
     skills:
       - repo-context-compress
       - minimal-change-planner
+```
+
+Coding executor provider 示例：
+
+```yaml
+providers:
+  default:
+    type: openai-compatible
+    base_url: "${OPENAI_BASE_URL}"
+    api_key_env: "OPENAI_API_KEY"
+    model: "${OPENAI_MODEL}"
+
+    # 只影响 sandbox 内实现代码的 executor；PRD/review 等 CodeZero 编排模型仍走上面的 provider。
+    coding_executor:
+      mode: native
+      provider_id: anthropic
+      model: claude-sonnet-4-5
+      env:
+        ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+
+  openrouter_impl:
+    type: openai-compatible
+    base_url: "${OPENROUTER_BASE_URL}"
+    api_key_env: "OPENROUTER_API_KEY"
+    model: "planner-model"
+    coding_executor:
+      mode: custom
+      provider_id: openrouter
+      model: anthropic/claude-sonnet-4-5
+      options:
+        baseURL: "https://openrouter.ai/api/v1"
+        apiKey: "{env:OPENROUTER_API_KEY}"
 ```
 
 Golden Issue Eval：

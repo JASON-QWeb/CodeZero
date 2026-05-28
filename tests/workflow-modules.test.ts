@@ -177,6 +177,44 @@ describe("workflow modules", () => {
     }
   });
 
+  it("allows providers to choose a native coding executor model", () => {
+    const config = createAppConfig("/tmp/project");
+    const defaultProvider = config.agents.providers.default;
+
+    if (!defaultProvider) {
+      throw new Error("missing default provider");
+    }
+
+    config.agents.providers.default = {
+      ...defaultProvider,
+      coding_executor: {
+        mode: "native",
+        provider_id: "anthropic",
+        model: "claude-sonnet-4-5",
+        env: { ANTHROPIC_API_KEY: "secret" },
+        options: {},
+        model_options: {}
+      }
+    };
+    const executor = normalizeImplementationExecutorConfig(undefined);
+    const agent = {
+      id: "implementation",
+      role: "main-implementation" as const,
+      providerId: "default",
+      systemPrompt: "Implement.",
+      skillRefs: [],
+      tools: [],
+      guardrails: []
+    };
+
+    const env = buildCodingExecutorEnv({ config, agent, executor });
+
+    expect(env.CODEZERO_OPENCODE_PROVIDER).toBe("anthropic");
+    expect(env.CODEZERO_OPENCODE_MODEL).toBe("anthropic/claude-sonnet-4-5");
+    expect(env.CODEZERO_OPENCODE_MODE).toBe("native");
+    expect(env.ANTHROPIC_API_KEY).toBe("secret");
+  });
+
   it("runs a CLI coding executor in the sandbox and captures the resulting diff", async () => {
     const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-coding-executor-"));
     const artifactDir = path.join(repoDir, "artifacts");
@@ -238,6 +276,88 @@ describe("workflow modules", () => {
         process.env.TEST_API_KEY = previousApiKey;
       }
     }
+  });
+
+  it("writes a custom coding provider config without storing API keys", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-custom-coding-provider-"));
+    const artifactDir = path.join(repoDir, "artifacts");
+    await runCommand({ cwd: repoDir, command: "git init" });
+    await runCommand({ cwd: repoDir, command: "git config user.email test@example.com && git config user.name Test" });
+    await writeFile(path.join(repoDir, "app.txt"), "old\n");
+    await runCommand({ cwd: repoDir, command: "git add app.txt && git commit -m init" });
+    const config = createAppConfig(repoDir);
+    const defaultProvider = config.agents.providers.default;
+
+    if (!defaultProvider) {
+      throw new Error("missing default provider");
+    }
+
+    config.agents.providers.default = {
+      ...defaultProvider,
+      coding_executor: {
+        mode: "custom",
+        provider_id: "openrouter",
+        model: "anthropic/claude-sonnet-4-5",
+        npm: "@ai-sdk/openai-compatible",
+        name: "OpenRouter",
+        options: {
+          baseURL: "https://openrouter.ai/api/v1",
+          apiKey: "{env:OPENROUTER_API_KEY}"
+        },
+        model_options: {
+          limit: {
+            context: 200000,
+            output: 64000
+          }
+        },
+        env: { OPENROUTER_API_KEY: "secret-openrouter-key" }
+      }
+    };
+    const executor = normalizeImplementationExecutorConfig({
+      mode: "cli",
+      name: "test-cli",
+      command:
+        "node -e \"const fs=require('fs'); if(process.env.CODEZERO_OPENCODE_MODEL !== 'openrouter/anthropic/claude-sonnet-4-5' || process.env.OPENROUTER_API_KEY !== 'secret-openrouter-key') process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
+      timeout_ms: 30_000,
+      fallback_to_legacy_json_actions: false,
+      env: {}
+    });
+    const agent = {
+      id: "implementation",
+      role: "main-implementation" as const,
+      providerId: "default",
+      systemPrompt: "Implement.",
+      skillRefs: [],
+      tools: [],
+      guardrails: []
+    };
+
+    const result = await runCodingCliExecutor({
+      config,
+      executor,
+      agent,
+      task: { ...createTask(issue), prd: highComplexityPrd, minimalChangePlan: minimalPlan(), contextPack: compactableContextPack() },
+      repoDir,
+      artifactDir,
+      prompt: "Change app.txt",
+      attempt: 1
+    });
+
+    expect(result.commandResult.exitCode).toBe(0);
+    const openCodeConfig = JSON.parse(await readFile(result.openCodeConfigPath ?? "", "utf8")) as {
+      model: string;
+      provider: {
+        openrouter: {
+          options: { apiKey: string; baseURL: string };
+          models: Record<string, { limit?: { context: number; output: number } }>;
+        };
+      };
+    };
+    expect(openCodeConfig.model).toBe("openrouter/anthropic/claude-sonnet-4-5");
+    expect(openCodeConfig.provider.openrouter.options.baseURL).toBe("https://openrouter.ai/api/v1");
+    expect(openCodeConfig.provider.openrouter.options.apiKey).toBe("{env:OPENROUTER_API_KEY}");
+    expect(openCodeConfig.provider.openrouter.models["anthropic/claude-sonnet-4-5"]?.limit?.context).toBe(200000);
+    expect(JSON.stringify(openCodeConfig)).not.toContain("secret-openrouter-key");
   });
 
   it("summarizes failed tool calls with useful diagnostics", () => {

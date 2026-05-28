@@ -6,6 +6,7 @@ import { getGitDiff, runCommand, type CommandResult } from "@agent/sandbox";
 import type { JsonObject, MinimalChangePlan, PrdDocument, QualityGateResult, Task } from "@agent/shared";
 
 export type NormalizedImplementationExecutorConfig = Required<ImplementationExecutorConfig>;
+type AgentProviderConfig = AppConfig["agents"]["providers"][string];
 
 export type CodingExecutorPromptInput = {
   task: Task;
@@ -52,25 +53,30 @@ export function normalizeImplementationExecutorConfig(
 }
 
 export function buildCodingExecutorEnv(input: { config: AppConfig; agent: AgentDefinition; executor: NormalizedImplementationExecutorConfig }): NodeJS.ProcessEnv {
-  const provider = input.config.agents.providers[input.agent.providerId];
+  const providerId = input.agent.providerId;
+  const provider = input.config.agents.providers[providerId];
   const providerApiKey = provider ? process.env[provider.api_key_env] : undefined;
+  const codingProvider = provider ? resolveCodingExecutorProvider(providerId, provider) : undefined;
   const providerEnv = provider
     ? {
+        [provider.api_key_env]: providerApiKey,
         OPENAI_API_KEY: providerApiKey,
         OPENAI_BASE_URL: provider.base_url,
         OPENAI_MODEL: provider.model,
         LLM_API_KEY: providerApiKey,
         LLM_BASE_URL: provider.base_url,
         LLM_MODEL: provider.model,
-        CODEZERO_OPENCODE_PROVIDER: "codezero",
-        CODEZERO_OPENCODE_MODEL: toCodeZeroOpenCodeModel(provider.model),
-        CODEZERO_MODEL_PROVIDER: input.agent.providerId,
+        CODEZERO_OPENCODE_PROVIDER: codingProvider?.providerId,
+        CODEZERO_OPENCODE_MODEL: codingProvider?.modelRef,
+        CODEZERO_OPENCODE_MODE: codingProvider?.mode,
+        CODEZERO_MODEL_PROVIDER: providerId,
         CODEZERO_MODEL: provider.model
       }
     : {};
 
   return {
     ...providerEnv,
+    ...(codingProvider?.env ?? {}),
     ...input.executor.env
   };
 }
@@ -178,31 +184,102 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
 }
 
 function buildOpenCodeProviderConfig(config: AppConfig, agent: AgentDefinition): JsonObject | undefined {
-  const provider = config.agents.providers[agent.providerId];
+  const providerId = agent.providerId;
+  const provider = config.agents.providers[providerId];
 
   if (!provider) {
     return undefined;
   }
 
-  return {
-    $schema: "https://opencode.ai/config.json",
-    provider: {
-      codezero: {
-        npm: "@ai-sdk/openai-compatible",
-        name: "CodeZero Runtime Provider",
-        options: {
+  return resolveCodingExecutorProvider(providerId, provider).config;
+}
+
+function resolveCodingExecutorProvider(
+  providerId: string,
+  provider: AgentProviderConfig
+): {
+  mode: "auto" | "custom" | "native";
+  providerId: string;
+  modelRef: string;
+  config?: JsonObject;
+  env: NodeJS.ProcessEnv;
+} {
+  const executorProvider = provider.coding_executor;
+  const mode = executorProvider?.mode ?? "auto";
+  const model = executorProvider?.model ?? provider.model;
+  const resolvedProviderId = executorProvider?.provider_id ?? inferOpenCodeProviderId(mode, model) ?? "codezero";
+  const modelKey = toOpenCodeProviderModelKey(resolvedProviderId, model);
+  const modelRef = toOpenCodeModelRef(resolvedProviderId, modelKey);
+  const env = executorProvider?.env ?? {};
+
+  if (mode === "native" && !shouldWriteNativeProviderConfig(executorProvider)) {
+    return { mode, providerId: resolvedProviderId, modelRef, env };
+  }
+
+  const providerOptions =
+    mode === "native"
+      ? toJsonObject(executorProvider?.options ?? {})
+      : {
           baseURL: provider.base_url,
-          apiKey: "{env:OPENAI_API_KEY}"
-        },
-        models: {
-          [provider.model]: {
-            name: provider.model
-          }
-        }
-      }
-    },
-    model: toCodeZeroOpenCodeModel(provider.model)
+          apiKey: "{env:OPENAI_API_KEY}",
+          ...toJsonObject(executorProvider?.options ?? {})
+        };
+  const modelOptions = {
+    name: modelKey,
+    ...toJsonObject(executorProvider?.model_options ?? {})
   };
+  const providerEntry: JsonObject = {
+    ...(executorProvider?.npm || mode !== "native" ? { npm: executorProvider?.npm ?? "@ai-sdk/openai-compatible" } : {}),
+    name: executorProvider?.name ?? "CodeZero Runtime Provider",
+    ...(Object.keys(providerOptions).length > 0 ? { options: providerOptions } : {}),
+    models: {
+      [modelKey]: modelOptions
+    }
+  };
+
+  return {
+    mode,
+    providerId: resolvedProviderId,
+    modelRef,
+    env,
+    config: {
+      $schema: "https://opencode.ai/config.json",
+      provider: {
+        [resolvedProviderId]: providerEntry
+      },
+      model: modelRef
+    }
+  };
+}
+
+function shouldWriteNativeProviderConfig(executorProvider: AgentProviderConfig["coding_executor"]): boolean {
+  return Boolean(
+    executorProvider?.npm ||
+      executorProvider?.name ||
+      Object.keys(executorProvider?.options ?? {}).length > 0 ||
+      Object.keys(executorProvider?.model_options ?? {}).length > 0
+  );
+}
+
+function inferOpenCodeProviderId(mode: "auto" | "custom" | "native", model: string): string | undefined {
+  if (mode !== "native") {
+    return undefined;
+  }
+
+  const [providerId] = model.split("/");
+  return providerId && providerId !== model ? providerId : undefined;
+}
+
+function toOpenCodeProviderModelKey(providerId: string, model: string): string {
+  return model.startsWith(`${providerId}/`) ? model.slice(providerId.length + 1) : model;
+}
+
+function toOpenCodeModelRef(providerId: string, modelKey: string): string {
+  return `${providerId}/${modelKey}`;
+}
+
+function toJsonObject(value: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as JsonObject;
 }
 
 function summarizeDiffForLog(diff: string): string {
@@ -211,8 +288,4 @@ function summarizeDiffForLog(diff: string): string {
     .filter((line) => line.startsWith("diff --git ") || line.startsWith("+++") || line.startsWith("---"))
     .slice(0, 80)
     .join("\n");
-}
-
-function toCodeZeroOpenCodeModel(model: string): string {
-  return `codezero/${model}`;
 }

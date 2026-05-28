@@ -13,6 +13,7 @@ export { evaluateRepositoryTrigger } from "./repository-trigger.js";
 export type { RepositoryTriggerDecision, RepositoryTriggerDecisionInput } from "./repository-trigger.js";
 export {
   agentsFileSchema,
+  codingExecutorProviderModes,
   configSectionNames,
   implementationExecutorModes,
   policiesFileSchema,
@@ -28,6 +29,7 @@ export {
 } from "./schema.js";
 export type {
   AgentsFileConfig,
+  CodingExecutorProviderConfig,
   ConfigSectionName,
   ImplementationExecutorConfig,
   PoliciesFileConfig,

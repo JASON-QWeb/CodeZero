@@ -1,5 +1,26 @@
 import { z } from "zod";
 
+export const codingExecutorProviderModes = ["auto", "custom", "native"] as const;
+
+const codingExecutorProviderModeSchema = z.enum(codingExecutorProviderModes);
+const codingExecutorProviderSchema = z
+  .object({
+    mode: codingExecutorProviderModeSchema.default("auto"),
+    provider_id: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
+    npm: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    options: z.record(z.string(), z.unknown()).default({}),
+    model_options: z.record(z.string(), z.unknown()).default({}),
+    env: z.record(z.string(), z.string()).default({})
+  })
+  .default({
+    mode: "auto",
+    options: {},
+    model_options: {},
+    env: {}
+  });
+
 const providerSchema = z.object({
   type: z.literal("openai-compatible").default("openai-compatible"),
   base_url: z.string().min(1),
@@ -9,7 +30,8 @@ const providerSchema = z.object({
   supports_structured_output: z.boolean().default(true),
   temperature: z.number().optional(),
   max_tokens: z.number().optional(),
-  timeout_ms: z.number().optional()
+  timeout_ms: z.number().optional(),
+  coding_executor: codingExecutorProviderSchema.optional()
 });
 
 const agentSchema = z.object({
@@ -264,6 +286,7 @@ export const toolsFileSchema = z.object({
 export const configSectionNames = ["agents", "repositories", "sandbox", "policies", "tools"] as const;
 
 export type AgentsFileConfig = z.infer<typeof agentsFileSchema>;
+export type CodingExecutorProviderConfig = z.infer<typeof codingExecutorProviderSchema>;
 export type ImplementationExecutorConfig = z.infer<typeof implementationExecutorSchema>;
 export type RepositoryConfig = z.infer<typeof repositorySchema>;
 export type RepositoryTriggerConfig = RepositoryConfig["trigger"];

@@ -115,7 +115,7 @@ The default implementation path is:
 4. The executor modifies the Git worktree directly and exits.
 5. CodeZero reads `git diff`, stores artifacts, syncs repo intelligence, and runs quality gates.
 
-The current default executor command is configured in `config/sandbox.yaml` under `sandbox.implementation_executor`. It uses OpenCode internally through `npx -y opencode-ai@latest`, attaches the generated CodeZero request as a prompt file, and runs non-interactively inside the isolated sandbox. For OpenAI-compatible gateways, CodeZero also writes a temporary `OPENCODE_CONFIG` artifact that registers the configured model as `codezero/<model>` while keeping the API key in environment variables. This must not leak into PR bodies or user-facing issue comments. PRs, issue comments, and dashboard summaries should describe the work as CodeZero implementation.
+The current default executor command is configured in `config/sandbox.yaml` under `sandbox.implementation_executor`. It uses OpenCode internally through `npx -y opencode-ai@latest`, attaches the generated CodeZero request as a prompt file, and runs non-interactively inside the isolated sandbox. For OpenAI-compatible gateways, CodeZero writes a temporary `OPENCODE_CONFIG` artifact that registers the configured model as `codezero/<model>` while keeping the API key in environment variables. Users can also override `providers.<id>.coding_executor` to select any native or custom OpenCode provider/model for sandbox implementation work. This must not leak into PR bodies or user-facing issue comments. PRs, issue comments, and dashboard summaries should describe the work as CodeZero implementation.
 
 Legacy JSON actions remain only as a compatibility fallback:
 
