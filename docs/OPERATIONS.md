@@ -372,7 +372,7 @@ worker 会按顺序执行：
 6. agentic search。
 7. ContextPack。
 8. minimal change plan。
-9. implementation JSON action / patch，经 Tool Gateway 执行。
+9. sandbox coding executor 直接修改隔离 worktree；JSON action / Tool Gateway 仅作为兼容 fallback 或高风险受控工具路径。
 10. build/lint/typecheck/unit test。
 11. 前端 Chrome 截图，如果配置了 URL。
 12. Review subagent。
@@ -418,7 +418,7 @@ codebase_intelligence:
 
 `fail_on_error: true` 表示 CodeGraph 建图失败时阻断本次 issue workflow，避免 agent 在缺少代码图的情况下继续盲改。需要渐进迁移时可以临时设为 `false`，系统会记录失败事件并降级到内置轻量索引。
 
-建图成功后，workflow 会先调用上游 `codegraph context ... --format json` 生成任务子图和关联代码，将结果写入 `codegraph-context.json` artifact 并注入 ContextPack，供 planning 与 implementation agent 直接使用。implementation agent 仍可以通过只读 Tool Gateway 工具 `codegraph.query` 和 `codegraph.context` 做后续定向检索；它们分别委托给上游 CLI 的 `codegraph query ... --json` 与 `codegraph context ... --format json` 命令。
+建图成功后，workflow 会先调用上游 `codegraph context ... --format json` 生成任务子图和关联代码，将结果写入 `codegraph-context.json` artifact 并注入 ContextPack，供 planning 与 sandbox coding executor 使用。兼容 fallback agent 仍可以通过只读 Tool Gateway 工具 `codegraph.query` 和 `codegraph.context` 做后续定向检索；它们分别委托给上游 CLI 的 `codegraph query ... --json` 与 `codegraph context ... --format json` 命令。
 
 ## 7. PR 本地验证模板
 

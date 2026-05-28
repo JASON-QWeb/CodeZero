@@ -101,7 +101,7 @@ export function mockTrace(task: Task): TaskTrace {
     span("workflow", "Issue received", "Task created from GitHub issue"),
     span("navigation", "Navigation route", "Repo graph selected entrypoints and related tests"),
     span("memory", "Memory retrieved", "Approved procedural memory injected into ContextPack"),
-    span("tool", "Patch applied", "Tool Gateway executed repo.apply_patch"),
+    span("tool", "Implementation updated", "CodeZero coding executor updated the sandbox worktree"),
     span("policy", "Policy check", "Path and command policy allowed the change"),
     span("quality_gate", "Quality gates", "lint, typecheck and tests passed")
   ];

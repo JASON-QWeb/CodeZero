@@ -106,9 +106,9 @@
 - 装载 skill。
 - 调用模型。
 - 通过 provider profile 接入 DeepSeek / Qwen 等国产 OpenAI-compatible API。
-- 把模型输出解析为 structured artifact 或 JSON action。
-- 读写沙箱文件。
-- 运行测试命令。
+- 把模型输出解析为 PRD、ContextPack、minimal change plan、review report 等 structured artifact。
+- 在主线实现阶段启动内部 coding executor，让 executor 在隔离 sandbox 中读写文件并运行命令。
+- 仅在兼容 fallback 或高风险受控工具场景中解析 JSON action 并交给 Tool Gateway。
 - 上报事件。
 
 ### 3.7 Codebase Intelligence Service
@@ -142,7 +142,7 @@
 - 提交 commit。
 - 推送远端。
 - 创建 draft PR。
-- 写入 PR 描述和附件链接。
+- 写入 PR 描述、自检结果和直接可见截图。
 - 生成 `pr-local-verification.json`，并写入本地验证指令，包括 `gh pr checkout`、plain Git checkout、安装命令、质量门禁命令、启动命令、base commit 和 sandbox image。
 
 ### 3.10 Memory Service

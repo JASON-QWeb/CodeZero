@@ -221,11 +221,11 @@ Repo Navigation Graph 确认为大仓库能力的核心模块。
 - Prompt / Skill Registry。
 - Security Scanning Pipeline。
 
-这些能力的优先级和产物见 [ADVANCED_AGENT_CAPABILITIES.md](archive/ADVANCED_AGENT_CAPABILITIES.md)。
+这些能力的优先级以当前主线文档为准；历史草稿已从活跃文档树移除，避免和现行服务化路线冲突。
 
 ## 13. 模型与国产 API 策略
 
-当前施工默认面向国产 OpenAI-compatible API。
+当前施工默认面向国产 OpenAI-compatible API，同时允许实现阶段的 sandbox coding executor 选择任意可配置 provider。
 
 优先目标模型：
 
@@ -234,11 +234,11 @@ Repo Navigation Graph 确认为大仓库能力的核心模块。
 
 模型接入原则：
 
-- provider 仍统一走 OpenAI-compatible abstraction。
-- 模型只输出结构化 JSON artifact 或 JSON action。
-- 工具执行由 Tool Gateway 和 Orchestrator 完成。
-- 如果 provider 原生 tool calling 稳定，可以启用 native tool 模式。
-- 如果 provider tool calling 不稳定，回退到 JSON action + schema validation + repair parser。
+- CodeZero 编排层 provider 仍统一走 OpenAI-compatible abstraction。
+- PRD、ContextPack、minimal change plan、review report 等平台 artifact 使用结构化 JSON。
+- 实现阶段主路径不是手写 JSON patch，而是在 sandbox 中启动内部 coding executor。默认 executor 通过 OpenCode CLI 执行，但它是内部实现细节，不能暴露到用户-facing issue、PR 或 dashboard 文案中。
+- `providers.<id>.coding_executor` 可以配置 `auto`、`custom` 或 `native`，让不同仓库/用户选择 OpenCode 支持的 native provider 或自定义 OpenAI-compatible 网关。
+- Tool Gateway 和 JSON action 保留为兼容 fallback、高风险工具治理和审计层，不再作为普通编码任务的主实现方式。
 
 当前阶段不重点处理：
 
@@ -255,4 +255,4 @@ Repo Navigation Graph 确认为大仓库能力的核心模块。
 
 ## 14. 施工路线
 
-后续代码施工按 [IMPLEMENTATION_ROADMAP.md](archive/IMPLEMENTATION_ROADMAP.md) 推进。
+后续施工以 [Core Product Flow](CORE_PRODUCT_FLOW.md)、[Workflow Blueprint](WORKFLOW_BLUEPRINT.md)、[Operations Guide](OPERATIONS.md) 和根目录 [Session Review](../SESSION_REVIEW.md) 为准。

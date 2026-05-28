@@ -159,11 +159,10 @@ The Web Settings Console can edit and validate these files during local operatio
 - [Codebase Intelligence](docs/CODEBASE_INTELLIGENCE.md)
 - [Memory Architecture](docs/MEMORY_ARCHITECTURE.md)
 - [Prompt and Skill Design](docs/PROMPTS_AND_SKILLS.md)
-
-Historical planning notes are kept in [docs/archive](docs/archive/).
+- [Session Review](SESSION_REVIEW.md)
 
 ## Status
 
-The MVP runs locally and includes GitHub Issue ingestion, repository trigger policy, repository queue and concurrency limits, PRD generation, human PRD approval, Repo Navigation Graph MVP, ContextPack generation, an official Understand-Anything project graph entry point, Tool Gateway JSON action fallback, Trace Replay API, Run Console, Settings Console, Memory Inbox, Golden Issue Eval CLI/CI, Repository Onboarding, sandbox execution, quality gates, Review subagent, and draft PR creation.
+The MVP runs locally and includes GitHub Issue ingestion, repository trigger policy, repository queue and concurrency limits, PRD generation, conditional human PRD approval, Repo Navigation Graph MVP, ContextPack generation, an official Understand-Anything project graph entry point, a sandbox coding executor as the main implementation path, Tool Gateway JSON action compatibility fallback, Trace Replay API, Run Console, Settings Console, Memory Inbox, Golden Issue Eval CLI/CI, Repository Onboarding, sandbox execution, quality gates, Review subagent, and draft PR creation.
 
 Next hardening areas include approval recovery, stricter tool input schemas, security scanning, richer eval assertions, and deeper graph adapters for larger repositories.

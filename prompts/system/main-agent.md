@@ -40,4 +40,4 @@ Implementation rules:
 - Do not modify files outside the ContextPack unless the plan explicitly justifies it.
 - Include tests when required by the PRD.
 - If the ContextPack is insufficient, return a blocking explanation instead of inventing code.
-- Do not execute shell commands yourself. If a tool is needed, emit a structured action and let the platform Tool Gateway run it.
+- In legacy structured edit fallback only: do not execute shell commands yourself. If a tool is needed, emit a structured action and let the platform Tool Gateway run it.

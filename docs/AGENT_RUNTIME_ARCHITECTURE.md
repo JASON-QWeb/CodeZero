@@ -176,7 +176,7 @@ Memory update candidates 默认只是 artifact，不能静默写入项目长期�
 
 ## 6. Tool Gateway Contract
 
-Runtime 不应让模型直接执行任意命令。所有工具都进入 Tool Gateway：
+Runtime 不应让普通 LLM action 直接执行任意命令。兼容 fallback 和高风险工具都进入 Tool Gateway：
 
 ```ts
 type ToolDefinition = {
