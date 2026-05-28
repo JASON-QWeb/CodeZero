@@ -82,6 +82,38 @@ export type ProjectKnowledgeGraphResponse = {
   knowledgeGraph: ProjectKnowledgeGraph;
 };
 
+export type RepositoryOnboardingStatus = "missing" | "generating" | "ready" | "failed";
+
+export type RepositoryOnboarding = {
+  repositoryId: string;
+  fullName: string;
+  status: RepositoryOnboardingStatus;
+  codeGraphAvailable: boolean;
+  cacheDatabaseFile: string;
+  message?: string;
+  updatedAt?: string;
+  codeGraph?: {
+    operation: "initialized" | "synced";
+    changeDetection: "initial-index" | "restored-cache-hash-scan" | "working-tree-sync";
+    databaseFile: string;
+    indexDir: string;
+    durationMs: number;
+    displayCommand: string;
+  };
+  summary?: {
+    files: number;
+    symbols: number;
+    routes: number;
+    tests: number;
+    packageManager: string;
+  };
+  documents?: Array<{ path: string; type: string }>;
+};
+
+export type RepositoryOnboardingResponse = {
+  onboarding: RepositoryOnboarding;
+};
+
 export type TraceResponse = {
   trace: TaskTrace;
 };

@@ -22,9 +22,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Task, TaskTrace, TraceSpan } from "@agent/shared";
 import { StatusPill } from "../../components/status-pill";
 import {
+  approveTaskPrd,
   fetchGitHubSync,
   fetchMemories,
   fetchProjectKnowledgeGraph,
+  fetchRepositoryOnboarding,
   fetchRepositoryQueues,
   fetchTasks,
   fetchTrace,
@@ -33,10 +35,9 @@ import {
   triggerGitHubSync,
   updateMemoryStatus
 } from "./api";
-import { mockMemories, mockTasks, mockTrace } from "./demo-data";
 import { buildRepositorySummariesFromTasks } from "./repository-summary";
 import { formatTime } from "./time";
-import type { GitHubSyncState, MemoryRecord, ProjectKnowledgeGraph, RepositoryQueueSummary } from "./types";
+import type { GitHubSyncState, MemoryRecord, ProjectKnowledgeGraph, RepositoryOnboarding, RepositoryQueueSummary } from "./types";
 
 type Locale = "zh" | "en";
 
@@ -47,6 +48,7 @@ const text = {
     apiOffline: "API 离线",
     approve: "批准",
     approveBeforeReuse: "复用前审批",
+    approving: "批准中",
     blocked: "阻塞",
     branchPending: "分支待创建",
     codeGraph: "Code Graph / 代码图",
@@ -93,7 +95,7 @@ const text = {
     review: "Review",
     running: "运行",
     selectedRun: "选中运行",
-    settingsDemo: "API 离线，显示示例",
+    apiUnavailable: "API 不可用，未展示示例数据",
     spansFromIssueToPr: (count: number) => `${count} 个 span，覆盖 Issue 到 PR`,
     starting: "启动中",
     taskMetrics: "任务指标",
@@ -113,6 +115,7 @@ const text = {
     apiOffline: "API offline",
     approve: "Approve",
     approveBeforeReuse: "Approve before reuse",
+    approving: "Approving",
     blocked: "Blocked",
     branchPending: "branch pending",
     codeGraph: "Code Graph",
@@ -159,7 +162,7 @@ const text = {
     review: "Review",
     running: "Running",
     selectedRun: "Selected Run",
-    settingsDemo: "API offline, showing demo",
+    apiUnavailable: "API unavailable, no demo data shown",
     spansFromIssueToPr: (count: number) => `${count} spans from issue to PR`,
     starting: "Starting",
     taskMetrics: "Task metrics",
@@ -200,12 +203,23 @@ export function TaskBoard() {
       await queryClient.invalidateQueries({ queryKey: ["memories"] });
     }
   });
+  const prdApprovalMutation = useMutation({
+    mutationFn: approveTaskPrd,
+    onSuccess: async (task) => {
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      await queryClient.invalidateQueries({ queryKey: ["task-repositories"] });
+      await queryClient.invalidateQueries({ queryKey: ["task-trace", task.id] });
+    }
+  });
 
-  const hasLiveTasks = Boolean(data?.length);
-  const tasks: Task[] = data?.length ? data : mockTasks;
-  const repositories = useMemo(() => (repositoryQuery.data?.length ? repositoryQuery.data : buildRepositorySummariesFromTasks(tasks)), [repositoryQuery.data, tasks]);
+  const hasLiveTasks = Array.isArray(data);
+  const tasks: Task[] = data ?? [];
+  const repositories = useMemo(
+    () => (Array.isArray(repositoryQuery.data) ? repositoryQuery.data : buildRepositorySummariesFromTasks(tasks)),
+    [repositoryQuery.data, tasks]
+  );
   const selectedRepository = repositories.find((repository) => repository.id === selectedRepositoryId) ?? repositories[0];
-  const hasLiveRepositories = Boolean(repositoryQuery.data?.length);
+  const hasLiveRepositories = Array.isArray(repositoryQuery.data);
   const syncQuery = useQuery({
     queryKey: ["github-sync", selectedRepository?.id],
     queryFn: () => fetchGitHubSync(selectedRepository?.id ?? ""),
@@ -226,6 +240,12 @@ export function TaskBoard() {
     enabled: Boolean(hasLiveRepositories && selectedRepository?.configured),
     refetchInterval: (query) => (query.state.data?.status === "generating" ? 3000 : false)
   });
+  const onboardingQuery = useQuery({
+    queryKey: ["repository-onboarding", selectedRepository?.id],
+    queryFn: () => fetchRepositoryOnboarding(selectedRepository?.id ?? ""),
+    enabled: Boolean(hasLiveRepositories && selectedRepository?.configured),
+    refetchInterval: (query) => (query.state.data?.status === "generating" ? 3000 : false)
+  });
   const graphGenerationMutation = useMutation({
     mutationFn: generateProjectKnowledgeGraph,
     onSuccess: (knowledgeGraph) => {
@@ -243,16 +263,15 @@ export function TaskBoard() {
     [selectedRepository, tasks]
   );
   const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0];
-  const fallbackTask = selectedTask ?? tasks[0] ?? mockTasks[0]!;
   const hasLiveMemories = Array.isArray(memoryQuery.data);
-  const memories: MemoryRecord[] = Array.isArray(memoryQuery.data) ? memoryQuery.data : mockMemories;
+  const memories: MemoryRecord[] = memoryQuery.data ?? [];
   const traceQuery = useQuery({
     queryKey: ["task-trace", selectedTask?.id],
     queryFn: () => fetchTrace(selectedTask?.id ?? ""),
     enabled: Boolean(hasLiveTasks && selectedTask?.id),
     refetchInterval: () => (isLiveTaskStatus(selectedTask?.status) ? 2000 : false)
   });
-  const trace = traceQuery.data ?? mockTrace(fallbackTask);
+  const trace = selectedTask ? (traceQuery.data ?? emptyTrace(selectedTask)) : undefined;
   const stats = useMemo(
     () => ({
       active: repositories.reduce((sum, repository) => sum + repository.runningCount, 0),
@@ -332,7 +351,16 @@ export function TaskBoard() {
       </section>
 
       <section className="graphDeck" aria-label={t.graphOverview}>
-        {selectedTask ? <CodeGraphPanel locale={locale} task={selectedTask} trace={trace} /> : null}
+        {selectedRepository ? (
+          <RepositoryCodeGraphPanel
+            locale={locale}
+            onboarding={onboardingQuery.data}
+            repository={selectedRepository}
+            task={selectedTask}
+            trace={trace}
+            unavailable={!hasLiveRepositories || !selectedRepository.configured || onboardingQuery.isError}
+          />
+        ) : null}
 
         {selectedRepository ? (
           <KnowledgeGraphPanel
@@ -360,7 +388,7 @@ export function TaskBoard() {
         <div className="sectionHeader">
           <div>
             <h2>{t.repositories}</h2>
-            <span>{repositoryQuery.isError ? t.settingsDemo : t.configuredQueues(repositories.length)}</span>
+            <span>{repositoryQuery.isError ? t.apiUnavailable : t.configuredQueues(repositories.length)}</span>
           </div>
           <div className="sectionActions">
             {selectedRepository && hasLiveRepositories ? (
@@ -436,14 +464,26 @@ export function TaskBoard() {
         </section>
 
         <section className="detailPanel" aria-label="Selected task details">
-          {selectedTask ? <TaskDetail locale={locale} task={selectedTask} trace={trace} traceLoading={traceQuery.isLoading} /> : <EmptyState label={t.noTaskSelected} />}
+          {selectedTask && trace ? (
+            <TaskDetail
+              approvalError={prdApprovalMutation.error}
+              approvalPending={prdApprovalMutation.isPending}
+              locale={locale}
+              onApprovePrd={() => prdApprovalMutation.mutate(selectedTask.id)}
+              task={selectedTask}
+              trace={trace}
+              traceLoading={traceQuery.isLoading}
+            />
+          ) : (
+            <EmptyState label={t.noTaskSelected} />
+          )}
         </section>
 
         <section className="memoryPanel" aria-label={t.memoryInbox}>
           <div className="sectionHeader">
             <div>
               <h2>{t.memoryInbox}</h2>
-              <span>{memoryQuery.isError ? t.settingsDemo : t.approveBeforeReuse}</span>
+              <span>{memoryQuery.isError ? t.apiUnavailable : t.approveBeforeReuse}</span>
             </div>
             <ListChecks size={18} aria-hidden />
           </div>
@@ -579,10 +619,24 @@ function RepositoryCard({
   );
 }
 
-function CodeGraphPanel({ locale, task, trace }: { locale: Locale; task: Task; trace: TaskTrace }) {
+function RepositoryCodeGraphPanel({
+  locale,
+  onboarding,
+  repository,
+  task,
+  trace,
+  unavailable
+}: {
+  locale: Locale;
+  onboarding?: RepositoryOnboarding;
+  repository: RepositoryQueueSummary;
+  task?: Task;
+  trace?: TaskTrace;
+  unavailable: boolean;
+}) {
   const t = text[locale];
-  const graphArtifacts = trace.artifacts.filter((artifact) => ["repo-graph", "navigation-route", "context-pack"].includes(artifact.type));
-  const graphSpans = trace.spans.filter(
+  const graphArtifacts = (trace?.artifacts ?? []).filter((artifact) => ["repo-graph", "navigation-route", "context-pack"].includes(artifact.type));
+  const graphSpans = (trace?.spans ?? []).filter(
     (span) =>
       span.name.includes("CODEBASE_INDEXED") ||
       span.name.includes("AGENTIC_SEARCH") ||
@@ -590,14 +644,17 @@ function CodeGraphPanel({ locale, task, trace }: { locale: Locale; task: Task; t
       span.name.includes("NAVIGATION_ROUTE")
   );
   const failed = graphSpans.some((span) => span.status === "failed" || span.status === "blocked");
-  const status = graphArtifacts.length > 0 ? "ready" : failed ? "failed" : "missing";
-  const statusLabel = status === "ready" ? t.graphReady : status === "failed" ? t.graphFailed : t.graphMissing;
+  const status = onboarding?.status ?? (graphArtifacts.length > 0 ? "ready" : failed ? "failed" : "missing");
+  const statusLabel = status === "ready" ? t.graphReady : status === "failed" ? t.graphFailed : status === "generating" ? t.generating : t.graphMissing;
+  const documents = onboarding?.documents ?? [];
 
   return (
     <section className="knowledgeGraphPanel" aria-label={t.codeGraph}>
       <div className="sectionHeader">
         <div>
-          <h2>{t.codeGraph}</h2>
+          <h2>
+            {repository.fullName} {t.codeGraph}
+          </h2>
           <span>{t.codeGraphHint}</span>
         </div>
         <GitBranch size={18} aria-hidden />
@@ -607,11 +664,19 @@ function CodeGraphPanel({ locale, task, trace }: { locale: Locale; task: Task; t
           <div className={`graphStatus graphStatus-${status}`}>{statusLabel}</div>
           <div className="graphStats">
             <span>
-              <strong>{graphArtifacts.length}</strong>
-              {t.generatedArtifacts}
+              <strong>{onboarding?.codeGraphAvailable ? "yes" : unavailable ? "-" : "no"}</strong>
+              CodeGraph DB
             </span>
             <span>
-              <strong>{task.contextPack?.relevantFiles.length ?? "-"}</strong>
+              <strong>{onboarding?.summary?.files ?? "-"}</strong>
+              Files
+            </span>
+            <span>
+              <strong>{onboarding?.summary?.symbols ?? "-"}</strong>
+              Symbols
+            </span>
+            <span>
+              <strong>{task?.contextPack?.relevantFiles.length ?? "-"}</strong>
               ContextPack
             </span>
             <span>
@@ -621,16 +686,33 @@ function CodeGraphPanel({ locale, task, trace }: { locale: Locale; task: Task; t
           </div>
         </div>
         <div className="graphArtifactList">
-          {graphArtifacts.length > 0 ? (
-            graphArtifacts.map((artifact) => (
-              <article key={artifact.id}>
-                <strong>{artifact.type}</strong>
-                <span>{compactArtifactPath(artifact.path ?? artifact.url ?? artifact.type)}</span>
-              </article>
-            ))
-          ) : (
+          {onboarding?.cacheDatabaseFile ? (
+            <article>
+              <strong>codegraph.db</strong>
+              <span>{compactArtifactPath(onboarding.cacheDatabaseFile)}</span>
+              {onboarding.codeGraph ? (
+                <p>
+                  {onboarding.codeGraph.operation} · {onboarding.codeGraph.changeDetection}
+                </p>
+              ) : null}
+            </article>
+          ) : null}
+          {documents.slice(0, 4).map((document) => (
+            <article key={document.path}>
+              <strong>{document.type}</strong>
+              <span>{document.path}</span>
+            </article>
+          ))}
+          {graphArtifacts.map((artifact) => (
+            <article key={artifact.id}>
+              <strong>{artifact.type}</strong>
+              <span>{compactArtifactPath(artifact.path ?? artifact.url ?? artifact.type)}</span>
+            </article>
+          ))}
+          {!onboarding?.cacheDatabaseFile && documents.length === 0 && graphArtifacts.length === 0 ? (
             <p>{t.codeGraphDisabled}</p>
-          )}
+          ) : null}
+          {onboarding?.message ? <p>{onboarding.message}</p> : null}
         </div>
       </div>
     </section>
@@ -744,13 +826,31 @@ function KnowledgeGraphPanel({
   );
 }
 
-function TaskDetail({ locale, task, trace, traceLoading }: { locale: Locale; task: Task; trace: TaskTrace; traceLoading: boolean }) {
+function TaskDetail({
+  approvalError,
+  approvalPending,
+  locale,
+  onApprovePrd,
+  task,
+  trace,
+  traceLoading
+}: {
+  approvalError: Error | null;
+  approvalPending: boolean;
+  locale: Locale;
+  onApprovePrd: () => void;
+  task: Task;
+  trace: TaskTrace;
+  traceLoading: boolean;
+}) {
   const t = text[locale];
   const tracePageSize = 12;
   const [tracePage, setTracePage] = useState(0);
   const tracePageCount = Math.max(1, Math.ceil(trace.spans.length / tracePageSize));
   const safeTracePage = Math.min(tracePage, tracePageCount - 1);
   const visibleSpans = trace.spans.slice(safeTracePage * tracePageSize, safeTracePage * tracePageSize + tracePageSize);
+  const activeFiles = collectActiveFiles(trace);
+  const failedSpans = trace.spans.filter((span) => span.status === "failed" || span.status === "blocked").slice(-6);
 
   useEffect(() => {
     setTracePage(Math.max(0, Math.ceil(trace.spans.length / tracePageSize) - 1));
@@ -768,8 +868,22 @@ function TaskDetail({ locale, task, trace, traceLoading }: { locale: Locale; tas
             {task.issue.owner}/{task.issue.repo} · {t.updated} {formatTime(task.updatedAt)}
           </span>
         </div>
-        <StatusPill locale={locale} status={task.status} />
+        <div className="detailHeaderActions">
+          <StatusPill locale={locale} status={task.status} />
+          {task.status === "PRD_REVIEW_REQUIRED" ? (
+            <button className="iconButton positive" disabled={approvalPending} onClick={onApprovePrd} type="button">
+              <Check size={16} aria-hidden />
+              <span>{approvalPending ? t.approving : t.approve}</span>
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {approvalError ? (
+        <div className="inlineError" role="alert">
+          {approvalError.message}
+        </div>
+      ) : null}
 
       <div className="linkRow">
         <a href={task.issue.url} target="_blank" rel="noreferrer">
@@ -783,12 +897,16 @@ function TaskDetail({ locale, task, trace, traceLoading }: { locale: Locale; tas
         <span>{task.branchName ?? t.branchPending}</span>
       </div>
 
+      <TaskPhaseList task={task} />
+
       <div className="traceSummary" aria-label="Trace summary">
         <TraceMetric label="Spans" value={trace.summary.totalSpans} />
         <TraceMetric label={t.tools} value={trace.summary.toolCalls} />
         <TraceMetric label={t.policies} value={trace.summary.policyDecisions} />
         <TraceMetric label={t.blocked} value={trace.summary.failedOrBlocked} />
       </div>
+
+      <TaskInsightGrid task={task} activeFiles={activeFiles} failedSpans={failedSpans} />
 
       <div className="sectionHeader compact">
         <div>
@@ -820,6 +938,64 @@ function TaskDetail({ locale, task, trace, traceLoading }: { locale: Locale; tas
         ))}
       </ol>
     </>
+  );
+}
+
+function TaskPhaseList({ task }: { task: Task }) {
+  const phases: Array<{ id: string; label: string; statuses: Task["status"][] }> = [
+    { id: "plan", label: "Plan", statuses: ["BRAINSTORMING", "PRD_DRAFTED", "PRD_REVIEW_REQUIRED", "PRD_APPROVED"] },
+    { id: "context", label: "Context", statuses: ["SANDBOX_PREPARING", "ISSUE_BRANCH_CREATED", "CODEBASE_INDEXING", "AGENTIC_SEARCHING", "CONTEXT_PACK_CREATED"] },
+    { id: "implement", label: "Action", statuses: ["IMPLEMENTING"] },
+    { id: "review", label: "Review", statuses: ["QUALITY_GATES_RUNNING", "SUBAGENT_REVIEWING"] },
+    { id: "pr", label: "PR", statuses: ["PR_CREATING", "HUMAN_REVIEW", "WAITING_MERGE", "DONE"] }
+  ];
+
+  const currentIndex = phases.findIndex((phase) => phase.statuses.includes(task.status));
+
+  return (
+    <ol className="phaseList" aria-label="Task phase progress">
+      {phases.map((phase, index) => (
+        <li className={index < currentIndex || task.status === "DONE" ? "phaseDone" : index === currentIndex ? "phaseCurrent" : "phasePending"} key={phase.id}>
+          <span />
+          <strong>{phase.label}</strong>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function TaskInsightGrid({ activeFiles, failedSpans, task }: { activeFiles: string[]; failedSpans: TraceSpan[]; task: Task }) {
+  const reviewFindings = [
+    ...(task.reviewResult?.blockingFindings ?? []).map((finding) => `${finding.title}${finding.file ? ` (${finding.file})` : ""}: ${finding.body}`),
+    ...(task.reviewResult?.scopeViolations ?? []).map((violation) => `Scope: ${violation}`),
+    ...(task.reviewResult?.missingTests ?? []).map((missingTest) => `Missing test: ${missingTest}`)
+  ];
+  const failedGates = (task.qualityGateResults ?? []).filter((result) => !result.passed);
+
+  return (
+    <div className="taskInsights" aria-label="Task execution details">
+      <InsightCard title="Plan" value={task.planningDocument?.title ?? "Not drafted yet"} details={task.planningDocument?.implementationPlan.acceptanceCriteria ?? []} />
+      <InsightCard title="Files" value={activeFiles.length > 0 ? `${activeFiles.length} active` : "No file activity yet"} details={activeFiles.slice(0, 6)} />
+      <InsightCard title="Quality" value={failedGates.length > 0 ? `${failedGates.length} failing` : task.qualityGateResults?.length ? "Passing" : "Not run yet"} details={failedGates.map((gate) => `${gate.kind}: ${gate.command}`)} />
+      <InsightCard title="Review" value={task.reviewResult ? (task.reviewResult.approved ? "Approved" : "Needs repair") : "Not run yet"} details={reviewFindings} />
+      <InsightCard title="Errors" value={failedSpans.length > 0 ? `${failedSpans.length} recent` : "None"} details={failedSpans.map((span) => `${span.name}: ${span.message}`)} />
+    </div>
+  );
+}
+
+function InsightCard({ details, title, value }: { details: string[]; title: string; value: string }) {
+  return (
+    <article className="insightCard">
+      <span>{title}</span>
+      <strong>{value}</strong>
+      {details.length > 0 ? (
+        <ul>
+          {details.slice(0, 5).map((detail) => (
+            <li key={detail}>{detail}</li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
   );
 }
 
@@ -871,6 +1047,35 @@ function traceMetadataEntries(span: TraceSpan): Array<[string, string]> {
     .filter((entry): entry is [string, string] => Boolean(entry));
 }
 
+function collectActiveFiles(trace: TaskTrace): string[] {
+  return trace.spans
+    .flatMap((span) => {
+      const metadata = span.metadata ?? {};
+      const filePaths = Array.isArray(metadata.filePaths) ? metadata.filePaths.filter((value): value is string => typeof value === "string") : [];
+      return [...filePaths, metadata.filePath].filter((value): value is string => typeof value === "string" && value.length > 0);
+    })
+    .map((value) => value.replace(/\\/g, "/"))
+    .filter((value, index, array) => array.indexOf(value) === index)
+    .slice(-12);
+}
+
+function emptyTrace(task: Task): TaskTrace {
+  return {
+    taskId: task.id,
+    status: task.status,
+    issueUrl: task.issue.url,
+    prUrl: task.prUrl,
+    spans: [],
+    artifacts: [],
+    summary: {
+      totalSpans: 0,
+      toolCalls: 0,
+      policyDecisions: 0,
+      failedOrBlocked: 0
+    }
+  };
+}
+
 function EmptyState({ label }: { label: string }) {
   return <div className="emptyState">{label}</div>;
 }
@@ -910,7 +1115,8 @@ function isLiveTaskStatus(status: Task["status"] | undefined): boolean {
         "IMPLEMENTING",
         "QUALITY_GATES_RUNNING",
         "SUBAGENT_REVIEWING",
-        "PR_CREATING"
+        "PR_CREATING",
+        "WAITING_MERGE"
       ].includes(status)
   );
 }

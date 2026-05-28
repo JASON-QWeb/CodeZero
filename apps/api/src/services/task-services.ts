@@ -27,6 +27,11 @@ export function resetServicesForTests(): void {
   servicesPromise = undefined;
 }
 
+export async function reloadServices(): Promise<ApiServices> {
+  servicesPromise = createServices();
+  return servicesPromise;
+}
+
 export async function createAndEnqueueTask(issue: IssueContext, options: { enqueue?: EnqueueIssueWorkflow } = {}): Promise<Task> {
   const services = await getServices();
   const task = {

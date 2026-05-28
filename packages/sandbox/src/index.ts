@@ -55,7 +55,7 @@ export class DockerSandboxManager implements SandboxManager {
       repoDir: path.join(base, "repo"),
       artifactDir: path.join(base, "artifacts"),
       logDir: path.join(base, "logs"),
-      mode: "docker"
+      mode: this.config.mode
     };
 
     await Promise.all([mkdir(sandbox.repoDir, { recursive: true }), mkdir(sandbox.artifactDir, { recursive: true }), mkdir(sandbox.logDir, { recursive: true })]);

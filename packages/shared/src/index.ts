@@ -20,6 +20,7 @@ export const taskStatuses = [
   "SUBAGENT_REVIEWING",
   "PR_CREATING",
   "HUMAN_REVIEW",
+  "WAITING_MERGE",
   "DONE",
   "BLOCKED",
   "FAILED",
@@ -151,6 +152,7 @@ export type TaskEventType =
   | "PR_UPDATED"
   | "MEMORY_PROPOSAL_CREATED"
   | "PR_CREATED"
+  | "TASK_COMPLETED"
   | "TASK_BLOCKED"
   | "TASK_FAILED";
 

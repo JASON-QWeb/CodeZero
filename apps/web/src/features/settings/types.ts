@@ -33,6 +33,13 @@ export type ProviderValidationResponse = {
   usedApiKeySource?: "request" | "env" | "missing";
 };
 
+export type ProviderApiKeySaveResponse = {
+  providerId: string;
+  apiKeyEnv?: string;
+  saved: boolean;
+  message: string;
+};
+
 export type TriggerMode = "auto" | "mention" | "label" | "manual" | "disabled";
 export type ToolPermissionLevel = "read" | "safe_write" | "repo_write" | "external_write" | "dangerous";
 
@@ -40,6 +47,7 @@ export type RepositoryQuickConfig = {
   id: string;
   owner: string;
   repo: string;
+  projectSkillPath: string;
   triggerMode: TriggerMode;
   mention: string;
   maxConcurrentIssues: number;
@@ -52,6 +60,7 @@ export type RepositoryRuntimeSettingsInput = {
   triggerMode: TriggerMode;
   mention: string;
   maxConcurrentIssues: number;
+  projectSkillPath: string;
   allowedPermissions: ToolPermissionLevel[];
   blockedPermissions: ToolPermissionLevel[];
 };

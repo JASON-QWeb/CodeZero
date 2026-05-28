@@ -32,7 +32,7 @@ export function buildRepositorySummariesFromTasks(tasks: Task[]): RepositoryQueu
       summary.runningCount += 1;
     } else if (isQueuedStatus(task.status)) {
       summary.queuedCount += 1;
-    } else if (["PRD_REVIEW_REQUIRED", "HUMAN_REVIEW"].includes(task.status)) {
+    } else if (["PRD_REVIEW_REQUIRED", "HUMAN_REVIEW", "WAITING_MERGE"].includes(task.status)) {
       summary.reviewCount += 1;
     } else if (["BLOCKED", "FAILED"].includes(task.status)) {
       summary.blockedCount += 1;

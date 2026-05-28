@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchConfig,
+  saveProviderApiKey,
   saveConfig,
   updateRepositoryRuntimeSettings,
   validateConfig,
@@ -74,6 +75,7 @@ describe("web settings utilities", () => {
     });
 
     expect(repositories[0]).toMatchObject({
+      projectSkillPath: ".agent",
       triggerMode: "auto",
       maxConcurrentIssues: 3,
       allowedPermissions: ["read"],
@@ -104,6 +106,9 @@ describe("web settings utilities", () => {
       if (url.endsWith("/settings/providers/validate")) {
         return ok({ providerId: "qwen", valid: true, message: "ok" });
       }
+      if (url.endsWith("/settings/providers/api-key")) {
+        return ok({ providerId: "qwen", saved: true, message: "saved" });
+      }
       return ok(section("repositories", {}));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -112,12 +117,14 @@ describe("web settings utilities", () => {
     await expect(validateConfig({ section: "agents", content: "bad" })).resolves.toMatchObject({ section: "agents", valid: false });
     await expect(saveConfig({ section: "agents", content: "providers: {}" })).resolves.toMatchObject({ section: "agents" });
     await expect(validateProviderConnection({ providerId: "qwen", content: "providers: {}" })).resolves.toMatchObject({ valid: true });
+    await expect(saveProviderApiKey({ providerId: "qwen", apiKey: "secret" })).resolves.toMatchObject({ saved: true });
     await expect(
       updateRepositoryRuntimeSettings({
         repositoryId: "shop repo",
         triggerMode: "label",
         mention: "@agent",
         maxConcurrentIssues: 2,
+        projectSkillPath: ".agent",
         allowedPermissions: ["read"],
         blockedPermissions: []
       })
@@ -131,12 +138,14 @@ describe("web settings utilities", () => {
     await expect(fetchConfig()).rejects.toThrow("Failed to load settings");
     await expect(saveConfig({ section: "tools", content: "tools: []" })).rejects.toThrow("nope");
     await expect(validateProviderConnection({ providerId: "qwen", content: "" })).resolves.toMatchObject({ valid: false, message: "nope" });
+    await expect(saveProviderApiKey({ providerId: "qwen", apiKey: "secret" })).resolves.toMatchObject({ saved: false, message: "nope" });
     await expect(
       updateRepositoryRuntimeSettings({
         repositoryId: "shop",
         triggerMode: "manual",
         mention: "@agent",
         maxConcurrentIssues: 1,
+        projectSkillPath: ".agent",
         allowedPermissions: [],
         blockedPermissions: []
       })

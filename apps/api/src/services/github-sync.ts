@@ -553,7 +553,7 @@ function isFeedbackTaskForRepository(
     task.issue.owner === repository.github_owner &&
     task.issue.repo === repository.github_repo &&
     Boolean(task.prUrl) &&
-    ["HUMAN_REVIEW", "BLOCKED"].includes(task.status)
+    ["WAITING_MERGE", "HUMAN_REVIEW", "BLOCKED"].includes(task.status)
   );
 }
 

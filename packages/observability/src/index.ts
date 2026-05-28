@@ -138,6 +138,7 @@ function eventKind(type: TaskEventType): TraceSpanKind {
     type === "PR_CREATED" ||
     type === "PR_UPDATED" ||
     type === "PR_REVIEW_COMMENT_RECEIVED" ||
+    type === "TASK_COMPLETED" ||
     type === "REPO_CLONED" ||
     type === "ISSUE_BRANCH_CREATED"
   ) {
@@ -179,7 +180,8 @@ function taskStatusToTraceStatus(status: Task["status"]): TraceSpanStatus {
   if (
     status === "BLOCKED" ||
     status === "PRD_REVIEW_REQUIRED" ||
-    status === "HUMAN_REVIEW"
+    status === "HUMAN_REVIEW" ||
+    status === "WAITING_MERGE"
   ) {
     return "blocked";
   }

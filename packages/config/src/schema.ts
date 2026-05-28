@@ -212,7 +212,7 @@ const implementationExecutorSchema = z
       .string()
       .min(1)
       .default(
-        'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
+        'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
       ),
     timeout_ms: z.number().int().positive().default(60 * 60_000),
     env: z.record(z.string(), z.string()).default({})
@@ -221,7 +221,7 @@ const implementationExecutorSchema = z
     mode: "cli",
     name: "codezero-coding-cli",
     command:
-      'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
+      'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
     timeout_ms: 60 * 60_000,
     env: {}
   });
@@ -294,6 +294,7 @@ export type RepositoryRuntimeSettingsPatch = {
   triggerMode?: RepositoryTriggerMode;
   mention?: string;
   maxConcurrentIssues?: number;
+  projectSkillPath?: string;
   allowedPermissions?: ToolPermissionLevel[];
   blockedPermissions?: ToolPermissionLevel[];
 };

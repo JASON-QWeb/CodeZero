@@ -4,6 +4,7 @@ import { buildTaskTrace } from "@agent/observability";
 import { transitionTask } from "@agent/orchestrator";
 import { createTaskEvent } from "@agent/persistence";
 import { createAndEnqueueTask, enqueueIssueWorkflow, getServices } from "../services/task-services.js";
+import { startConfiguredRepositoryOnboarding } from "../services/repository-onboarding.js";
 import { buildRepositoryQueueSummaries } from "./task-queue-summary.js";
 
 const importIssueSchema = z.object({
@@ -26,6 +27,7 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
   app.get("/tasks/repositories", async () => {
     const services = await getServices();
     const tasks = await services.tasks.listTasks();
+    void startConfiguredRepositoryOnboarding(services.config);
     return { repositories: buildRepositoryQueueSummaries(tasks, services.config.repositories) };
   });
 
@@ -91,6 +93,10 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
 
     if (!task) {
       return reply.code(404).send({ message: "Task not found" });
+    }
+
+    if (task.status !== "PRD_REVIEW_REQUIRED") {
+      return reply.code(409).send({ message: `Task is ${task.status}, not waiting for PRD approval` });
     }
 
     const approved = transitionTask(task, "PRD_APPROVED");

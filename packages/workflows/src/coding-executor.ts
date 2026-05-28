@@ -63,7 +63,7 @@ export function normalizeImplementationExecutorConfig(
     name: value?.name ?? "codezero-coding-cli",
     command:
       value?.command ??
-      'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
+      'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
     timeout_ms: value?.timeout_ms ?? 60 * 60_000,
     env: value?.env ?? {},
   };

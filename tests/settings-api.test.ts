@@ -1,15 +1,17 @@
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildServer } from "../apps/api/src/server.js";
+import { getServices, resetServicesForTests } from "../apps/api/src/services/task-services.js";
 
 describe("settings api", () => {
   afterEach(() => {
     delete process.env.PROJECT_ROOT;
     delete process.env.TEST_MODEL_API_KEY;
+    resetServicesForTests();
   });
 
   it("returns editable config sections and validates YAML without writing", async () => {
@@ -176,6 +178,7 @@ describe("settings api", () => {
   it("updates repository runtime settings without requiring manual YAML edits", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-settings-api-"));
     await mkdir(path.join(dir, "config"), { recursive: true });
+    await copyConfigExamples(dir);
     await writeFile(
       path.join(dir, "config", "repositories.yaml"),
       [
@@ -201,6 +204,7 @@ describe("settings api", () => {
         triggerMode: "label",
         mention: "@repo-agent",
         maxConcurrentIssues: 3,
+        projectSkillPath: ".codezero/skills",
         allowedPermissions: ["read", "repo_write"],
         blockedPermissions: ["dangerous"],
       },
@@ -209,6 +213,7 @@ describe("settings api", () => {
       parsed: {
         repositories: Array<{
           trigger: { mode: string; mention: string };
+          project_skill_path: string;
           queue: { max_concurrent_issues: number };
           permissions: {
             allowed_permissions: string[];
@@ -222,16 +227,83 @@ describe("settings api", () => {
     expect(response.statusCode).toBe(200);
     expect(repository?.trigger.mode).toBe("label");
     expect(repository?.trigger.mention).toBe("@repo-agent");
+    expect(repository?.project_skill_path).toBe(".codezero/skills");
     expect(repository?.queue.max_concurrent_issues).toBe(3);
     expect(repository?.permissions.allowed_permissions).toEqual([
       "read",
       "repo_write",
     ]);
     expect(repository?.permissions.blocked_permissions).toEqual(["dangerous"]);
+    expect(
+      (await getServices()).config.repositories.find((entry) => entry.id === "shop")
+        ?.trigger.mode,
+    ).toBe("label");
+    expect(
+      (await getServices()).config.repositories.find((entry) => entry.id === "shop")
+        ?.project_skill_path,
+    ).toBe(".codezero/skills");
+
+    await app.close();
+  });
+
+  it("persists provider API keys into project env without returning the secret", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-settings-key-"));
+    await mkdir(path.join(dir, "config"), { recursive: true });
+    await copyConfigExamples(dir);
+    await writeFile(
+      path.join(dir, "config", "agents.yaml"),
+      [
+        "providers:",
+        "  qwen:",
+        "    type: openai-compatible",
+        "    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "    api_key_env: TEST_MODEL_API_KEY",
+        "    model: qwen3.5",
+        "agents:",
+        "  prd:",
+        "    provider: qwen",
+        "    system_prompt: prompts/system/prd-agent.md",
+        "",
+      ].join("\n"),
+    );
+    process.env.PROJECT_ROOT = dir;
+    const app = await buildServer();
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/settings/providers/api-key",
+      payload: {
+        providerId: "qwen",
+        apiKey: "persisted-secret",
+      },
+    });
+    const body = response.json<{ saved: boolean; message: string; apiKeyEnv?: string }>();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      saved: true,
+      apiKeyEnv: "TEST_MODEL_API_KEY",
+    });
+    expect(JSON.stringify(body)).not.toContain("persisted-secret");
+    await expect(readFile(path.join(dir, ".env"), "utf8")).resolves.toContain(
+      "TEST_MODEL_API_KEY=persisted-secret",
+    );
+    expect(process.env.TEST_MODEL_API_KEY).toBe("persisted-secret");
 
     await app.close();
   });
 });
+
+async function copyConfigExamples(rootDir: string): Promise<void> {
+  await Promise.all(
+    ["agents", "repositories", "sandbox", "policies", "tools"].map((section) =>
+      copyFile(
+        path.join(process.cwd(), "config", `${section}.example.yaml`),
+        path.join(rootDir, "config", `${section}.example.yaml`),
+      ),
+    ),
+  );
+}
 
 async function startModelServer(): Promise<{
   baseUrl: string;

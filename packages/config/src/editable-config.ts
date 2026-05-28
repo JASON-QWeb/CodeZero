@@ -77,6 +77,7 @@ export async function updateRepositoryRuntimeSettings(
 
   config.repositories[index] = {
     ...repository,
+    project_skill_path: patch.projectSkillPath?.trim() || repository.project_skill_path,
     trigger: {
       ...repository.trigger,
       mode: patch.triggerMode ?? repository.trigger.mode,

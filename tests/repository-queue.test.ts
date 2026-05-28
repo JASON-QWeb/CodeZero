@@ -47,6 +47,7 @@ describe("repository issue queue", () => {
     await repository.createTask(task(2, "QUEUED", "your-org", "your-repo"));
     await repository.createTask(task(3, "PRD_REVIEW_REQUIRED", "your-org", "your-repo"));
     await repository.createTask(task(4, "FAILED", "your-org", "your-repo"));
+    await repository.createTask(task(5, "WAITING_MERGE", "your-org", "your-repo"));
 
     const app = await buildServer();
     const response = await app.inject({ method: "GET", url: "/tasks/repositories" });
@@ -57,7 +58,7 @@ describe("repository issue queue", () => {
       maxConcurrentIssues: 2,
       runningCount: 1,
       queuedCount: 1,
-      reviewCount: 1,
+      reviewCount: 2,
       blockedCount: 1
     });
 

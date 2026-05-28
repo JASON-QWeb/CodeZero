@@ -2,6 +2,7 @@ import type {
   ConfigResponse,
   ConfigSection,
   ConfigSectionName,
+  ProviderApiKeySaveResponse,
   ProviderValidationResponse,
   RepositoryRuntimeSettingsInput,
   ValidationResponse
@@ -68,6 +69,25 @@ export async function validateProviderConnection(input: { content: string; provi
   return body as ProviderValidationResponse;
 }
 
+export async function saveProviderApiKey(input: { content?: string; providerId: string; apiKey: string }): Promise<ProviderApiKeySaveResponse> {
+  const response = await fetch(`${apiBaseUrl()}/settings/providers/api-key`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  const body = (await response.json().catch(() => ({}))) as Partial<ProviderApiKeySaveResponse> & { message?: string };
+
+  if (!response.ok) {
+    return {
+      providerId: input.providerId,
+      saved: false,
+      message: body.message ?? "Failed to save API key"
+    };
+  }
+
+  return body as ProviderApiKeySaveResponse;
+}
+
 export async function updateRepositoryRuntimeSettings(input: RepositoryRuntimeSettingsInput): Promise<ConfigSection> {
   const response = await fetch(`${apiBaseUrl()}/settings/repositories/${encodeURIComponent(input.repositoryId)}/runtime`, {
     method: "PUT",
@@ -76,6 +96,7 @@ export async function updateRepositoryRuntimeSettings(input: RepositoryRuntimeSe
       triggerMode: input.triggerMode,
       mention: input.mention,
       maxConcurrentIssues: input.maxConcurrentIssues,
+      projectSkillPath: input.projectSkillPath,
       allowedPermissions: input.allowedPermissions,
       blockedPermissions: input.blockedPermissions
     })

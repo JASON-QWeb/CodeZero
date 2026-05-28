@@ -316,7 +316,7 @@ async function generateProjectKnowledgeGraph(
   });
 }
 
-async function prepareRepositoryCheckout(
+export async function prepareRepositoryCheckout(
   config: AppConfig,
   repository: RepositoryConfig,
 ): Promise<string> {

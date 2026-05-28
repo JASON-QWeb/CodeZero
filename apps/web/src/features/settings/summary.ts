@@ -97,6 +97,7 @@ export function collectRepositoryQuickConfigs(parsed: unknown): RepositoryQuickC
       id: String(repository.id ?? ""),
       owner: String(repository.github_owner ?? ""),
       repo: String(repository.github_repo ?? ""),
+      projectSkillPath: String(repository.project_skill_path ?? ".agent"),
       triggerMode: normalizeTriggerMode(trigger.mode),
       mention: String(trigger.mention ?? "@agent-prd"),
       maxConcurrentIssues: normalizePositiveInteger(queue.max_concurrent_issues),

@@ -252,7 +252,7 @@ export class IssueWorkflowRunner {
         sandbox,
         repositoryConfig,
       );
-      updated = await this.updateStatus(updated.id, "HUMAN_REVIEW", { prUrl });
+      updated = await this.updateStatus(updated.id, "WAITING_MERGE", { prUrl });
       return { taskId: updated.id, status: updated.status, prUrl };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -274,7 +274,9 @@ export class IssueWorkflowRunner {
       task.prUrl &&
       task.branchName &&
       task.issue.comments.length > 0 &&
-      (task.status === "HUMAN_REVIEW" || task.status === "BLOCKED"),
+      (task.status === "WAITING_MERGE" ||
+        task.status === "HUMAN_REVIEW" ||
+        task.status === "BLOCKED"),
     );
   }
 
@@ -324,7 +326,7 @@ export class IssueWorkflowRunner {
       feedback,
     );
     updated = await this.requiredTask(updated.id);
-    updated = await this.updateStatus(updated.id, "HUMAN_REVIEW");
+    updated = await this.updateStatus(updated.id, "WAITING_MERGE");
     return { taskId: updated.id, status: updated.status, prUrl: updated.prUrl };
   }
 
@@ -1159,6 +1161,7 @@ export class IssueWorkflowRunner {
         "implementation.diff",
         result.diff,
       );
+      const changedFiles = await listChangedFiles(sandbox.repoDir);
       await this.event(
         task.id,
         "AGENT_RUN_FINISHED",
@@ -1177,6 +1180,11 @@ export class IssueWorkflowRunner {
         task.id,
         "FILE_CHANGED",
         "CodeZero implementation executor updated the sandbox working tree",
+        "info",
+        {
+          filePath: changedFiles[0] ?? null,
+          filePaths: changedFiles.slice(0, 50),
+        },
       );
     } finally {
       await cleanupImplementationCheckpoint(checkpoint);

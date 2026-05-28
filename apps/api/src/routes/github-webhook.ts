@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { evaluateRepositoryTrigger, findRepository } from "@agent/config";
 import { z } from "zod";
+import { canTransition, transitionTask } from "@agent/orchestrator";
 import { createTaskEvent } from "@agent/persistence";
 import { createAndEnqueueTask, enqueueIssueWorkflow, getServices } from "../services/task-services.js";
 
@@ -38,6 +39,21 @@ const issueCommentWebhookSchema = z.object({
     user: z.object({ login: z.string().optional() }).nullable().optional(),
     html_url: z.string().url().optional(),
     created_at: z.string().optional()
+  }),
+  repository: repositorySchema,
+  sender: z.object({ login: z.string().optional() }).nullable().optional()
+});
+
+const pullRequestWebhookSchema = z.object({
+  action: z.string(),
+  number: z.number(),
+  pull_request: z.object({
+    number: z.number().optional(),
+    html_url: z.string().url(),
+    merged: z.boolean().default(false),
+    merged_at: z.string().nullable().optional(),
+    merge_commit_sha: z.string().nullable().optional(),
+    head: z.object({ ref: z.string().optional() }).optional()
   }),
   repository: repositorySchema,
   sender: z.object({ login: z.string().optional() }).nullable().optional()
@@ -95,6 +111,62 @@ export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise
       return reply.code(202).send({ task, trigger: decision.trigger, reason: decision.reason });
     }
 
+    if (event === "pull_request") {
+      const parsed = pullRequestWebhookSchema.safeParse(request.body);
+
+      if (!parsed.success) {
+        return reply.code(400).send({ message: "Invalid GitHub pull_request payload", issues: parsed.error.issues });
+      }
+
+      if (parsed.data.action !== "closed" || !parsed.data.pull_request.merged) {
+        return { ignored: true, reason: `Unsupported pull_request action ${parsed.data.action}` };
+      }
+
+      const pullNumber = parsed.data.pull_request.number ?? parsed.data.number;
+      const task = (await services.tasks.listTasks()).find(
+        (candidate) =>
+          candidate.issue.owner === parsed.data.repository.owner.login &&
+          candidate.issue.repo === parsed.data.repository.name &&
+          (candidate.prUrl === parsed.data.pull_request.html_url ||
+            candidate.prUrl?.endsWith(`/pull/${pullNumber}`) ||
+            (parsed.data.pull_request.head?.ref && candidate.branchName === parsed.data.pull_request.head.ref))
+      );
+
+      if (!task) {
+        return { ignored: true, reason: `No tracked task found for merged PR ${parsed.data.pull_request.html_url}` };
+      }
+
+      if (task.status === "DONE") {
+        return { ignored: true, reason: `Task ${task.id} is already done` };
+      }
+
+      if (task.status === "CANCELLED" || !canTransition(task.status, "DONE")) {
+        return { ignored: true, reason: `Task ${task.id} cannot complete from ${task.status}` };
+      }
+
+      const completed = transitionTask(task, "DONE");
+      const updated = await services.tasks.updateTask(task.id, {
+        status: completed.status,
+        updatedAt: completed.updatedAt,
+        prUrl: task.prUrl ?? parsed.data.pull_request.html_url
+      });
+      await services.tasks.appendEvent(
+        createTaskEvent({
+          taskId: task.id,
+          type: "TASK_COMPLETED",
+          message: `Merged PR completed task: ${parsed.data.pull_request.html_url}`,
+          metadata: {
+            prUrl: parsed.data.pull_request.html_url,
+            pullNumber,
+            mergedAt: parsed.data.pull_request.merged_at ?? null,
+            mergeCommitSha: parsed.data.pull_request.merge_commit_sha ?? null,
+            sandboxRetained: true
+          }
+        })
+      );
+      return reply.code(202).send({ task: updated, trigger: "pull_request_merged", reason: "Task completed after PR merge" });
+    }
+
     if (event === "issue_comment") {
       const parsed = issueCommentWebhookSchema.safeParse(request.body);
 
@@ -125,7 +197,7 @@ export async function registerGitHubWebhookRoutes(app: FastifyInstance): Promise
           return { ignored: true, reason: "Ignored bot PR comment" };
         }
 
-        if (!["HUMAN_REVIEW", "BLOCKED"].includes(task.status)) {
+        if (!["WAITING_MERGE", "HUMAN_REVIEW", "BLOCKED"].includes(task.status)) {
           return { ignored: true, reason: `Task ${task.id} is not waiting for PR feedback` };
         }
 

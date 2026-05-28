@@ -39,6 +39,8 @@ describe("orchestrator", () => {
     expect(plan.indexOf("quality-gates")).toBeLessThan(plan.indexOf("subagent-review"));
     expect(plan.indexOf("subagent-review")).toBeLessThan(plan.indexOf("create-draft-pr"));
     expect(canTransition("QUALITY_GATES_RUNNING", "SUBAGENT_REVIEWING")).toBe(true);
+    expect(canTransition("PR_CREATING", "WAITING_MERGE")).toBe(true);
+    expect(canTransition("WAITING_MERGE", "DONE")).toBe(true);
   });
 
   it("blocks PR creation when a quality gate fails", () => {

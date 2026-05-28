@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import {
@@ -158,6 +158,38 @@ export async function loadProjectEnv(rootDir?: string): Promise<void> {
   }
 }
 
+export async function upsertProjectEnv(rootDir: string, key: string, value: string): Promise<void> {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    throw new Error(`Invalid environment key: ${key}`);
+  }
+
+  const envPath = path.join(rootDir, ".env");
+  const sanitizedValue = value.replace(/\r?\n/g, "");
+  const existing = await readFile(envPath, "utf8").catch(() => "");
+  const lines = existing ? existing.split(/\r?\n/) : [];
+  const keyPattern = new RegExp(`^(?:export\\s+)?${escapeRegExp(key)}=`);
+  let replaced = false;
+  const nextLines = lines.map((line) => {
+    if (!replaced && keyPattern.test(line.trim())) {
+      replaced = true;
+      return `${key}=${sanitizedValue}`;
+    }
+
+    return line;
+  });
+
+  if (!replaced) {
+    if (nextLines.length > 0 && nextLines[nextLines.length - 1] !== "") {
+      nextLines.push("");
+    }
+    nextLines.push(`${key}=${sanitizedValue}`);
+  }
+
+  await writeFile(envPath, `${nextLines.join("\n").replace(/\n+$/, "")}\n`);
+  process.env[key] = sanitizedValue;
+  loadedEnvRoots.delete(rootDir);
+}
+
 async function readYaml<T>(primaryPath: string, fallbackPath: string, schema: Parser<T>): Promise<T> {
   const content = await readFile(primaryPath, "utf8").catch(async () => readFile(fallbackPath, "utf8"));
   const interpolated = interpolateEnv(content);
@@ -172,4 +204,8 @@ function parseEnvValue(value: string): string {
   }
 
   return trimmed;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

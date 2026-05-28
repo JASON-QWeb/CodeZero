@@ -759,13 +759,28 @@ describe("workflow modules", () => {
       fileName: "prd.json",
       content: '{"title":"Demo"}\n',
     });
+    const second = await writeTaskArtifact({
+      rootDir,
+      tasks: {
+        addArtifact: async (entry) => {
+          artifacts.push(entry);
+        },
+      } as never,
+      taskId: "task-1",
+      type: "prd",
+      fileName: "prd.json",
+      content: '{"title":"Second"}\n',
+    });
 
     await expect(
       readFile(path.join(rootDir, "artifacts", "task-1", "prd.json"), "utf8"),
     ).resolves.toContain("Demo");
+    await expect(readFile(second.path, "utf8")).resolves.toContain("Second");
     expect(artifact.id).toMatch(/^artifact-/);
+    expect(second.path).not.toBe(artifact.path);
+    expect(path.basename(second.path)).toMatch(/^prd\.\d+-\d+-[a-f0-9]+\.json$/);
     expect(createArtifactId()).toMatch(/^artifact-/);
-    expect(artifacts).toEqual([artifact]);
+    expect(artifacts).toEqual([artifact, second]);
   });
 
   it("creates workflow agent definitions from prompt files", async () => {

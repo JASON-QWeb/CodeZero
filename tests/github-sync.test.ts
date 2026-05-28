@@ -93,7 +93,7 @@ describe("GitHub async sync", () => {
         issue(31, "Review feedback"),
         new Date("2026-05-27T02:00:00Z"),
       ),
-      status: "HUMAN_REVIEW",
+      status: "WAITING_MERGE",
       prUrl: "https://github.com/your-org/your-repo/pull/9",
     } satisfies Task;
     await repository.createTask(task);

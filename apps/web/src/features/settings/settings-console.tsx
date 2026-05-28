@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Save, SlidersHorizontal } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchConfig, saveConfig, updateRepositoryRuntimeSettings, validateConfig, validateProviderConnection } from "./api";
+import { fetchConfig, saveConfig, saveProviderApiKey, updateRepositoryRuntimeSettings, validateConfig, validateProviderConnection } from "./api";
 import { orderedSections, permissionLevels, triggerModes } from "./constants";
 import { sectionMeta } from "./section-meta";
 import { buildSummary, collectProviderIds, collectRepositoryQuickConfigs } from "./summary";
 import type {
   ConfigSectionName,
   ProviderValidationResponse,
+  ProviderApiKeySaveResponse,
   RepositoryQuickConfig,
   RepositoryRuntimeSettingsInput,
   ToolPermissionLevel,
@@ -43,6 +44,12 @@ export function SettingsConsole() {
   });
   const providerTestMutation = useMutation({
     mutationFn: validateProviderConnection
+  });
+  const providerKeyMutation = useMutation({
+    mutationFn: saveProviderApiKey,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["settings-config"] });
+    }
   });
   const repositoryRuntimeMutation = useMutation({
     mutationFn: updateRepositoryRuntimeSettings,
@@ -157,11 +164,20 @@ export function SettingsConsole() {
                   onApiKeyChange={(value) => {
                     setProviderApiKey(value);
                     providerTestMutation.reset();
+                    providerKeyMutation.reset();
                   }}
                   onProviderChange={(value) => {
                     setProviderId(value);
                     providerTestMutation.reset();
+                    providerKeyMutation.reset();
                   }}
+                  onSaveApiKey={() =>
+                    providerKeyMutation.mutate({
+                      content: draft,
+                      providerId,
+                      apiKey: providerApiKey.trim()
+                    })
+                  }
                   onTest={() =>
                     providerTestMutation.mutate({
                       content: draft,
@@ -172,6 +188,8 @@ export function SettingsConsole() {
                   providerId={providerId}
                   providerIds={providerIds}
                   result={providerTestMutation.data}
+                  savePending={providerKeyMutation.isPending}
+                  saveResult={providerKeyMutation.data}
                 />
               ) : null}
 
@@ -190,6 +208,7 @@ export function SettingsConsole() {
                   setDraft(event.target.value);
                   setValidation(undefined);
                   providerTestMutation.reset();
+                  providerKeyMutation.reset();
                   repositoryRuntimeMutation.reset();
                 }}
                 spellCheck={false}
@@ -221,19 +240,25 @@ function ProviderConnectionTest({
   isPending,
   onApiKeyChange,
   onProviderChange,
+  onSaveApiKey,
   onTest,
   providerId,
   providerIds,
-  result
+  result,
+  savePending,
+  saveResult
 }: {
   apiKey: string;
   isPending: boolean;
   onApiKeyChange: (value: string) => void;
   onProviderChange: (value: string) => void;
+  onSaveApiKey: () => void;
   onTest: () => void;
   providerId: string;
   providerIds: string[];
   result?: ProviderValidationResponse;
+  savePending: boolean;
+  saveResult?: ProviderApiKeySaveResponse;
 }) {
   return (
     <div className="providerVerifier" aria-label="Provider connection test">
@@ -266,9 +291,18 @@ function ProviderConnectionTest({
           <CheckCircle2 size={16} aria-hidden />
           <span>{isPending ? "Testing" : "Test"}</span>
         </button>
+        <button className="iconButton positive" disabled={providerIds.length === 0 || !providerId || !apiKey.trim() || savePending} onClick={onSaveApiKey} type="button">
+          <Save size={16} aria-hidden />
+          <span>{savePending ? "Saving" : "Save Key"}</span>
+        </button>
       </div>
-      <div className={`validationBar ${result?.valid ? "validationGood" : result ? "validationBad" : ""}`}>
-        {result ? (
+      <div className={`validationBar ${result?.valid || saveResult?.saved ? "validationGood" : result || saveResult ? "validationBad" : ""}`}>
+        {saveResult ? (
+          <>
+            {saveResult.saved ? <CheckCircle2 size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
+            <span>{saveResult.message}</span>
+          </>
+        ) : result ? (
           <>
             {result.valid ? <CheckCircle2 size={16} aria-hidden /> : <AlertCircle size={16} aria-hidden />}
             <span>
@@ -330,6 +364,7 @@ function RepositoryQuickSettingsItem({
   const [triggerMode, setTriggerMode] = useState<TriggerMode>(repository.triggerMode);
   const [mention, setMention] = useState(repository.mention);
   const [maxConcurrentIssues, setMaxConcurrentIssues] = useState(String(repository.maxConcurrentIssues));
+  const [projectSkillPath, setProjectSkillPath] = useState(repository.projectSkillPath);
   const [allowedPermissions, setAllowedPermissions] = useState<ToolPermissionLevel[]>(repository.allowedPermissions);
   const [blockedPermissions, setBlockedPermissions] = useState<ToolPermissionLevel[]>(repository.blockedPermissions);
 
@@ -337,6 +372,7 @@ function RepositoryQuickSettingsItem({
     setTriggerMode(repository.triggerMode);
     setMention(repository.mention);
     setMaxConcurrentIssues(String(repository.maxConcurrentIssues));
+    setProjectSkillPath(repository.projectSkillPath);
     setAllowedPermissions(repository.allowedPermissions);
     setBlockedPermissions(repository.blockedPermissions);
   }, [repository]);
@@ -371,6 +407,11 @@ function RepositoryQuickSettingsItem({
           <span>Max Running</span>
           <input min={1} onChange={(event) => setMaxConcurrentIssues(event.target.value)} step={1} type="number" value={maxConcurrentIssues} />
         </label>
+
+        <label>
+          <span>Skill Path</span>
+          <input onChange={(event) => setProjectSkillPath(event.target.value)} type="text" value={projectSkillPath} />
+        </label>
       </div>
 
       <PermissionChecklist label="Allowed Permissions" onChange={setAllowedPermissions} selected={allowedPermissions} />
@@ -379,13 +420,14 @@ function RepositoryQuickSettingsItem({
       <div className="repositoryQuickActions">
         <button
           className="iconButton positive"
-          disabled={isPending || !Number.isFinite(Number(maxConcurrentIssues)) || Number(maxConcurrentIssues) < 1 || !mention.trim()}
+          disabled={isPending || !Number.isFinite(Number(maxConcurrentIssues)) || Number(maxConcurrentIssues) < 1 || !mention.trim() || !projectSkillPath.trim()}
           onClick={() =>
             onSave({
               repositoryId: repository.id,
               triggerMode,
               mention: mention.trim(),
               maxConcurrentIssues: Math.max(1, Math.floor(Number(maxConcurrentIssues))),
+              projectSkillPath: projectSkillPath.trim(),
               allowedPermissions,
               blockedPermissions
             })

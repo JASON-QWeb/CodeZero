@@ -7,6 +7,10 @@ import {
   openProjectKnowledgeGraphDashboard,
   startProjectKnowledgeGraphGeneration,
 } from "../services/understand-anything.js";
+import {
+  getRepositoryOnboardingState,
+  startRepositoryOnboarding,
+} from "../services/repository-onboarding.js";
 
 const generationSchema = z.object({
   full: z.boolean().optional(),
@@ -15,6 +19,53 @@ const generationSchema = z.object({
 export async function registerKnowledgeGraphRoutes(
   app: FastifyInstance,
 ): Promise<void> {
+  app.get<{ Params: { repositoryId: string } }>(
+    "/repositories/:repositoryId/onboarding",
+    async (request, reply) => {
+      const services = await getServices();
+      const repository = findConfiguredRepository(
+        services.config.repositories,
+        request.params.repositoryId,
+      );
+
+      if (!repository) {
+        return reply.code(404).send({ message: "Repository not found" });
+      }
+
+      if (process.env.NODE_ENV !== "test") {
+        void startRepositoryOnboarding(services.config, repository).catch(
+          () => undefined,
+        );
+      }
+
+      return {
+        onboarding: await getRepositoryOnboardingState(
+          services.config,
+          repository,
+        ),
+      };
+    },
+  );
+
+  app.post<{ Params: { repositoryId: string } }>(
+    "/repositories/:repositoryId/onboarding",
+    async (request, reply) => {
+      const services = await getServices();
+      const repository = findConfiguredRepository(
+        services.config.repositories,
+        request.params.repositoryId,
+      );
+
+      if (!repository) {
+        return reply.code(404).send({ message: "Repository not found" });
+      }
+
+      return reply.code(202).send({
+        onboarding: await startRepositoryOnboarding(services.config, repository),
+      });
+    },
+  );
+
   app.get<{ Params: { repositoryId: string } }>(
     "/repositories/:repositoryId/knowledge-graph",
     async (request, reply) => {

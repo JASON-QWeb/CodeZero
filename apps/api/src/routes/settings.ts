@@ -10,10 +10,13 @@ import {
   repositoryTriggerModes,
   toolPermissionLevels,
   updateRepositoryRuntimeSettings,
+  upsertProjectEnv,
   writeConfigSection,
   type AgentsFileConfig,
   type ConfigSectionName
 } from "@agent/config";
+import { reloadServices } from "../services/task-services.js";
+import { startConfiguredRepositoryOnboarding } from "../services/repository-onboarding.js";
 
 const updateConfigBodySchema = z.object({
   content: z.string().min(1)
@@ -25,11 +28,18 @@ const validateProviderBodySchema = z.object({
   apiKey: z.string().optional()
 });
 
+const saveProviderApiKeyBodySchema = z.object({
+  content: z.string().optional(),
+  providerId: z.string().min(1),
+  apiKey: z.string().min(1).refine((value) => value.trim().length > 0, "API key cannot be blank")
+});
+
 const repositoryRuntimeSettingsSchema = z
   .object({
     triggerMode: z.enum(repositoryTriggerModes).optional(),
     mention: z.string().min(1).optional(),
     maxConcurrentIssues: z.number().int().positive().max(50).optional(),
+    projectSkillPath: z.string().min(1).optional(),
     allowedPermissions: z.array(z.enum(toolPermissionLevels)).optional(),
     blockedPermissions: z.array(z.enum(toolPermissionLevels)).optional()
   })
@@ -56,6 +66,47 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     }
   });
 
+  app.put<{ Body: { content?: string; providerId?: string; apiKey?: string } }>("/settings/providers/api-key", async (request, reply) => {
+    const parsed = saveProviderApiKeyBodySchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({ saved: false, message: "Invalid provider API key payload", issues: parsed.error.issues });
+    }
+
+    try {
+      const rootDir = await resolveRootDir();
+      const agentsConfig = parsed.data.content
+        ? (parseConfigSection("agents", parsed.data.content) as AgentsFileConfig)
+        : ((await readConfigSection(rootDir, "agents")).parsed as AgentsFileConfig);
+      const provider = agentsConfig.providers[parsed.data.providerId];
+
+      if (!provider) {
+        return reply.code(404).send({
+          providerId: parsed.data.providerId,
+          saved: false,
+          message: `Provider '${parsed.data.providerId}' is not defined in agents config`
+        });
+      }
+
+      await upsertProjectEnv(rootDir, provider.api_key_env, parsed.data.apiKey.trim());
+      const services = await reloadServices();
+      void startConfiguredRepositoryOnboarding(services.config);
+
+      return {
+        providerId: parsed.data.providerId,
+        apiKeyEnv: provider.api_key_env,
+        saved: true,
+        message: `Saved API key to ${provider.api_key_env} and reloaded runtime config.`
+      };
+    } catch (error) {
+      return reply.code(400).send({
+        providerId: parsed.data.providerId,
+        saved: false,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
   app.get<{ Params: { section: string } }>("/settings/config/:section", async (request, reply) => {
     const section = parseSection(request.params.section);
 
@@ -72,6 +123,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       triggerMode?: string;
       mention?: string;
       maxConcurrentIssues?: number;
+      projectSkillPath?: string;
       allowedPermissions?: string[];
       blockedPermissions?: string[];
     };
@@ -83,7 +135,10 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     }
 
     try {
-      return await updateRepositoryRuntimeSettings(await resolveRootDir(), request.params.repositoryId, parsed.data);
+      const section = await updateRepositoryRuntimeSettings(await resolveRootDir(), request.params.repositoryId, parsed.data);
+      const services = await reloadServices();
+      void startConfiguredRepositoryOnboarding(services.config);
+      return section;
     } catch (error) {
       return reply.code(400).send({ message: error instanceof Error ? error.message : String(error) });
     }
@@ -123,7 +178,10 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     }
 
     try {
-      return writeConfigSection(await resolveRootDir(), section, parsed.data.content);
+      const saved = await writeConfigSection(await resolveRootDir(), section, parsed.data.content);
+      const services = await reloadServices();
+      void startConfiguredRepositoryOnboarding(services.config);
+      return saved;
     } catch (error) {
       return reply.code(400).send({ section, message: error instanceof Error ? error.message : String(error) });
     }

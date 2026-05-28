@@ -6,6 +6,8 @@ import type {
   GitHubSyncState,
   ProjectKnowledgeGraph,
   ProjectKnowledgeGraphResponse,
+  RepositoryOnboarding,
+  RepositoryOnboardingResponse,
   RepositoryQueueSummary,
   RepositoryQueuesResponse,
   TasksResponse,
@@ -72,6 +74,16 @@ export async function fetchProjectKnowledgeGraph(repositoryId: string): Promise<
   return ((await response.json()) as ProjectKnowledgeGraphResponse).knowledgeGraph;
 }
 
+export async function fetchRepositoryOnboarding(repositoryId: string): Promise<RepositoryOnboarding> {
+  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/onboarding`, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error("Failed to load repository onboarding");
+  }
+
+  return ((await response.json()) as RepositoryOnboardingResponse).onboarding;
+}
+
 export async function generateProjectKnowledgeGraph(input: { repositoryId: string; full?: boolean }): Promise<ProjectKnowledgeGraph> {
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/knowledge-graph/generate`, {
     method: "POST",
@@ -113,6 +125,21 @@ export async function fetchTrace(taskId: string): Promise<TaskTrace> {
 
   const data = (await response.json()) as TraceResponse;
   return data.trace;
+}
+
+export async function approveTaskPrd(taskId: string): Promise<Task> {
+  const response = await fetch(`${apiBaseUrl()}/tasks/${encodeURIComponent(taskId)}/approve-prd`, {
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as {
+      message?: string;
+    };
+    throw new Error(data.message ?? "Failed to approve PRD");
+  }
+
+  return ((await response.json()) as { task: Task }).task;
 }
 
 export async function fetchMemories(status: MemoryStatus): Promise<MemoryRecord[]> {
