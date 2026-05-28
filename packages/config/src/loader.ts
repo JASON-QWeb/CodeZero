@@ -18,6 +18,8 @@ type Parser<T> = {
   parse(value: unknown): T;
 };
 
+const loadedEnvRoots = new Set<string>();
+
 export type AppConfig = {
   rootDir: string;
   agents: AgentsFileConfig;
@@ -41,6 +43,7 @@ export type AppConfig = {
 
 export async function loadAppConfig(rootDir?: string): Promise<AppConfig> {
   const resolvedRootDir = rootDir ?? process.env.PROJECT_ROOT ?? (await findWorkspaceRoot(process.cwd()));
+  await loadProjectEnv(resolvedRootDir);
   const [agents, repositories, sandbox, policies, tools] = await Promise.all([
     readYaml(path.join(resolvedRootDir, "config", "agents.yaml"), path.join(resolvedRootDir, "config", "agents.example.yaml"), agentsFileSchema),
     readYaml(
@@ -113,8 +116,60 @@ export function interpolateEnv(value: string): string {
   return value.replace(/\$\{([A-Z0-9_]+)\}/g, (match, key: string) => process.env[key] ?? match);
 }
 
+export async function loadProjectEnv(rootDir?: string): Promise<void> {
+  const resolvedRootDir = rootDir ?? process.env.PROJECT_ROOT ?? (await findWorkspaceRoot(process.cwd()));
+
+  if (loadedEnvRoots.has(resolvedRootDir)) {
+    return;
+  }
+
+  loadedEnvRoots.add(resolvedRootDir);
+  const content = await readFile(path.join(resolvedRootDir, ".env"), "utf8").catch(() => undefined);
+
+  if (!content) {
+    return;
+  }
+
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(trimmed);
+
+    if (!match) {
+      continue;
+    }
+
+    const key = match[1];
+    const rawValue = match[2] ?? "";
+
+    if (!key) {
+      continue;
+    }
+
+    if (process.env[key] !== undefined) {
+      continue;
+    }
+
+    process.env[key] = parseEnvValue(rawValue);
+  }
+}
+
 async function readYaml<T>(primaryPath: string, fallbackPath: string, schema: Parser<T>): Promise<T> {
   const content = await readFile(primaryPath, "utf8").catch(async () => readFile(fallbackPath, "utf8"));
   const interpolated = interpolateEnv(content);
   return schema.parse(YAML.parse(interpolated));
+}
+
+function parseEnvValue(value: string): string {
+  const trimmed = value.trim();
+
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
 }

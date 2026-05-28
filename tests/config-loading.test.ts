@@ -63,6 +63,65 @@ describe("app config loading", () => {
     }
   });
 
+  it("loads project .env values before parsing YAML placeholders", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-config-env-"));
+    await mkdir(path.join(dir, "config"), { recursive: true });
+    await Promise.all([
+      writeFile(
+        path.join(dir, ".env"),
+        [
+          "CONFIG_ENV_BASE_URL=https://env-provider.example.test/v1",
+          "CONFIG_ENV_MODEL=env-model",
+          "CONFIG_ENV_API_KEY=env-key",
+          "TASK_STORE_FILE=data/env-tasks.json",
+          ""
+        ].join("\n")
+      ),
+      writeFile(
+        path.join(dir, "config", "agents.example.yaml"),
+        [
+          "providers:",
+          "  default:",
+          "    type: openai-compatible",
+          "    base_url: ${CONFIG_ENV_BASE_URL}",
+          "    api_key_env: CONFIG_ENV_API_KEY",
+          "    model: ${CONFIG_ENV_MODEL}",
+          "agents:",
+          "  prd:",
+          "    provider: default",
+          "    system_prompt: prompts/system/prd-agent.md",
+          ""
+        ].join("\n")
+      ),
+      writeFile(path.join(dir, "config", "repositories.example.yaml"), "repositories: []\n"),
+      writeFile(path.join(dir, "config", "sandbox.example.yaml"), "sandbox: {}\n"),
+      writeFile(path.join(dir, "config", "policies.example.yaml"), "policies: []\n"),
+      writeFile(path.join(dir, "config", "tools.example.yaml"), "tools: []\n")
+    ]);
+    const previousBaseUrl = process.env.CONFIG_ENV_BASE_URL;
+    const previousModel = process.env.CONFIG_ENV_MODEL;
+    const previousApiKey = process.env.CONFIG_ENV_API_KEY;
+    const previousTaskStore = process.env.TASK_STORE_FILE;
+    delete process.env.CONFIG_ENV_BASE_URL;
+    delete process.env.CONFIG_ENV_MODEL;
+    delete process.env.CONFIG_ENV_API_KEY;
+    delete process.env.TASK_STORE_FILE;
+
+    try {
+      const config = await loadAppConfig(dir);
+
+      expect(config.agents.providers.default?.base_url).toBe("https://env-provider.example.test/v1");
+      expect(config.agents.providers.default?.model).toBe("env-model");
+      expect(process.env.CONFIG_ENV_API_KEY).toBe("env-key");
+      expect(config.storage.filePath).toBe(path.join(dir, "data", "env-tasks.json"));
+    } finally {
+      restoreEnv("CONFIG_ENV_BASE_URL", previousBaseUrl);
+      restoreEnv("CONFIG_ENV_MODEL", previousModel);
+      restoreEnv("CONFIG_ENV_API_KEY", previousApiKey);
+      restoreEnv("TASK_STORE_FILE", previousTaskStore);
+    }
+  });
+
   it("validates and writes editable config sections", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-config-"));
     const content = [
@@ -189,3 +248,11 @@ describe("app config loading", () => {
     ).toThrow("Unknown provider");
   });
 });
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = value;
+  }
+}

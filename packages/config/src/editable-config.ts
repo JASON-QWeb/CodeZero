@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
-import { findWorkspaceRoot, interpolateEnv } from "./loader.js";
+import { findWorkspaceRoot, interpolateEnv, loadProjectEnv } from "./loader.js";
 import { configSectionNames, repositoriesFileSchema, schemaForSection, type ConfigSectionName, type RepositoryRuntimeSettingsPatch } from "./schema.js";
 
 export type EditableConfigSection = {
@@ -21,11 +21,13 @@ export type EditableConfigSnapshot = {
 
 export async function loadEditableConfig(rootDir?: string): Promise<EditableConfigSnapshot> {
   const resolvedRootDir = rootDir ?? process.env.PROJECT_ROOT ?? (await findWorkspaceRoot(process.cwd()));
+  await loadProjectEnv(resolvedRootDir);
   const sections = await Promise.all(configSectionNames.map((section) => readConfigSection(resolvedRootDir, section)));
   return { rootDir: resolvedRootDir, sections };
 }
 
 export async function readConfigSection(rootDir: string, section: ConfigSectionName): Promise<EditableConfigSection> {
+  await loadProjectEnv(rootDir);
   const paths = getConfigSectionPaths(rootDir, section);
   const primary = await readFile(paths.path, "utf8")
     .then((content) => ({ content, exists: true }))
@@ -44,6 +46,7 @@ export async function readConfigSection(rootDir: string, section: ConfigSectionN
 }
 
 export async function writeConfigSection(rootDir: string, section: ConfigSectionName, content: string): Promise<EditableConfigSection> {
+  await loadProjectEnv(rootDir);
   parseConfigSection(section, content);
   const paths = getConfigSectionPaths(rootDir, section);
   await mkdir(path.dirname(paths.path), { recursive: true });

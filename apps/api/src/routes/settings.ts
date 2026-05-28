@@ -4,6 +4,7 @@ import {
   isConfigSectionName,
   findWorkspaceRoot,
   loadEditableConfig,
+  loadProjectEnv,
   parseConfigSection,
   readConfigSection,
   repositoryTriggerModes,
@@ -138,6 +139,7 @@ async function resolveRootDir(): Promise<string> {
 }
 
 async function validateProviderConnection(input: { content: string; providerId: string; apiKey?: string }) {
+  await loadProjectEnv(await resolveRootDir());
   const agentsConfig = parseConfigSection("agents", input.content) as AgentsFileConfig;
   const provider = agentsConfig.providers[input.providerId];
 
