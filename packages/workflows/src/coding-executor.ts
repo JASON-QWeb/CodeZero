@@ -31,6 +31,7 @@ export type CodingExecutorRunInput = {
 export type CodingExecutorRunResult = {
   commandResult: CommandResult;
   promptPath: string;
+  openCodeConfigPath?: string;
   logPath: string;
   diff: string;
 };
@@ -61,7 +62,8 @@ export function buildCodingExecutorEnv(input: { config: AppConfig; agent: AgentD
         LLM_API_KEY: providerApiKey,
         LLM_BASE_URL: provider.base_url,
         LLM_MODEL: provider.model,
-        CODEZERO_OPENCODE_MODEL: toOpenCodeModel(provider.model),
+        CODEZERO_OPENCODE_PROVIDER: "codezero",
+        CODEZERO_OPENCODE_MODEL: toCodeZeroOpenCodeModel(provider.model),
         CODEZERO_MODEL_PROVIDER: input.agent.providerId,
         CODEZERO_MODEL: provider.model
       }
@@ -121,8 +123,14 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
   const executorDir = path.join(input.artifactDir, "coding-executor");
   await mkdir(executorDir, { recursive: true });
   const promptPath = path.join(executorDir, `prompt-attempt-${input.attempt}.md`);
+  const openCodeConfigPath = path.join(executorDir, `opencode-attempt-${input.attempt}.json`);
   const logPath = path.join(executorDir, `run-attempt-${input.attempt}.json`);
   await writeFile(promptPath, input.prompt, "utf8");
+  const openCodeConfig = buildOpenCodeProviderConfig(input.config, input.agent);
+
+  if (openCodeConfig) {
+    await writeFile(openCodeConfigPath, `${JSON.stringify(openCodeConfig, null, 2)}\n`, "utf8");
+  }
 
   const commandResult = await runCommand({
     cwd: input.repoDir,
@@ -135,7 +143,8 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
       CODEZERO_REPO_DIR: input.repoDir,
       CODEZERO_ARTIFACT_DIR: input.artifactDir,
       CODEZERO_ISSUE_URL: input.task.issue.url,
-      CODEZERO_EXECUTOR_NAME: input.executor.name
+      CODEZERO_EXECUTOR_NAME: input.executor.name,
+      ...(openCodeConfig ? { OPENCODE_CONFIG: openCodeConfigPath, CODEZERO_OPENCODE_CONFIG_FILE: openCodeConfigPath } : {})
     }
   });
   const diff = await getGitDiff(input.repoDir);
@@ -146,6 +155,7 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
       {
         executor: input.executor.name,
         mode: input.executor.mode,
+        openCodeConfigPath: openCodeConfig ? openCodeConfigPath : undefined,
         exitCode: commandResult.exitCode,
         durationMs: commandResult.durationMs,
         stdout: commandResult.stdout,
@@ -161,8 +171,37 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
   return {
     commandResult,
     promptPath,
+    openCodeConfigPath: openCodeConfig ? openCodeConfigPath : undefined,
     logPath,
     diff
+  };
+}
+
+function buildOpenCodeProviderConfig(config: AppConfig, agent: AgentDefinition): JsonObject | undefined {
+  const provider = config.agents.providers[agent.providerId];
+
+  if (!provider) {
+    return undefined;
+  }
+
+  return {
+    $schema: "https://opencode.ai/config.json",
+    provider: {
+      codezero: {
+        npm: "@ai-sdk/openai-compatible",
+        name: "CodeZero Runtime Provider",
+        options: {
+          baseURL: provider.base_url,
+          apiKey: "{env:OPENAI_API_KEY}"
+        },
+        models: {
+          [provider.model]: {
+            name: provider.model
+          }
+        }
+      }
+    },
+    model: toCodeZeroOpenCodeModel(provider.model)
   };
 }
 
@@ -174,6 +213,6 @@ function summarizeDiffForLog(diff: string): string {
     .join("\n");
 }
 
-function toOpenCodeModel(model: string): string {
-  return model.includes("/") ? model : `openai/${model}`;
+function toCodeZeroOpenCodeModel(model: string): string {
+  return `codezero/${model}`;
 }

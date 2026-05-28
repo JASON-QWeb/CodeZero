@@ -163,7 +163,8 @@ describe("workflow modules", () => {
       expect(executor.command).toContain("opencode-ai");
       expect(env.OPENAI_API_KEY).toBe("secret");
       expect(env.OPENAI_BASE_URL).toBe("https://api.example.test");
-      expect(env.CODEZERO_OPENCODE_MODEL).toBe("openai/model-default");
+      expect(env.CODEZERO_OPENCODE_PROVIDER).toBe("codezero");
+      expect(env.CODEZERO_OPENCODE_MODEL).toBe("codezero/model-default");
       expect(prompt).toContain("CodeZero Implementation Request");
       expect(prompt).not.toContain("OpenCode");
       expect(prompt).toContain("Leave the working tree with the required code changes");
@@ -189,7 +190,7 @@ describe("workflow modules", () => {
       mode: "cli",
       name: "test-cli",
       command:
-        "node -e \"const fs=require('fs'); if(!process.env.OPENAI_API_KEY || !process.env.CODEZERO_PROMPT_FILE) process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
+        "node -e \"const fs=require('fs'); if(!process.env.OPENAI_API_KEY || !process.env.CODEZERO_PROMPT_FILE || !process.env.OPENCODE_CONFIG) process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
       timeout_ms: 30_000,
       fallback_to_legacy_json_actions: false,
       env: {}
@@ -220,6 +221,16 @@ describe("workflow modules", () => {
       expect(result.diff).toContain("-old");
       expect(result.diff).toContain("+new");
       await expect(readFile(result.promptPath, "utf8")).resolves.toBe("Change app.txt");
+      expect(result.openCodeConfigPath).toBeDefined();
+      const openCodeConfig = JSON.parse(await readFile(result.openCodeConfigPath ?? "", "utf8")) as {
+        model: string;
+        provider: { codezero: { options: { apiKey: string; baseURL: string }; models: Record<string, unknown> } };
+      };
+      expect(openCodeConfig.model).toBe("codezero/model-default");
+      expect(openCodeConfig.provider.codezero.options.baseURL).toBe("https://api.example.test");
+      expect(openCodeConfig.provider.codezero.options.apiKey).toBe("{env:OPENAI_API_KEY}");
+      expect(openCodeConfig.provider.codezero.models["model-default"]).toBeDefined();
+      expect(JSON.stringify(openCodeConfig)).not.toContain("secret");
     } finally {
       if (previousApiKey === undefined) {
         delete process.env.TEST_API_KEY;

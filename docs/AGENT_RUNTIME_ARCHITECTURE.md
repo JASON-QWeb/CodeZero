@@ -214,7 +214,9 @@ CodeZero workflow
   -> create/update PR
 ```
 
-默认 executor 由 `sandbox.implementation_executor` 配置，当前命令通过 `npx -y opencode-ai@latest` 使用 OpenCode，并用 prompt 文件附件传入 CodeZero 请求，避免长上下文被 shell 参数长度限制截断。CodeZero 会把用户在 `agents.yaml` 中配置的 provider API key、base URL、model 映射到 executor 环境变量，例如 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`CODEZERO_OPENCODE_MODEL`。底层 CLI 是内部实现细节，不能出现在用户-facing PR body 或 issue comment 中。
+默认 executor 由 `sandbox.implementation_executor` 配置，当前命令通过 `npx -y opencode-ai@latest` 使用 OpenCode，并用 prompt 文件附件传入 CodeZero 请求，避免长上下文被 shell 参数长度限制截断。CodeZero 会把用户在 `agents.yaml` 中配置的 provider API key、base URL、model 映射到 executor 环境变量，例如 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`CODEZERO_OPENCODE_MODEL`。
+
+对 OpenAI-compatible 自定义网关，CodeZero 会在 task artifact 目录生成临时 `OPENCODE_CONFIG` 文件，注册内部 `codezero/<model>` provider。配置文件只包含 base URL、model 和 `{env:OPENAI_API_KEY}` 引用，不写入真实 API key，也不会进入被测仓库 diff。底层 CLI 是内部实现细节，不能出现在用户-facing PR body 或 issue comment 中。
 
 ### 6.2 JSON Action 兼容模式
 
