@@ -6,6 +6,7 @@ import type { AppConfig, RepositoryConfig } from "@agent/config";
 import { createTask } from "@agent/orchestrator";
 import type { TaskRepository } from "@agent/persistence";
 import { runCommand } from "@agent/sandbox";
+import { createIssueWorkflowGraphRunner } from "@agent/workflow-graph";
 import type {
   Artifact,
   ContextPack,
@@ -911,6 +912,63 @@ describe("workflow modules", () => {
         process.env.TEST_API_KEY = previousApiKey;
       }
     }
+  });
+
+  it("pauses the graph with a PRD approval interrupt", async () => {
+    const rootDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-workflow-graph-approval-"),
+    );
+    const repoDir = path.join(
+      rootDir,
+      "sandboxes",
+      "task-acme-shop-12",
+      "repo",
+    );
+    const artifactDir = path.join(
+      rootDir,
+      "sandboxes",
+      "task-acme-shop-12",
+      "artifacts",
+    );
+    const logDir = path.join(rootDir, "sandboxes", "task-acme-shop-12", "logs");
+    await mkdir(repoDir, { recursive: true });
+    await mkdir(artifactDir, { recursive: true });
+    await mkdir(logDir, { recursive: true });
+    await runCommand({ cwd: repoDir, command: "git init" });
+    await writeFile(path.join(repoDir, "README.md"), "demo\n");
+    const task = {
+      ...createTask(issue),
+      planningDocument: highComplexityPlanningDocument(),
+      contextPack: compactableContextPack(),
+      sandbox: {
+        repoDir,
+        artifactDir,
+        logDir,
+        mode: "worktree" as const,
+      },
+      status: "PRD_DRAFTED",
+    } satisfies Task;
+    const tasks = new InMemoryTaskRepository(task);
+    const runner = createIssueWorkflowGraphRunner(
+      createAppConfig(rootDir, [repositoryConfig()]),
+      tasks,
+    );
+
+    const result = await runner.run(task.id);
+    const updated = await tasks.getTask(task.id);
+
+    expect(result.status).toBe("PRD_REVIEW_REQUIRED");
+    expect(updated?.status).toBe("PRD_REVIEW_REQUIRED");
+    expect(tasks.events.map((event) => event.type)).toContain(
+      "HUMAN_REVIEW_REQUIRED",
+    );
+    expect(
+      tasks.events.some(
+        (event) =>
+          event.type === "AGENT_RUN_FINISHED" &&
+          Array.isArray(event.metadata?.interrupts),
+      ),
+    ).toBe(true);
   });
 
   it("reuses the task sandbox for PR feedback instead of creating feedback sandboxes", async () => {

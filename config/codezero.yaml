@@ -1,0 +1,262 @@
+providers:
+  default:
+    type: openai-compatible
+    base_url: "${OPENAI_BASE_URL}"
+    api_key_env: "OPENAI_API_KEY"
+    model: "${OPENAI_MODEL}"
+    supports_tools: true
+    supports_structured_output: true
+    timeout_ms: 900000
+    coding_executor:
+      mode: native
+      provider_id: deepseek
+      model: "${DEEPSEEK_MODEL}"
+      options:
+        apiKey: "{env:DEEPSEEK_API_KEY}"
+      env:
+        DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY}"
+
+agents:
+  prd:
+    provider: default
+    system_prompt: prompts/system/prd-agent.md
+    skills:
+      - brainstorm-requirements
+      - draft-prd
+  search_planner:
+    provider: default
+    system_prompt: prompts/system/search-planner-agent.md
+    skills:
+      - agentic-code-search
+  implementation:
+    provider: default
+    system_prompt: prompts/system/main-agent.md
+    skills:
+      - repo-context-compress
+      - implementation-scope-planner
+  review:
+    provider: default
+    system_prompt: prompts/system/review-agent.md
+    skills:
+      - pr-compliance-review
+
+repositories:
+  - id: codezero
+    github_owner: JASON-QWeb
+    github_repo: CodeZero
+    default_branch: main
+    project_skill_path: ".agent"
+    trigger:
+      mode: mention
+      mention: "@agent-prd"
+      auto_events:
+        - issues.opened
+        - issues.reopened
+      label_allowlist:
+        - agent-ready
+      label_blocklist:
+        - no-agent
+        - security-review
+      actor_allowlist: []
+    codebase_intelligence:
+      codegraph:
+        enabled: true
+        package: "@colbymchenry/codegraph@0.9.3"
+        init_args:
+          - "--index"
+        timeout_ms: 600000
+        fail_on_error: true
+      navigation_graph:
+        enabled: true
+        include_git_history: true
+        include_codeowners: true
+        max_depth: 4
+    queue:
+      max_concurrent_issues: 2
+    workflow:
+      require_prd_review: true
+    permissions:
+      allowed_tools:
+        - repo.search
+        - repo.read_file
+        - codegraph.query
+        - codegraph.context
+        - shell.run
+        - github.create_draft_pr
+        - browser.screenshot
+        - memory.propose_update
+      blocked_tools: []
+      allowed_permissions:
+        - read
+        - safe_write
+        - repo_write
+        - external_write
+      blocked_permissions:
+        - dangerous
+    quality_gates:
+      build: "pnpm install --frozen-lockfile && pnpm build"
+      lint: "pnpm lint"
+      typecheck: "pnpm typecheck"
+      unit_test: "pnpm test"
+    frontend:
+      dev_command: "pnpm dev:web"
+      screenshot_urls:
+        - "http://localhost:3000/"
+    pr:
+      default_draft: true
+
+  - id: beautyskillshub
+    github_owner: JASON-QWeb
+    github_repo: BeautySkillsHub
+    default_branch: main
+    project_skill_path: ".agent"
+    trigger:
+      mode: mention
+      mention: "@codeZero"
+      auto_events:
+        - issues.opened
+        - issues.reopened
+      label_allowlist:
+        - agent-ready
+      label_blocklist:
+        - no-agent
+        - security-review
+      actor_allowlist: []
+    codebase_intelligence:
+      codegraph:
+        enabled: true
+        package: "@colbymchenry/codegraph@0.9.3"
+        init_args:
+          - "--index"
+        timeout_ms: 600000
+        fail_on_error: true
+      navigation_graph:
+        enabled: true
+        include_git_history: true
+        include_codeowners: true
+        max_depth: 4
+    queue:
+      max_concurrent_issues: 1
+    workflow:
+      require_prd_review: true
+    permissions:
+      allowed_tools:
+        - repo.search
+        - repo.read_file
+        - codegraph.query
+        - codegraph.context
+        - shell.run
+        - github.create_draft_pr
+        - browser.screenshot
+        - memory.propose_update
+      blocked_tools: []
+      allowed_permissions:
+        - read
+        - safe_write
+        - repo_write
+        - external_write
+      blocked_permissions:
+        - dangerous
+    quality_gates:
+      setup: "export DATABASE_URL='postgres://skillhub:skillhub@localhost:5432/skillhub_local?sslmode=disable' REDIS_PORT=6380 REDIS_ADDR=localhost:6380; ./scripts/local.sh db up && ./scripts/local.sh migrate"
+      build: "export DATABASE_URL='postgres://skillhub:skillhub@localhost:5432/skillhub_local?sslmode=disable'; cd frontend && npm ci && npm run build && cd ../backend && go test ./..."
+      typecheck: "cd frontend && npx tsc -b"
+      unit_test: "export DATABASE_URL='postgres://skillhub:skillhub@localhost:5432/skillhub_local?sslmode=disable'; cd frontend && npm run test:node && cd ../backend && go test ./..."
+    frontend:
+      dev_command: "export DATABASE_URL='postgres://skillhub:skillhub@localhost:5432/skillhub_local?sslmode=disable' REDIS_PORT=6380 REDIS_ADDR=localhost:6380 SEED_LOCAL=0; ./scripts/local.sh dev"
+      screenshot_urls:
+        - "http://127.0.0.1:5173/"
+    pr:
+      default_draft: true
+
+sandbox:
+  mode: worktree
+  image: agent-sandbox-node:latest
+  root_dir: "./sandboxes"
+  network:
+    allow:
+      - github.com
+      - token-plan-cn.xiaomimimo.com
+      - registry.npmjs.org
+      - api.github.com
+  filesystem:
+    allow_repo_only: true
+  limits:
+    max_runtime_minutes: 90
+    max_diff_files: 30
+    max_diff_lines: 1200
+    max_quality_gate_retries: 6
+  implementation_executor:
+    mode: cli
+    name: codezero-coding-cli
+    command: 'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
+    timeout_ms: 3600000
+    env: {}
+
+policies:
+  - id: block-secret-files
+    description: Agent must not modify secrets or private keys.
+    match_paths:
+      - ".env*"
+      - "**/*.pem"
+      - "**/*.key"
+    action: block
+  - id: require-human-review-for-auth-and-billing
+    description: Auth, billing, permission, and ledger changes require human approval.
+    match_paths:
+      - "src/auth/**"
+      - "src/billing/**"
+      - "src/permissions/**"
+      - "src/ledger/**"
+    action: require_approval
+  - id: block-dangerous-shell
+    description: Dangerous shell commands are not allowed in automated runs.
+    match_commands:
+      - "rm -rf"
+      - "npm publish"
+      - "pnpm publish"
+      - "kubectl apply"
+      - "terraform apply"
+    action: block
+  - id: audit-database-migrations
+    description: Database migrations can be generated only with explicit review.
+    match_paths:
+      - "**/migrations/**"
+      - "**/schema.prisma"
+    action: require_approval
+
+tools:
+  - name: repo.search
+    description: Search files and symbols inside the task sandbox.
+    permission: read
+    timeout_ms: 10000
+  - name: repo.read_file
+    description: Read a file from the task sandbox.
+    permission: read
+    timeout_ms: 10000
+  - name: codegraph.query
+    description: Query the prebuilt CodeGraph index for symbols and source locations.
+    permission: read
+    timeout_ms: 30000
+  - name: codegraph.context
+    description: Build task context from the prebuilt CodeGraph index.
+    permission: read
+    timeout_ms: 30000
+  - name: shell.run
+    description: Run an allowlisted shell command in the sandbox.
+    permission: repo_write
+    timeout_ms: 120000
+    policy_refs:
+      - block-dangerous-shell
+  - name: github.create_draft_pr
+    description: Create a draft pull request for the task branch.
+    permission: external_write
+    timeout_ms: 30000
+  - name: browser.screenshot
+    description: Capture desktop and mobile screenshots for configured URLs.
+    permission: read
+    timeout_ms: 120000
+  - name: memory.propose_update
+    description: Propose a memory or project-map update artifact.
+    permission: safe_write
+    timeout_ms: 30000

@@ -14,6 +14,7 @@
     "@agent/config": "workspace:*",
     "@agent/github": "workspace:*",
     "@agent/memory": "workspace:*",
+    "@agent/model-runtime": "workspace:*",
     "@agent/observability": "workspace:*",
     "@agent/orchestrator": "workspace:*",
     "@agent/persistence": "workspace:*",

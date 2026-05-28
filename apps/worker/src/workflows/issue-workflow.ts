@@ -1,7 +1,7 @@
 import { findRepository, loadAppConfig, type AppConfig } from "@agent/config";
 import { isComputeActiveStatus, shouldDeferForRepositoryConcurrency } from "@agent/orchestrator";
 import { createRepository, createTaskEvent, type TaskRepository } from "@agent/persistence";
-import { IssueWorkflowRunner } from "@agent/workflows";
+import { createIssueWorkflowGraphRunner, type IssueWorkflowGraphRunner } from "@agent/workflow-graph";
 
 export type IssueWorkflowJob = {
   taskId: string;
@@ -19,7 +19,7 @@ export type IssueWorkflowResult = {
 export type IssueWorkflowDependencies = {
   loadConfig?: () => Promise<AppConfig>;
   createTaskRepository?: (storage: AppConfig["storage"]) => Promise<TaskRepository>;
-  createRunner?: (config: AppConfig, tasks: TaskRepository) => Pick<IssueWorkflowRunner, "run">;
+  createRunner?: (config: AppConfig, tasks: TaskRepository) => IssueWorkflowGraphRunner;
   repositoryQueueRetryMs?: string;
 };
 
@@ -84,6 +84,6 @@ export async function runIssueWorkflow(job: IssueWorkflowJob, dependencies: Issu
   return runner.run(job.taskId);
 }
 
-function createRunner(config: AppConfig, tasks: TaskRepository, dependencies: IssueWorkflowDependencies): Pick<IssueWorkflowRunner, "run"> {
-  return dependencies.createRunner?.(config, tasks) ?? new IssueWorkflowRunner(config, tasks);
+function createRunner(config: AppConfig, tasks: TaskRepository, dependencies: IssueWorkflowDependencies): IssueWorkflowGraphRunner {
+  return dependencies.createRunner?.(config, tasks) ?? createIssueWorkflowGraphRunner(config, tasks);
 }

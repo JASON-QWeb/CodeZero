@@ -15,6 +15,7 @@ import {
   type AgentsFileConfig,
   type ConfigSectionName
 } from "@agent/config";
+import { AiSdkModelProvider } from "@agent/model-runtime";
 import { reloadServices } from "../services/task-services.js";
 import { startConfiguredRepositoryOnboarding } from "../services/repository-onboarding.js";
 
@@ -233,69 +234,68 @@ async function validateProviderConnection(input: { content: string; providerId: 
   }
 
   const startedAt = Date.now();
-  const timeoutMs = Math.min(provider.timeout_ms ?? 15_000, 30_000);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${provider.base_url.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        messages: [{ role: "user", content: "Reply with ok." }],
-        temperature: 0,
-        max_tokens: 4
-      })
+    const runtimeProvider = new AiSdkModelProvider({
+      ...provider,
+      id: input.providerId,
+      apiKey,
+      temperature: provider.temperature ?? 0,
+      max_tokens: Math.min(provider.max_tokens ?? 4, 16),
+      timeout_ms: Math.min(provider.timeout_ms ?? 15_000, 30_000)
+    });
+
+    await runtimeProvider.generate({
+      messages: [{ role: "user", content: "Reply with ok." }],
+      metadata: {
+        operation: "settings.provider.validate",
+        provider_id: input.providerId
+      }
     });
     const latencyMs = Date.now() - startedAt;
-
-    if (!response.ok) {
-      const body = await response.text();
-      return {
-        providerId: input.providerId,
-        valid: false,
-        baseUrl: provider.base_url,
-        model: provider.model,
-        statusCode: response.status,
-        latencyMs,
-        usedApiKeySource: input.apiKey?.trim() ? "request" : "env",
-        message: `Provider returned ${response.status}: ${body.slice(0, 500)}`
-      };
-    }
 
     return {
       providerId: input.providerId,
       valid: true,
       baseUrl: provider.base_url,
       model: provider.model,
-      statusCode: response.status,
+      statusCode: 200,
       latencyMs,
       usedApiKeySource: input.apiKey?.trim() ? "request" : "env",
       message: `Provider '${input.providerId}' responded successfully in ${latencyMs}ms.`
     };
   } catch (error) {
     const latencyMs = Date.now() - startedAt;
-    const message = error instanceof Error && error.name === "AbortError" ? `Provider validation timed out after ${timeoutMs}ms` : error instanceof Error ? error.message : String(error);
+    const statusCode = extractStatusCode(error);
 
     return {
       providerId: input.providerId,
       valid: false,
       baseUrl: provider.base_url,
       model: provider.model,
+      statusCode,
       latencyMs,
       usedApiKeySource: input.apiKey?.trim() ? "request" : "env",
-      message
+      message: error instanceof Error ? error.message : String(error)
     };
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
 function hasUnresolvedPlaceholder(value: string): boolean {
   return value.includes("${");
+}
+
+function extractStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+
+  const candidate = error as {
+    statusCode?: unknown;
+    status?: unknown;
+    response?: { status?: unknown };
+  };
+  const statusCode = candidate.statusCode ?? candidate.status ?? candidate.response?.status;
+
+  return typeof statusCode === "number" ? statusCode : undefined;
 }

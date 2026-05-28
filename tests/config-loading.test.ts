@@ -34,12 +34,7 @@ describe("app config loading", () => {
 
   it("resolves relative file storage env paths from the project root", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-config-storage-"));
-    await mkdir(path.join(dir, "config"), { recursive: true });
-    await Promise.all(
-      ["agents", "repositories", "sandbox", "policies", "tools"].map((section) =>
-        writeFile(path.join(dir, "config", `${section}.example.yaml`), section === "repositories" ? "repositories: []\n" : section === "policies" ? "policies: []\n" : section === "tools" ? "tools: []\n" : section === "sandbox" ? "sandbox: {}\n" : "providers: {}\nagents: {}\n")
-      )
-    );
+    await writeCodeZeroConfig(dir);
     const previousTaskStore = process.env.TASK_STORE_FILE;
     const previousMemoryStore = process.env.MEMORY_STORE_FILE;
     process.env.TASK_STORE_FILE = "data/custom-tasks.json";
@@ -78,9 +73,8 @@ describe("app config loading", () => {
           ""
         ].join("\n")
       ),
-      writeFile(
-        path.join(dir, "config", "agents.example.yaml"),
-        [
+      writeCodeZeroConfig(dir, {
+        agents: [
           "providers:",
           "  default:",
           "    type: openai-compatible",
@@ -93,11 +87,7 @@ describe("app config loading", () => {
           "    system_prompt: prompts/system/prd-agent.md",
           ""
         ].join("\n")
-      ),
-      writeFile(path.join(dir, "config", "repositories.example.yaml"), "repositories: []\n"),
-      writeFile(path.join(dir, "config", "sandbox.example.yaml"), "sandbox: {}\n"),
-      writeFile(path.join(dir, "config", "policies.example.yaml"), "policies: []\n"),
-      writeFile(path.join(dir, "config", "tools.example.yaml"), "tools: []\n")
+      })
     ]);
     const previousBaseUrl = process.env.CONFIG_ENV_BASE_URL;
     const previousModel = process.env.CONFIG_ENV_MODEL;
@@ -125,6 +115,7 @@ describe("app config loading", () => {
 
   it("validates and writes editable config sections", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-config-"));
+    await writeCodeZeroConfig(dir);
     const content = [
       "providers:",
       "  simple:",
@@ -206,10 +197,8 @@ describe("app config loading", () => {
 
   it("applies repository runtime settings through the editable config module", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-config-runtime-"));
-    await mkdir(path.join(dir, "config"), { recursive: true });
-    await writeFile(
-      path.join(dir, "config", "agents.example.yaml"),
-      [
+    await writeCodeZeroConfig(dir, {
+      agents: [
         "providers:",
         "  simple:",
         "    type: openai-compatible",
@@ -221,11 +210,8 @@ describe("app config loading", () => {
         "    provider: simple",
         "    system_prompt: prompts/prd.md",
         ""
-      ].join("\n")
-    );
-    await writeFile(
-      path.join(dir, "config", "repositories.example.yaml"),
-      [
+      ].join("\n"),
+      repositories: [
         "repositories:",
         "  - id: demo",
         "    github_owner: acme",
@@ -238,10 +224,7 @@ describe("app config loading", () => {
         "        - read",
         ""
       ].join("\n")
-    );
-    await writeFile(path.join(dir, "config", "sandbox.example.yaml"), "sandbox: {}\n");
-    await writeFile(path.join(dir, "config", "policies.example.yaml"), "policies: []\n");
-    await writeFile(path.join(dir, "config", "tools.example.yaml"), "tools: []\n");
+    });
 
     const snapshot = await loadEditableConfig(dir);
     const updated = await updateRepositoryRuntimeSettings(dir, "demo", {
@@ -251,9 +234,9 @@ describe("app config loading", () => {
       allowedPermissions: ["read", "repo_write"],
       blockedPermissions: ["dangerous"]
     });
-    const written = await readFile(path.join(dir, "config", "repositories.yaml"), "utf8");
+    const written = await readFile(path.join(dir, "config", "codezero.yaml"), "utf8");
 
-    expect(snapshot.sections.find((section) => section.section === "repositories")?.exists).toBe(false);
+    expect(snapshot.sections.find((section) => section.section === "repositories")?.exists).toBe(true);
     expect(updated.exists).toBe(true);
     expect(written).toContain("mode: label");
     expect(written).toContain("max_concurrent_issues: 3");
@@ -296,4 +279,40 @@ function restoreEnv(key: string, value: string | undefined): void {
   } else {
     process.env[key] = value;
   }
+}
+
+async function writeCodeZeroConfig(
+  rootDir: string,
+  sections: {
+    agents?: string;
+    repositories?: string;
+    sandbox?: string;
+    policies?: string;
+    tools?: string;
+  } = {}
+): Promise<void> {
+  await mkdir(path.join(rootDir, "config"), { recursive: true });
+  await writeFile(
+    path.join(rootDir, "config", "codezero.yaml"),
+    [
+      sections.agents ??
+        [
+          "providers:",
+          "  default:",
+          "    type: openai-compatible",
+          "    base_url: https://api.example.test/v1",
+          "    api_key_env: TEST_API_KEY",
+          "    model: test-model",
+          "agents:",
+          "  prd:",
+          "    provider: default",
+          "    system_prompt: prompts/system/prd-agent.md",
+          ""
+        ].join("\n"),
+      sections.repositories ?? "repositories: []\n",
+      sections.sandbox ?? "sandbox: {}\n",
+      sections.policies ?? "policies: []\n",
+      sections.tools ?? "tools: []\n"
+    ].join("\n")
+  );
 }

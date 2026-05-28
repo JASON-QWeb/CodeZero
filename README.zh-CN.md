@@ -23,7 +23,8 @@ CodeZero 是一个面向 GitHub 的工程 Agent 平台，用来把产品意图�
 ## 项目亮点
 
 - **Issue 到 PRD/Plan 到 PR**：把 GitHub Issue 转成一份结构化执行文档、验证后的 diff 和 draft PR。
-- **异步 GitHub 同步**：仓库同步和 Issue 接入走队列 worker，不再阻塞页面。
+- **LangGraph 编排**：Issue workflow 通过可 checkpoint 的图节点运行，支持审批 interrupt 和可恢复修复循环。
+- **AI SDK 模型层**：CodeZero 平台 agent 用同一个 provider registry 处理 PRD、review、context、provider validation 和 routing 调用。
 - **实时 Agent 进度**：OpenCode 输出会被捕获成 task events，看板能显示 coding executor 正在做什么。
 - **OpenCode-first 实现路径**：主实现流程交给 coding CLI executor，不再依赖旧的 JSON 文件写入动作。
 - **仓库智能理解**：CodeGraph、Repo Navigation Graph、approved memory 和 ContextPack 会在改代码前收敛修改范围。
@@ -38,26 +39,23 @@ CodeZero 是一个面向 GitHub 的工程 Agent 平台，用来把产品意图�
 flowchart TD
   GH["GitHub Issue / Comment / Label"] --> TP["Repository Trigger Policy"]
   TP --> API["Fastify Webhook API"]
-  API --> Q["Queue-backed sync and workflow jobs"]
-  Q --> WF["Durable Workflow Orchestrator"]
-  WF --> SB["Persistent Task Sandbox"]
-  SB --> IDX["Codebase Intelligence"]
-  IDX --> GRAPH["Repo Navigation Graph"]
-  GRAPH --> MEM["Approved Memory Retrieval"]
-  MEM --> CP["Evidence-backed ContextPack"]
-  CP --> PRD["PRD/Plan Agent"]
-  PRD --> GATE{"Human approval required?"}
-  GATE -->|Yes| UI["Run Console / Review Board"]
-  UI --> WF
-  GATE -->|No| IMPL["OpenCode Coding Executor"]
-  WF --> IMPL
-  IMPL --> STREAM["Live Progress Events"]
-  STREAM --> UI
-  IMPL --> QA["Quality Gates"]
-  QA --> REV["Review Subagent"]
-  REV --> PRW["PR Writer"]
-  PRW --> PR["Draft PR + Local Verification"]
-  PR --> LEARN["Memory / Project Map Proposal"]
+  API --> LG["LangGraph Workflow Runtime"]
+  LG --> CTX["Repository Intelligence + ContextPack"]
+  LG --> PRD["PRD / Planning Agent"]
+  LG --> HITL["Human Approval Interrupts"]
+  LG --> EXEC["OpenCode Executor Node"]
+  LG --> QA["Quality Gates"]
+  LG --> REV["Review Agent"]
+  LG --> PR["Draft / Update PR"]
+  PRD --> SDK["AI SDK Provider Registry"]
+  CTX --> SDK
+  REV --> SDK
+  EXEC --> OC["OpenCode CLI"]
+  OC --> SB["Persistent Task Sandbox"]
+  SB --> DIFF["Git Diff"]
+  DIFF --> QA
+  LG --> EVENTS["Task Events + Artifacts"]
+  EVENTS --> UI["Run Console"]
 ```
 
 ## 工作流程
@@ -66,10 +64,11 @@ flowchart TD
 2. **打开工作区**：CodeZero 创建或复用 task sandbox 和 issue 分支。
 3. **定位上下文**：仓库索引、导航图、approved memory 和 ContextPack 找到最相关的文件。
 4. **制定计划**：一次 planning pass 生成 PRD/Plan 文档，用于审批和后续实现。
-5. **实现代码**：批准后，OpenCode 使用生成的 prompt file 和模型配置，在同一个沙箱仓库内编辑。
-6. **流式观测**：executor 的 stdout/stderr 和结构化 JSON 行会变成看板事件，包括进度、文件活动、命令和错误。
-7. **验证结果**：运行 build、lint、test、typecheck、截图 hook、policy check 和 Review subagent。
-8. **创建 PR**：CodeZero 推送分支并创建 draft PR，附带证据、风险说明和本地验证命令。
+5. **审批或恢复**：需要人工审批或 PR feedback 时，LangGraph 中断运行并在同一个 task thread 恢复。
+6. **实现代码**：批准后，OpenCode 使用生成的 prompt file 和模型配置，在同一个沙箱仓库内编辑。
+7. **流式观测**：executor 的 stdout/stderr 和结构化 JSON 行会变成看板事件，包括进度、文件活动、命令和错误。
+8. **验证结果**：运行 build、lint、test、typecheck、截图 hook、policy check 和 Review subagent。
+9. **创建 PR**：CodeZero 推送分支并创建 draft PR，附带证据、风险说明和本地验证命令。
 
 ## Monorepo 结构
 
@@ -79,11 +78,11 @@ apps/
   web/       Next.js Run Console、Settings Console、Memory Inbox
   worker/    队列 worker 与仓库任务执行
 packages/
-  agent-runtime/          model provider 与结构化 agent 基础能力
   codebase-intelligence/  索引、混合搜索、ContextPack、repo graph
   config/                 YAML 配置加载与校验
   github/                 GitHub Issue、branch、comment、PR 集成
   memory/                 approved memory 与 memory proposal 存储
+  model-runtime/          AI SDK 模型注册表与结构化 agent runner
   observability/          task traces 与可回放事件整理
   orchestrator/           任务状态机与 workflow 决策
   persistence/            文件/Postgres task 持久化
@@ -91,6 +90,7 @@ packages/
   skills/                 平台 skill loader 与内置 skills
   tool-gateway/           可审计的 read/search/shell 工具边界
   verification/           测试、截图与本地验证辅助能力
+  workflow-graph/         LangGraph task graph、checkpoint 与 callbacks
   workflows/              Issue-to-PR workflow 编排
 ```
 
@@ -100,11 +100,6 @@ packages/
 pnpm install
 
 cp .env.example .env
-cp config/agents.example.yaml config/agents.yaml
-cp config/repositories.example.yaml config/repositories.yaml
-cp config/sandbox.example.yaml config/sandbox.yaml
-cp config/policies.example.yaml config/policies.yaml
-cp config/tools.example.yaml config/tools.yaml
 ```
 
 编辑 `.env`，配置 OpenAI-compatible 模型服务和 GitHub token：
@@ -177,30 +172,17 @@ pnpm eval:golden
 
 运行配置位于 `config/` 目录：
 
-- `agents.yaml`：模型 provider、agent 角色和模型路由。
-- `repositories.yaml`：仓库触发策略、队列限制和权限。
-- `sandbox.yaml`：执行模式、workspace 路径和沙箱设置。
-- `policies.yaml`：审批规则、禁改路径和 guardrail policy。
-- `tools.yaml`：tool gateway 权限和超时默认值。
+- `codezero.yaml`：模型 provider、agent 角色、仓库、沙箱、policy 和 tool gateway 默认值。
+- `codezero.example.yaml`：新安装可参考的干净模板。
 
 本地运行时也可以通过 Web Settings Console 编辑和校验这些配置。
 
 ## 文档
 
 - [文档索引](docs/README.md)
-- [系统架构](docs/ARCHITECTURE.md)
-- [流程蓝图](docs/WORKFLOW_BLUEPRINT.md)
-- [运行指南](docs/OPERATIONS.md)
-- [产品需求文档](docs/PRD.md)
-- [Repo Navigation Graph](docs/REPO_NAVIGATION_GRAPH.md)
-- [Codebase Intelligence](docs/CODEBASE_INTELLIGENCE.md)
-- [记忆架构](docs/MEMORY_ARCHITECTURE.md)
-- [Prompt 与 Skill 设计](docs/PROMPTS_AND_SKILLS.md)
-
-历史规划文档统一存放在 [docs/archive](docs/archive/)。
+- [当前架构](docs/ARCHITECTURE.md)
+- [Refactor 方案](docs/REFACTOR_PLAN.md)
 
 ## 当前状态
 
-MVP 已可本地运行，包含 GitHub Issue 接入、异步仓库同步、仓库触发策略、队列与并发限制、单份 PRD/Plan 规划文档、条件式人工审批、Repo Navigation Graph MVP、ContextPack 生成、Understand-Anything 官方项目知识图入口、基于 OpenCode 的沙箱实现、Agent 进度流式事件、Trace Replay API、Run Console、Settings Console、Memory Inbox、Golden Issue Eval CLI/CI、Repository Onboarding、质量门禁、Review subagent 和 draft PR 创建。
-
-下一步重点是审批恢复、更强的 provider 健康诊断、更严格的命令与工具 schema、安全扫描、更丰富的 eval assertion，以及面向大仓库的更深层图适配器。
+当前 runtime 已按 AI SDK 管模型接入、LangGraph 管 workflow 编排、OpenCode 管 sandbox 代码执行来组织。运行配置收敛到 `config/codezero.yaml`；`packages/model-runtime` 会把同一份配置编译给平台 agent 和 OpenCode；worker 通过 `packages/workflow-graph` 执行 issue workflow。

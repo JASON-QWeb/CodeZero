@@ -76,11 +76,10 @@ function task(number: number, status: Task["status"], owner: string, repo: strin
 async function writeConfigFixture(rootDir: string): Promise<void> {
   const configDir = path.join(rootDir, "config");
   await mkdir(configDir, { recursive: true });
-  await Promise.all(
-    ["agents", "repositories", "sandbox", "policies", "tools"].map((section) =>
-      copyFile(path.join(process.cwd(), "config", `${section}.example.yaml`), path.join(configDir, `${section}.example.yaml`))
-    )
-  );
+  await Promise.all([
+    copyFile(path.join(process.cwd(), "config", "codezero.example.yaml"), path.join(configDir, "codezero.yaml")),
+    copyFile(path.join(process.cwd(), "config", "codezero.example.yaml"), path.join(configDir, "codezero.example.yaml"))
+  ]);
 }
 
 function issue(number: number, owner: string, repo: string): IssueContext {

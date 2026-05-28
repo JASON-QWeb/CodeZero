@@ -135,13 +135,15 @@ async function createConfigFixture(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "agent-knowledge-graph-"));
   const configDir = path.join(dir, "config");
   await mkdir(configDir, { recursive: true });
-  await Promise.all(
-    ["agents", "repositories", "sandbox", "policies", "tools"].map((section) =>
-      copyFile(
-        path.join(process.cwd(), "config", `${section}.example.yaml`),
-        path.join(configDir, `${section}.example.yaml`),
-      ),
+  await Promise.all([
+    copyFile(
+      path.join(process.cwd(), "config", "codezero.example.yaml"),
+      path.join(configDir, "codezero.yaml"),
     ),
-  );
+    copyFile(
+      path.join(process.cwd(), "config", "codezero.example.yaml"),
+      path.join(configDir, "codezero.example.yaml"),
+    ),
+  ]);
   return dir;
 }

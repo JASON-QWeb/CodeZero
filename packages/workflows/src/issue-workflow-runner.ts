@@ -13,7 +13,7 @@ import {
   runJsonAgent,
   type AgentDefinition,
   type AgentRunner,
-} from "@agent/agent-runtime";
+} from "@agent/model-runtime";
 import {
   buildContextPack,
   buildNavigationRoute,
@@ -269,7 +269,7 @@ export class IssueWorkflowRunner {
     }
   }
 
-  private shouldRunPrFeedbackIteration(task: Task): boolean {
+  shouldRunPrFeedbackIteration(task: Task): boolean {
     return Boolean(
       task.prUrl &&
       task.branchName &&
@@ -280,7 +280,7 @@ export class IssueWorkflowRunner {
     );
   }
 
-  private async runPrFeedbackIteration(
+  async runPrFeedbackIteration(
     task: Task,
     repositoryConfig: RepositoryConfig,
   ): Promise<IssueWorkflowResult> {
@@ -330,7 +330,7 @@ export class IssueWorkflowRunner {
     return { taskId: updated.id, status: updated.status, prUrl: updated.prUrl };
   }
 
-  private async draftPlanningDocument(
+  async draftPlanningDocument(
     task: Task,
     repositoryConfig: RepositoryConfig,
     runner: AgentRunner,
@@ -376,7 +376,7 @@ export class IssueWorkflowRunner {
     return planningDocument;
   }
 
-  private async publishPrdIssueComment(
+  async publishPrdIssueComment(
     task: Task,
     repositoryConfig: RepositoryConfig,
     planningDocument: PlanningDocument,
@@ -419,7 +419,7 @@ export class IssueWorkflowRunner {
     );
   }
 
-  private async prepareSandbox(
+  async prepareSandbox(
     task: Task,
     repositoryConfig: RepositoryConfig,
   ): Promise<{ task: Task; sandbox: Sandbox }> {
@@ -601,7 +601,7 @@ export class IssueWorkflowRunner {
     return sandbox;
   }
 
-  private async createContextPack(
+  async createContextPack(
     task: Task,
     sandbox: Sandbox,
     repositoryConfig: RepositoryConfig,
@@ -1191,7 +1191,7 @@ export class IssueWorkflowRunner {
     }
   }
 
-  private async runImplementationSelfCheckLoop(
+  async runImplementationSelfCheckLoop(
     task: Task,
     sandbox: Sandbox,
     repositoryConfig: RepositoryConfig,
@@ -1479,7 +1479,7 @@ export class IssueWorkflowRunner {
     return review;
   }
 
-  private async createDraftPr(
+  async createDraftPr(
     task: Task,
     sandbox: Sandbox,
     repositoryConfig: RepositoryConfig,
@@ -1718,7 +1718,7 @@ export class IssueWorkflowRunner {
       : "";
   }
 
-  private requiredRepository(task: Task): RepositoryConfig {
+  requiredRepository(task: Task): RepositoryConfig {
     const repository = findRepository(
       this.config,
       task.issue.owner,
@@ -1734,7 +1734,7 @@ export class IssueWorkflowRunner {
     return repository;
   }
 
-  private async requiredTask(taskId: string): Promise<Task> {
+  async requiredTask(taskId: string): Promise<Task> {
     const task = await this.tasks.getTask(taskId);
 
     if (!task) {
@@ -1744,7 +1744,7 @@ export class IssueWorkflowRunner {
     return task;
   }
 
-  private async updateStatus(
+  async updateStatus(
     taskId: string,
     status: Task["status"],
     patch: Partial<Task> = {},
@@ -1758,7 +1758,7 @@ export class IssueWorkflowRunner {
     });
   }
 
-  private async event(
+  async event(
     taskId: string,
     type: Parameters<typeof createTaskEvent>[0]["type"],
     message: string,

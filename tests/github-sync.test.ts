@@ -379,15 +379,21 @@ async function createConfigFixture(prefix: string): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), prefix));
   const configDir = path.join(dir, "config");
   await mkdir(configDir, { recursive: true });
-  await Promise.all(
-    ["agents", "repositories", "sandbox", "policies", "tools"].map((section) =>
-      copyFile(
-        path.join(process.cwd(), "config", `${section}.example.yaml`),
-        path.join(configDir, `${section}.example.yaml`),
-      ),
-    ),
-  );
+  await copyUnifiedConfigFixture(configDir);
   return dir;
+}
+
+async function copyUnifiedConfigFixture(configDir: string): Promise<void> {
+  await Promise.all([
+    copyFile(
+      path.join(process.cwd(), "config", "codezero.example.yaml"),
+      path.join(configDir, "codezero.yaml"),
+    ),
+    copyFile(
+      path.join(process.cwd(), "config", "codezero.example.yaml"),
+      path.join(configDir, "codezero.example.yaml"),
+    ),
+  ]);
 }
 
 function fakeGitHub(input: {

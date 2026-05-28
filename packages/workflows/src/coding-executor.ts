@@ -1,7 +1,11 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AgentDefinition } from "@agent/agent-runtime";
 import type { AppConfig, ImplementationExecutorConfig } from "@agent/config";
+import {
+  buildOpenCodeProviderConfig,
+  resolveCodingExecutorProvider,
+  type AgentDefinition,
+} from "@agent/model-runtime";
 import {
   getGitDiff,
   runCommand,
@@ -18,7 +22,6 @@ import type {
 
 export type NormalizedImplementationExecutorConfig =
   Required<ImplementationExecutorConfig>;
-type AgentProviderConfig = AppConfig["agents"]["providers"][string];
 
 export type CodingExecutorPromptInput = {
   task: Task;
@@ -491,124 +494,6 @@ function truncateProgressText(value: string, maxChars: number): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function buildOpenCodeProviderConfig(
-  config: AppConfig,
-  agent: AgentDefinition,
-): JsonObject | undefined {
-  const providerId = agent.providerId;
-  const provider = config.agents.providers[providerId];
-
-  if (!provider) {
-    return undefined;
-  }
-
-  return resolveCodingExecutorProvider(providerId, provider).config;
-}
-
-function resolveCodingExecutorProvider(
-  providerId: string,
-  provider: AgentProviderConfig,
-): {
-  mode: "auto" | "custom" | "native";
-  providerId: string;
-  modelRef: string;
-  config?: JsonObject;
-  env: NodeJS.ProcessEnv;
-} {
-  const executorProvider = provider.coding_executor;
-  const mode = executorProvider?.mode ?? "auto";
-  const model = executorProvider?.model ?? provider.model;
-  const resolvedProviderId =
-    executorProvider?.provider_id ??
-    inferOpenCodeProviderId(mode, model) ??
-    "codezero";
-  const modelKey = toOpenCodeProviderModelKey(resolvedProviderId, model);
-  const modelRef = toOpenCodeModelRef(resolvedProviderId, modelKey);
-  const env = executorProvider?.env ?? {};
-
-  if (mode === "native" && !shouldWriteNativeProviderConfig(executorProvider)) {
-    return { mode, providerId: resolvedProviderId, modelRef, env };
-  }
-
-  const providerOptions =
-    mode === "native"
-      ? toJsonObject(executorProvider?.options ?? {})
-      : {
-          baseURL: provider.base_url,
-          apiKey: "{env:OPENAI_API_KEY}",
-          ...toJsonObject(executorProvider?.options ?? {}),
-        };
-  const modelOptions = {
-    name: modelKey,
-    ...toJsonObject(executorProvider?.model_options ?? {}),
-  };
-  const providerEntry: JsonObject = {
-    ...(executorProvider?.npm || mode !== "native"
-      ? { npm: executorProvider?.npm ?? "@ai-sdk/openai-compatible" }
-      : {}),
-    name: executorProvider?.name ?? "CodeZero Runtime Provider",
-    ...(Object.keys(providerOptions).length > 0
-      ? { options: providerOptions }
-      : {}),
-    models: {
-      [modelKey]: modelOptions,
-    },
-  };
-
-  return {
-    mode,
-    providerId: resolvedProviderId,
-    modelRef,
-    env,
-    config: {
-      $schema: "https://opencode.ai/config.json",
-      provider: {
-        [resolvedProviderId]: providerEntry,
-      },
-      model: modelRef,
-    },
-  };
-}
-
-function shouldWriteNativeProviderConfig(
-  executorProvider: AgentProviderConfig["coding_executor"],
-): boolean {
-  return Boolean(
-    executorProvider?.npm ||
-    executorProvider?.name ||
-    Object.keys(executorProvider?.options ?? {}).length > 0 ||
-    Object.keys(executorProvider?.model_options ?? {}).length > 0,
-  );
-}
-
-function inferOpenCodeProviderId(
-  mode: "auto" | "custom" | "native",
-  model: string,
-): string | undefined {
-  if (mode !== "native") {
-    return undefined;
-  }
-
-  const [providerId] = model.split("/");
-  return providerId && providerId !== model ? providerId : undefined;
-}
-
-function toOpenCodeProviderModelKey(providerId: string, model: string): string {
-  return model.startsWith(`${providerId}/`)
-    ? model.slice(providerId.length + 1)
-    : model;
-}
-
-function toOpenCodeModelRef(providerId: string, modelKey: string): string {
-  return `${providerId}/${modelKey}`;
-}
-
-function toJsonObject(value: Record<string, unknown>): JsonObject {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined),
-  ) as JsonObject;
 }
 
 function summarizeDiffForLog(diff: string): string {

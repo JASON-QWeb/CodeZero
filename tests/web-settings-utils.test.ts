@@ -156,8 +156,8 @@ describe("web settings utilities", () => {
 function section(sectionName: ConfigSection["section"], parsed: unknown): ConfigSection {
   return {
     section: sectionName,
-    path: `/config/${sectionName}.yaml`,
-    fallbackPath: `/config/${sectionName}.example.yaml`,
+    path: "/config/codezero.yaml",
+    templatePath: "/config/codezero.example.yaml",
     exists: true,
     content: "",
     parsed

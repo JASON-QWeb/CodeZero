@@ -23,7 +23,7 @@
       "@agent/memory": ["packages/memory/src/index.ts"],
       "@agent/orchestrator": ["packages/orchestrator/src/index.ts"],
       "@agent/observability": ["packages/observability/src/index.ts"],
-      "@agent/agent-runtime": ["packages/agent-runtime/src/index.ts"],
+      "@agent/model-runtime": ["packages/model-runtime/src/index.ts"],
       "@agent/sandbox": ["packages/sandbox/src/index.ts"],
       "@agent/codebase-intelligence": ["packages/codebase-intelligence/src/index.ts"],
       "@agent/skills": ["packages/skills/src/index.ts"],
@@ -31,7 +31,8 @@
       "@agent/verification": ["packages/verification/src/index.ts"],
       "@agent/github": ["packages/github/src/index.ts"],
       "@agent/tool-gateway": ["packages/tool-gateway/src/index.ts"],
-      "@agent/workflows": ["packages/workflows/src/index.ts"]
+      "@agent/workflows": ["packages/workflows/src/index.ts"],
+      "@agent/workflow-graph": ["packages/workflow-graph/src/index.ts"]
     }
   }
 }

@@ -16,11 +16,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agent/agent-runtime": "workspace:*",
     "@agent/codebase-intelligence": "workspace:*",
     "@agent/config": "workspace:*",
     "@agent/github": "workspace:*",
     "@agent/memory": "workspace:*",
+    "@agent/model-runtime": "workspace:*",
     "@agent/orchestrator": "workspace:*",
     "@agent/persistence": "workspace:*",
     "@agent/project-context": "workspace:*",

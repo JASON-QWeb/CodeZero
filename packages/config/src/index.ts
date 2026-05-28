@@ -7,12 +7,13 @@ export {
   writeConfigSection
 } from "./editable-config.js";
 export type { EditableConfigSection, EditableConfigSnapshot } from "./editable-config.js";
-export { findRepository, findWorkspaceRoot, interpolateEnv, loadAppConfig, loadProjectEnv, upsertProjectEnv } from "./loader.js";
+export { findRepository, findWorkspaceRoot, interpolateEnv, loadAppConfig, loadProjectEnv, readCodeZeroConfig, toRuntimeConfigSections, upsertProjectEnv } from "./loader.js";
 export type { AppConfig } from "./loader.js";
 export { evaluateRepositoryTrigger } from "./repository-trigger.js";
 export type { RepositoryTriggerDecision, RepositoryTriggerDecisionInput } from "./repository-trigger.js";
 export {
   agentsFileSchema,
+  codezeroFileSchema,
   codingExecutorProviderModes,
   configSectionNames,
   implementationExecutorModes,
@@ -30,6 +31,7 @@ export {
 export type {
   AgentsFileConfig,
   CodingExecutorProviderConfig,
+  CodeZeroFileConfig,
   ConfigSectionName,
   ImplementationExecutorConfig,
   PoliciesFileConfig,

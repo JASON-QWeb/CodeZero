@@ -2,12 +2,20 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { findWorkspaceRoot, interpolateEnv, loadProjectEnv } from "./loader.js";
-import { configSectionNames, repositoriesFileSchema, schemaForSection, type ConfigSectionName, type RepositoryRuntimeSettingsPatch } from "./schema.js";
+import {
+  codezeroFileSchema,
+  configSectionNames,
+  repositoriesFileSchema,
+  schemaForSection,
+  type CodeZeroFileConfig,
+  type ConfigSectionName,
+  type RepositoryRuntimeSettingsPatch
+} from "./schema.js";
 
 export type EditableConfigSection = {
   section: ConfigSectionName;
   path: string;
-  fallbackPath: string;
+  templatePath: string;
   exists: boolean;
   content: string;
   parsed: unknown;
@@ -28,30 +36,18 @@ export async function loadEditableConfig(rootDir?: string): Promise<EditableConf
 
 export async function readConfigSection(rootDir: string, section: ConfigSectionName): Promise<EditableConfigSection> {
   await loadProjectEnv(rootDir);
-  const paths = getConfigSectionPaths(rootDir, section);
-  const primary = await readFile(paths.path, "utf8")
-    .then((content) => ({ content, exists: true }))
-    .catch(async () => ({ content: await readFile(paths.fallbackPath, "utf8"), exists: false }));
-  const stats = await stat(paths.path).catch(() => undefined);
-
-  return {
-    section,
-    path: paths.path,
-    fallbackPath: paths.fallbackPath,
-    exists: primary.exists,
-    content: primary.content,
-    parsed: parseConfigSection(section, primary.content),
-    updatedAt: stats?.mtime.toISOString()
-  };
+  return readUnifiedConfigSection(rootDir, section);
 }
 
 export async function writeConfigSection(rootDir: string, section: ConfigSectionName, content: string): Promise<EditableConfigSection> {
   await loadProjectEnv(rootDir);
-  parseConfigSection(section, content);
-  const paths = getConfigSectionPaths(rootDir, section);
+  const parsedSection = parseConfigSection(section, content);
+  const current = await readUnifiedConfigDocument(rootDir);
+  const next = replaceUnifiedConfigSection(current.parsed, section, parsedSection);
+  const paths = getUnifiedConfigPaths(rootDir);
   await mkdir(path.dirname(paths.path), { recursive: true });
   const tempPath = `${paths.path}.tmp`;
-  await writeFile(tempPath, content.endsWith("\n") ? content : `${content}\n`);
+  await writeFile(tempPath, YAML.stringify(next));
   await rename(tempPath, paths.path);
   return readConfigSection(rootDir, section);
 }
@@ -105,9 +101,88 @@ export function isConfigSectionName(value: string): value is ConfigSectionName {
   return configSectionNames.includes(value as ConfigSectionName);
 }
 
-function getConfigSectionPaths(rootDir: string, section: ConfigSectionName): { path: string; fallbackPath: string } {
+async function readUnifiedConfigSection(rootDir: string, section: ConfigSectionName): Promise<EditableConfigSection> {
+  const document = await readUnifiedConfigDocument(rootDir);
+  const stats = await stat(document.path).catch(() => undefined);
+
   return {
-    path: path.join(rootDir, "config", `${section}.yaml`),
-    fallbackPath: path.join(rootDir, "config", `${section}.example.yaml`)
+    section,
+    path: document.path,
+    templatePath: document.templatePath,
+    exists: document.exists,
+    content: YAML.stringify(pickUnifiedConfigSection(document.parsed, section)),
+    parsed: parseConfigSection(section, YAML.stringify(pickUnifiedConfigSection(document.parsed, section))),
+    updatedAt: stats?.mtime.toISOString()
+  };
+}
+
+async function readUnifiedConfigDocument(rootDir: string): Promise<{
+  path: string;
+  templatePath: string;
+  exists: boolean;
+  content: string;
+  parsed: CodeZeroFileConfig;
+}> {
+  const paths = getUnifiedConfigPaths(rootDir);
+  const content = await readFile(paths.path, "utf8");
+
+  return {
+    path: paths.path,
+    templatePath: paths.templatePath,
+    exists: true,
+    content,
+    parsed: codezeroFileSchema.parse(YAML.parse(interpolateEnv(content)))
+  };
+}
+
+function pickUnifiedConfigSection(config: CodeZeroFileConfig, section: ConfigSectionName): unknown {
+  switch (section) {
+    case "agents":
+      return {
+        providers: config.providers,
+        agents: config.agents
+      };
+    case "repositories":
+      return { repositories: config.repositories };
+    case "sandbox":
+      return { sandbox: config.sandbox };
+    case "policies":
+      return { policies: config.policies };
+    case "tools":
+      return { tools: config.tools };
+  }
+}
+
+function replaceUnifiedConfigSection(config: CodeZeroFileConfig, section: ConfigSectionName, parsedSection: unknown): CodeZeroFileConfig {
+  const next = { ...config };
+
+  switch (section) {
+    case "agents": {
+      const parsed = schemaForSection("agents").parse(parsedSection) as Pick<CodeZeroFileConfig, "providers" | "agents">;
+      return { ...next, providers: parsed.providers, agents: parsed.agents };
+    }
+    case "repositories": {
+      const parsed = repositoriesFileSchema.parse(parsedSection);
+      return { ...next, repositories: parsed.repositories };
+    }
+    case "sandbox": {
+      const parsed = schemaForSection("sandbox").parse(parsedSection) as Pick<CodeZeroFileConfig, "sandbox">;
+      return { ...next, sandbox: parsed.sandbox };
+    }
+    case "policies": {
+      const parsed = schemaForSection("policies").parse(parsedSection) as Pick<CodeZeroFileConfig, "policies">;
+      return { ...next, policies: parsed.policies };
+    }
+    case "tools": {
+      const parsed = schemaForSection("tools").parse(parsedSection) as Pick<CodeZeroFileConfig, "tools">;
+      return { ...next, tools: parsed.tools };
+    }
+  }
+}
+
+function getUnifiedConfigPaths(rootDir: string): { path: string; templatePath: string } {
+  return {
+    path: path.join(rootDir, "config", "codezero.yaml"),
+    templatePath: path.join(rootDir, "config", "codezero.example.yaml")
   };
 }

@@ -23,7 +23,8 @@ It is built for the messy middle between "I have an idea" and "this PR is ready 
 ## Highlights
 
 - **Issue to PRD/Plan to PR**: convert GitHub Issues into one structured planning document, verified diffs, and draft PRs.
-- **Async GitHub sync**: repository sync and issue ingestion run through queue-backed workers instead of blocking the page.
+- **LangGraph orchestration**: issue workflows run through checkpointed graph nodes with approval interrupts and resumable repair loops.
+- **AI SDK model layer**: CodeZero platform agents use one provider registry for PRD, review, context, provider validation, and routing calls.
 - **Live agent progress**: OpenCode output is captured as task events, so the board can show what the coding executor is doing.
 - **OpenCode-first implementation**: the main code path delegates edits to a coding CLI executor instead of legacy JSON file-write actions.
 - **Repository intelligence**: CodeGraph, Repo Navigation Graph, approved memory, and ContextPack narrow the edit surface before code changes begin.
@@ -38,26 +39,23 @@ It is built for the messy middle between "I have an idea" and "this PR is ready 
 flowchart TD
   GH["GitHub Issue / Comment / Label"] --> TP["Repository Trigger Policy"]
   TP --> API["Fastify Webhook API"]
-  API --> Q["Queue-backed sync and workflow jobs"]
-  Q --> WF["Durable Workflow Orchestrator"]
-  WF --> SB["Persistent Task Sandbox"]
-  SB --> IDX["Codebase Intelligence"]
-  IDX --> GRAPH["Repo Navigation Graph"]
-  GRAPH --> MEM["Approved Memory Retrieval"]
-  MEM --> CP["Evidence-backed ContextPack"]
-  CP --> PRD["PRD/Plan Agent"]
-  PRD --> GATE{"Human approval required?"}
-  GATE -->|Yes| UI["Run Console / Review Board"]
-  UI --> WF
-  GATE -->|No| IMPL["OpenCode Coding Executor"]
-  WF --> IMPL
-  IMPL --> STREAM["Live Progress Events"]
-  STREAM --> UI
-  IMPL --> QA["Quality Gates"]
-  QA --> REV["Review Subagent"]
-  REV --> PRW["PR Writer"]
-  PRW --> PR["Draft PR + Local Verification"]
-  PR --> LEARN["Memory / Project Map Proposal"]
+  API --> LG["LangGraph Workflow Runtime"]
+  LG --> CTX["Repository Intelligence + ContextPack"]
+  LG --> PRD["PRD / Planning Agent"]
+  LG --> HITL["Human Approval Interrupts"]
+  LG --> EXEC["OpenCode Executor Node"]
+  LG --> QA["Quality Gates"]
+  LG --> REV["Review Agent"]
+  LG --> PR["Draft / Update PR"]
+  PRD --> SDK["AI SDK Provider Registry"]
+  CTX --> SDK
+  REV --> SDK
+  EXEC --> OC["OpenCode CLI"]
+  OC --> SB["Persistent Task Sandbox"]
+  SB --> DIFF["Git Diff"]
+  DIFF --> QA
+  LG --> EVENTS["Task Events + Artifacts"]
+  EVENTS --> UI["Run Console"]
 ```
 
 ## How It Works
@@ -66,10 +64,11 @@ flowchart TD
 2. **Open Workspace**: CodeZero creates or reuses the task sandbox and issue branch.
 3. **Orient**: repository indexing, navigation graph, approved memory, and ContextPack identify the relevant files.
 4. **Plan**: one planning pass produces the PRD/Plan document used for approval and implementation.
-5. **Implement**: after approval, OpenCode edits the same sandboxed repository using the generated prompt file and model configuration.
-6. **Stream**: executor stdout/stderr and structured JSON lines become board events such as progress, file activity, commands, and errors.
-7. **Verify**: build, lint, test, typecheck, screenshot hooks, policy checks, and review subagents run before PR creation.
-8. **Publish**: CodeZero pushes a branch and opens a draft PR with evidence, risks, and local verification commands.
+5. **Approve or resume**: LangGraph interrupts the run when human approval or feedback is required, then resumes the same task thread.
+6. **Implement**: after approval, OpenCode edits the same sandboxed repository using the generated prompt file and model configuration.
+7. **Stream**: executor stdout/stderr and structured JSON lines become board events such as progress, file activity, commands, and errors.
+8. **Verify**: build, lint, test, typecheck, screenshot hooks, policy checks, and review subagents run before PR creation.
+9. **Publish**: CodeZero pushes a branch and opens a draft PR with evidence, risks, and local verification commands.
 
 ## Monorepo Layout
 
@@ -79,11 +78,11 @@ apps/
   web/       Next.js Run Console, Settings Console, Memory Inbox
   worker/    Queue worker and repository task execution
 packages/
-  agent-runtime/          model provider and structured agent primitives
   codebase-intelligence/  indexing, hybrid search, ContextPack, repo graph
   config/                 YAML config loading and validation
   github/                 GitHub Issue, branch, comment, PR integration
   memory/                 approved memory and memory proposal store
+  model-runtime/          AI SDK model registry and structured agent runner
   observability/          task traces and replay-friendly event shaping
   orchestrator/           task state machine and workflow decisions
   persistence/            file/Postgres task persistence
@@ -91,6 +90,7 @@ packages/
   skills/                 platform skill loader and built-in skills
   tool-gateway/           audited read/search/shell tool boundary
   verification/           test, screenshot, and local verification helpers
+  workflow-graph/         LangGraph task graph, checkpoints, callbacks
   workflows/              Issue-to-PR workflow composition
 ```
 
@@ -100,11 +100,6 @@ packages/
 pnpm install
 
 cp .env.example .env
-cp config/agents.example.yaml config/agents.yaml
-cp config/repositories.example.yaml config/repositories.yaml
-cp config/sandbox.example.yaml config/sandbox.yaml
-cp config/policies.example.yaml config/policies.yaml
-cp config/tools.example.yaml config/tools.yaml
 ```
 
 Edit `.env` with an OpenAI-compatible model provider and GitHub token:
@@ -175,31 +170,19 @@ pnpm eval:golden
 
 ## Configuration
 
-Runtime configuration lives in YAML files under `config/`:
+Runtime configuration lives in one YAML file under `config/`:
 
-- `agents.yaml`: model providers, agent roles, and routing.
-- `repositories.yaml`: repository trigger policy, queue limits, and permissions.
-- `sandbox.yaml`: execution mode, workspace paths, and sandbox settings.
-- `policies.yaml`: approval rules, blocked paths, and guardrail policy.
-- `tools.yaml`: tool gateway permissions and timeout defaults.
+- `codezero.yaml`: model providers, agent roles, repositories, sandbox, policies, and tool gateway defaults.
+- `codezero.example.yaml`: clean template for new installations.
 
 The Web Settings Console can edit and validate these files during local operation.
 
 ## Documentation
 
 - [Documentation Index](docs/README.md)
-- [System Architecture](docs/ARCHITECTURE.md)
-- [Workflow Blueprint](docs/WORKFLOW_BLUEPRINT.md)
-- [Operations Guide](docs/OPERATIONS.md)
-- [Product Requirements](docs/PRD.md)
-- [Repo Navigation Graph](docs/REPO_NAVIGATION_GRAPH.md)
-- [Codebase Intelligence](docs/CODEBASE_INTELLIGENCE.md)
-- [Memory Architecture](docs/MEMORY_ARCHITECTURE.md)
-- [Prompt and Skill Design](docs/PROMPTS_AND_SKILLS.md)
-- [Session Review](SESSION_REVIEW.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Refactor Plan](docs/REFACTOR_PLAN.md)
 
 ## Current Status
 
-The MVP runs locally and includes GitHub Issue ingestion, async repository sync, repository trigger policy, queue and concurrency limits, one PRD/Plan planning document, conditional human approval, Repo Navigation Graph MVP, ContextPack generation, official Understand-Anything project graph entry point, OpenCode-based sandbox implementation, streamed agent progress, Trace Replay API, Run Console, Settings Console, Memory Inbox, Golden Issue Eval CLI/CI, Repository Onboarding, quality gates, Review subagent, and draft PR creation.
-
-Next hardening areas include approval recovery, stronger provider health diagnostics, stricter command and tool schemas, security scanning, richer eval assertions, and deeper graph adapters for larger repositories.
+The runtime is now organized around AI SDK for model access, LangGraph for workflow orchestration, and OpenCode for sandbox code execution. Runtime config is consolidated in `config/codezero.yaml`; `packages/model-runtime` compiles that config for both platform agents and OpenCode; the worker enters `packages/workflow-graph` for issue execution.

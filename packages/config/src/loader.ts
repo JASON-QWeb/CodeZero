@@ -2,21 +2,14 @@ import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import {
-  agentsFileSchema,
-  policiesFileSchema,
-  repositoriesFileSchema,
-  sandboxFileSchema,
-  toolsFileSchema,
+  codezeroFileSchema,
   type AgentsFileConfig,
+  type CodeZeroFileConfig,
   type PolicyConfig,
   type RepositoryConfig,
   type SandboxFileConfig,
   type ToolConfig
 } from "./schema.js";
-
-type Parser<T> = {
-  parse(value: unknown): T;
-};
 
 const loadedEnvRoots = new Set<string>();
 
@@ -44,27 +37,17 @@ export type AppConfig = {
 export async function loadAppConfig(rootDir?: string): Promise<AppConfig> {
   const resolvedRootDir = rootDir ?? process.env.PROJECT_ROOT ?? (await findWorkspaceRoot(process.cwd()));
   await loadProjectEnv(resolvedRootDir);
-  const [agents, repositories, sandbox, policies, tools] = await Promise.all([
-    readYaml(path.join(resolvedRootDir, "config", "agents.yaml"), path.join(resolvedRootDir, "config", "agents.example.yaml"), agentsFileSchema),
-    readYaml(
-      path.join(resolvedRootDir, "config", "repositories.yaml"),
-      path.join(resolvedRootDir, "config", "repositories.example.yaml"),
-      repositoriesFileSchema
-    ),
-    readYaml(path.join(resolvedRootDir, "config", "sandbox.yaml"), path.join(resolvedRootDir, "config", "sandbox.example.yaml"), sandboxFileSchema),
-    readYaml(path.join(resolvedRootDir, "config", "policies.yaml"), path.join(resolvedRootDir, "config", "policies.example.yaml"), policiesFileSchema),
-    readYaml(path.join(resolvedRootDir, "config", "tools.yaml"), path.join(resolvedRootDir, "config", "tools.example.yaml"), toolsFileSchema)
-  ]);
+  const runtimeConfig = toRuntimeConfigSections(await readCodeZeroConfig(resolvedRootDir));
 
   const databaseUrl = process.env.DATABASE_URL;
 
   return {
     rootDir: resolvedRootDir,
-    agents,
-    repositories: repositories.repositories,
-    sandbox: sandbox.sandbox,
-    policies: policies.policies,
-    tools: tools.tools,
+    agents: runtimeConfig.agents,
+    repositories: runtimeConfig.repositories,
+    sandbox: runtimeConfig.sandbox,
+    policies: runtimeConfig.policies,
+    tools: runtimeConfig.tools,
     storage: {
       driver: process.env.STORAGE_DRIVER === "postgres" && databaseUrl ? "postgres" : "file",
       filePath: resolveFromRoot(resolvedRootDir, process.env.TASK_STORE_FILE ?? path.join("data", "tasks.json")),
@@ -78,6 +61,33 @@ export async function loadAppConfig(rootDir?: string): Promise<AppConfig> {
       webhookSecret: process.env.GITHUB_WEBHOOK_SECRET
     }
   };
+}
+
+export type RuntimeConfigSections = {
+  agents: AgentsFileConfig;
+  repositories: RepositoryConfig[];
+  sandbox: SandboxFileConfig["sandbox"];
+  policies: PolicyConfig[];
+  tools: ToolConfig[];
+};
+
+export function toRuntimeConfigSections(config: CodeZeroFileConfig): RuntimeConfigSections {
+  return {
+    agents: {
+      providers: config.providers,
+      agents: config.agents
+    },
+    repositories: config.repositories,
+    sandbox: config.sandbox,
+    policies: config.policies,
+    tools: config.tools
+  };
+}
+
+export async function readCodeZeroConfig(rootDir: string): Promise<CodeZeroFileConfig> {
+  const configPath = path.join(rootDir, "config", "codezero.yaml");
+  const content = await readFile(configPath, "utf8");
+  return codezeroFileSchema.parse(YAML.parse(interpolateEnv(content)));
 }
 
 function resolveFromRoot(rootDir: string, value: string): string {
@@ -188,12 +198,6 @@ export async function upsertProjectEnv(rootDir: string, key: string, value: stri
   await writeFile(envPath, `${nextLines.join("\n").replace(/\n+$/, "")}\n`);
   process.env[key] = sanitizedValue;
   loadedEnvRoots.delete(rootDir);
-}
-
-async function readYaml<T>(primaryPath: string, fallbackPath: string, schema: Parser<T>): Promise<T> {
-  const content = await readFile(primaryPath, "utf8").catch(async () => readFile(fallbackPath, "utf8"));
-  const interpolated = interpolateEnv(content);
-  return schema.parse(YAML.parse(interpolated));
 }
 
 function parseEnvValue(value: string): string {

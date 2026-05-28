@@ -21,7 +21,7 @@ const codingExecutorProviderSchema = z
     env: {}
   });
 
-const providerSchema = z.object({
+export const providerSchema = z.object({
   type: z.literal("openai-compatible").default("openai-compatible"),
   base_url: z.string().min(1),
   api_key_env: z.string().min(1),
@@ -34,7 +34,7 @@ const providerSchema = z.object({
   coding_executor: codingExecutorProviderSchema.optional()
 });
 
-const agentSchema = z.object({
+export const agentSchema = z.object({
   provider: z.string().min(1),
   provider_by_complexity: z
     .object({
@@ -47,24 +47,33 @@ const agentSchema = z.object({
   skills: z.array(z.string()).default([])
 });
 
-export const agentsFileSchema = z
-  .object({
-    providers: z.record(z.string(), providerSchema),
-    agents: z.record(z.string(), agentSchema)
-  })
-  .superRefine((config, context) => {
-    const providerIds = new Set(Object.keys(config.providers));
+const agentsFileBaseSchema = z.object({
+  providers: z.record(z.string(), providerSchema),
+  agents: z.record(z.string(), agentSchema)
+});
 
-    for (const [agentName, agent] of Object.entries(config.agents)) {
-      validateAgentProviderRef(context, providerIds, ["agents", agentName, "provider"], agent.provider);
+function validateAgentProviderRefs(config: z.infer<typeof agentsFileBaseSchema>, context: z.RefinementCtx): void {
+  const providerIds = new Set(Object.keys(config.providers));
 
-      for (const [complexity, providerId] of Object.entries(agent.provider_by_complexity)) {
-        if (providerId) {
-          validateAgentProviderRef(context, providerIds, ["agents", agentName, "provider_by_complexity", complexity], providerId);
-        }
+  for (const [agentName, agent] of Object.entries(config.agents)) {
+    validateAgentProviderRef(context, providerIds, ["agents", agentName, "provider"], agent.provider);
+
+    for (const [complexity, providerId] of Object.entries(agent.provider_by_complexity)) {
+      if (providerId) {
+        validateAgentProviderRef(context, providerIds, ["agents", agentName, "provider_by_complexity", complexity], providerId);
       }
     }
-  });
+  }
+}
+
+export const agentsFileSchema = agentsFileBaseSchema.superRefine(validateAgentProviderRefs);
+
+export const codezeroFileSchema = agentsFileBaseSchema
+  .merge(z.object({ repositories: z.array(z.lazy(() => repositorySchema)) }))
+  .merge(z.object({ sandbox: z.lazy(() => sandboxFileSchema.shape.sandbox) }))
+  .merge(z.object({ policies: z.array(z.lazy(() => policySchema)).default([]) }))
+  .merge(z.object({ tools: z.array(z.lazy(() => toolSchema)).default([]) }))
+  .superRefine(validateAgentProviderRefs);
 
 export const repositoryTriggerModes = ["auto", "mention", "label", "manual", "disabled"] as const;
 export const toolPermissionLevels = ["read", "safe_write", "repo_write", "external_write", "dangerous"] as const;
@@ -284,6 +293,7 @@ export const toolsFileSchema = z.object({
 export const configSectionNames = ["agents", "repositories", "sandbox", "policies", "tools"] as const;
 
 export type AgentsFileConfig = z.infer<typeof agentsFileSchema>;
+export type CodeZeroFileConfig = z.infer<typeof codezeroFileSchema>;
 export type CodingExecutorProviderConfig = z.infer<typeof codingExecutorProviderSchema>;
 export type ImplementationExecutorConfig = z.infer<typeof implementationExecutorSchema>;
 export type RepositoryConfig = z.infer<typeof repositorySchema>;

@@ -1,5 +1,5 @@
 {
-  "name": "@agent/agent-runtime",
+  "name": "@agent/model-runtime",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,11 +16,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agent/shared": "workspace:*"
+    "@agent/config": "workspace:*",
+    "@agent/shared": "workspace:*",
+    "@ai-sdk/openai-compatible": "^2.0.48",
+    "ai": "^6.0.191"
   },
   "devDependencies": {
     "tsup": "^8.5.0",
     "typescript": "^5.9.3"
   }
 }
-

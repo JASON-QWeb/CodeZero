@@ -3,7 +3,7 @@ export type ConfigSectionName = "agents" | "repositories" | "sandbox" | "policie
 export type ConfigSection = {
   section: ConfigSectionName;
   path: string;
-  fallbackPath: string;
+  templatePath: string;
   exists: boolean;
   content: string;
   parsed: unknown;

@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
-import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -177,11 +177,8 @@ describe("settings api", () => {
 
   it("updates repository runtime settings without requiring manual YAML edits", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-settings-api-"));
-    await mkdir(path.join(dir, "config"), { recursive: true });
-    await copyConfigExamples(dir);
-    await writeFile(
-      path.join(dir, "config", "repositories.yaml"),
-      [
+    await writeCodeZeroConfig(dir, {
+      repositories: [
         "repositories:",
         "  - id: shop",
         "    github_owner: acme",
@@ -193,7 +190,7 @@ describe("settings api", () => {
         "      max_concurrent_issues: 1",
         "",
       ].join("\n"),
-    );
+    });
     process.env.PROJECT_ROOT = dir;
     const app = await buildServer();
 
@@ -248,11 +245,8 @@ describe("settings api", () => {
 
   it("persists provider API keys into project env without returning the secret", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-settings-key-"));
-    await mkdir(path.join(dir, "config"), { recursive: true });
-    await copyConfigExamples(dir);
-    await writeFile(
-      path.join(dir, "config", "agents.yaml"),
-      [
+    await writeCodeZeroConfig(dir, {
+      agents: [
         "providers:",
         "  qwen:",
         "    type: openai-compatible",
@@ -265,7 +259,7 @@ describe("settings api", () => {
         "    system_prompt: prompts/system/prd-agent.md",
         "",
       ].join("\n"),
-    );
+    });
     process.env.PROJECT_ROOT = dir;
     const app = await buildServer();
 
@@ -294,14 +288,39 @@ describe("settings api", () => {
   });
 });
 
-async function copyConfigExamples(rootDir: string): Promise<void> {
-  await Promise.all(
-    ["agents", "repositories", "sandbox", "policies", "tools"].map((section) =>
-      copyFile(
-        path.join(process.cwd(), "config", `${section}.example.yaml`),
-        path.join(rootDir, "config", `${section}.example.yaml`),
-      ),
-    ),
+async function writeCodeZeroConfig(
+  rootDir: string,
+  sections: {
+    agents?: string;
+    repositories?: string;
+    sandbox?: string;
+    policies?: string;
+    tools?: string;
+  } = {},
+): Promise<void> {
+  await mkdir(path.join(rootDir, "config"), { recursive: true });
+  await writeFile(
+    path.join(rootDir, "config", "codezero.yaml"),
+    [
+      sections.agents ??
+        [
+          "providers:",
+          "  default:",
+          "    type: openai-compatible",
+          "    base_url: https://api.example.test/v1",
+          "    api_key_env: TEST_MODEL_API_KEY",
+          "    model: test-model",
+          "agents:",
+          "  prd:",
+          "    provider: default",
+          "    system_prompt: prompts/system/prd-agent.md",
+          "",
+        ].join("\n"),
+      sections.repositories ?? "repositories: []\n",
+      sections.sandbox ?? "sandbox: {}\n",
+      sections.policies ?? "policies: []\n",
+      sections.tools ?? "tools: []\n",
+    ].join("\n"),
   );
 }
 
@@ -325,7 +344,22 @@ async function startModelServer(): Promise<{
     }
 
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
+    response.end(
+      JSON.stringify({
+        id: "chatcmpl-test",
+        object: "chat.completion",
+        created: 1_774_800_000,
+        model: "test-model",
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: "ok" },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 },
+      }),
+    );
   });
 
   server.listen(0, "127.0.0.1");

@@ -111,7 +111,7 @@ export function SettingsConsole() {
               >
                 <span>{meta.icon}</span>
                 <strong>{meta.title}</strong>
-                <small>{current?.exists ? "configured" : "example fallback"}</small>
+                <small>{current?.exists ? "configured" : "template"}</small>
               </button>
             );
           })}
@@ -124,7 +124,7 @@ export function SettingsConsole() {
                 <div>
                   <h2>{sectionMeta[selected.section].title}</h2>
                   <p>{sectionMeta[selected.section].description}</p>
-                  <span>{selected.exists ? selected.path : `Using fallback ${selected.fallbackPath}`}</span>
+                  <span>{selected.exists ? selected.path : `Template: ${selected.templatePath}`}</span>
                 </div>
                 <div className="editorActions">
                   <button

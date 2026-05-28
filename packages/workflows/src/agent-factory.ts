@@ -1,39 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { AgentRunner, OpenAICompatibleProvider, type AgentDefinition } from "@agent/agent-runtime";
 import type { AppConfig } from "@agent/config";
+import { createModelRuntimeAgentRunner, type AgentDefinition, type AgentRunner } from "@agent/model-runtime";
 
 export async function createWorkflowAgentRunner(config: AppConfig, env: NodeJS.ProcessEnv = process.env): Promise<AgentRunner> {
-  const providers = new Map(
-    Object.entries(config.agents.providers).map(([id, provider]) => {
-      const apiKey = env[provider.api_key_env] ?? "";
-
-      if (!apiKey) {
-        throw new Error(`${provider.api_key_env} is required for provider ${id}`);
-      }
-
-      if (provider.model.includes("${") || provider.base_url.includes("${")) {
-        throw new Error(`Provider ${id} has unresolved environment placeholders`);
-      }
-
-      return [
-        id,
-        new OpenAICompatibleProvider({
-          id,
-          baseUrl: provider.base_url,
-          apiKey,
-          model: provider.model,
-          temperature: provider.temperature,
-          maxTokens: provider.max_tokens,
-          supportsTools: provider.supports_tools,
-          supportsStructuredOutput: provider.supports_structured_output,
-          timeoutMs: provider.timeout_ms
-        })
-      ] as const;
-    })
-  );
-
-  return new AgentRunner(providers);
+  return createModelRuntimeAgentRunner(config, env);
 }
 
 export async function createExecutionAgents(
