@@ -19,21 +19,6 @@ tools:
     permission: read
     timeout_ms: 30000
 
-  - name: repo.apply_patch
-    description: Apply a patch to the task branch.
-    permission: repo_write
-    timeout_ms: 30000
-
-  - name: repo.replace_text
-    description: Replace exact text in a sandbox file.
-    permission: repo_write
-    timeout_ms: 30000
-
-  - name: repo.write_file
-    description: Create or replace a sandbox file.
-    permission: repo_write
-    timeout_ms: 30000
-
   - name: shell.run
     description: Run an allowlisted shell command in the sandbox.
     permission: repo_write

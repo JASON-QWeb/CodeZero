@@ -1,7 +1,8 @@
 import { evaluateRepositoryTrigger, type RepositoryConfig } from "@agent/config";
 import { GitHubClient, type GitHubIssueComment, type GitHubIssueThread } from "@agent/github";
+import { isComputeActiveStatus } from "@agent/orchestrator";
 import { createTaskEvent } from "@agent/persistence";
-import type { IssueComment, Task } from "@agent/shared";
+import type { IssueComment, Task, TaskStatus } from "@agent/shared";
 import { createAndEnqueueTask, enqueueIssueWorkflow, getServices, type ApiServices } from "./task-services.js";
 
 export type GitHubSyncStatus = "idle" | "running" | "finished" | "failed";
@@ -13,6 +14,7 @@ export type GitHubSyncResult = {
   importedIssues: number;
   importedIssueComments: number;
   queuedPrdApprovals: number;
+  queuedIssueRetriggers: number;
   skippedIssues: number;
   scannedFeedbackPullRequests: number;
   importedFeedbackComments: number;
@@ -169,6 +171,7 @@ async function collectGitHubUpdates(
     importedIssues: 0,
     importedIssueComments: 0,
     queuedPrdApprovals: 0,
+    queuedIssueRetriggers: 0,
     skippedIssues: 0,
     scannedFeedbackPullRequests: 0,
     importedFeedbackComments: 0,
@@ -190,6 +193,7 @@ async function collectGitHubUpdates(
       const issueCommentResult = await syncTrackedIssueComments(services, repository, trackedTask, issue.comments, options);
       result.importedIssueComments += issueCommentResult.importedComments;
       result.queuedPrdApprovals += issueCommentResult.queuedPrdApprovals;
+      result.queuedIssueRetriggers += issueCommentResult.queuedIssueRetriggers;
       result.skippedIssues += 1;
       continue;
     }
@@ -347,12 +351,12 @@ async function syncTrackedIssueComments(
   task: Task,
   comments: IssueComment[],
   options: GitHubSyncOptions
-): Promise<{ importedComments: number; queuedPrdApprovals: number }> {
+): Promise<{ importedComments: number; queuedPrdApprovals: number; queuedIssueRetriggers: number }> {
   const humanComments = comments.filter((comment) => !isBotActor(comment.author) && !isGeneratedCodeZeroComment(comment.body));
   const newComments = humanComments.filter((comment) => !hasKnownIssueComment(task.issue.comments, comment));
 
   if (newComments.length === 0) {
-    return { importedComments: 0, queuedPrdApprovals: 0 };
+    return { importedComments: 0, queuedPrdApprovals: 0, queuedIssueRetriggers: 0 };
   }
 
   let updated = await services.tasks.updateTask(task.id, {
@@ -389,10 +393,30 @@ async function syncTrackedIssueComments(
       })
     );
     await (options.enqueue ?? enqueueIssueWorkflow)(updated.id, `${updated.id}-prd-approved-${Date.now()}`);
-    return { importedComments: newComments.length, queuedPrdApprovals: 1 };
+    return { importedComments: newComments.length, queuedPrdApprovals: 1, queuedIssueRetriggers: 0 };
   }
 
-  return { importedComments: newComments.length, queuedPrdApprovals: 0 };
+  const retriggerComment = newComments.find((comment) => isIssueTriggerComment(repository, updated, comment));
+  const restartStatus = retriggerComment ? getIssueRetriggerRestartStatus(updated, retriggerComment) : undefined;
+  if (retriggerComment && restartStatus) {
+    updated = await services.tasks.updateTask(updated.id, { status: restartStatus });
+    await services.tasks.appendEvent(
+      createTaskEvent({
+        taskId: updated.id,
+        type: "TASK_QUEUED",
+        message: `Workflow requeued from GitHub issue trigger comment by ${retriggerComment.author}`,
+        metadata: {
+          source: "github-sync",
+          previousStatus: task.status,
+          restartStatus
+        }
+      })
+    );
+    await (options.enqueue ?? enqueueIssueWorkflow)(updated.id, `${updated.id}-issue-retrigger-${Date.now()}`);
+    return { importedComments: newComments.length, queuedPrdApprovals: 0, queuedIssueRetriggers: 1 };
+  }
+
+  return { importedComments: newComments.length, queuedPrdApprovals: 0, queuedIssueRetriggers: 0 };
 }
 
 function findTrackedIssueTask(tasks: Task[], issue: Pick<GitHubIssueThread, "owner" | "repo" | "number">): Task | undefined {
@@ -442,6 +466,38 @@ function isPrdApprovalComment(repository: RepositoryConfig, comment: Pick<IssueC
   }
 
   return /\bapprove\s+prd\b|\bprd\s+approved\b|\/approve-prd|批准\s*prd|同意执行|可以执行/.test(body);
+}
+
+function isIssueTriggerComment(repository: RepositoryConfig, task: Task, comment: IssueComment): boolean {
+  if (isGeneratedCodeZeroComment(comment.body)) {
+    return false;
+  }
+
+  return evaluateRepositoryTrigger({
+    repository,
+    eventName: "issue_comment",
+    action: "created",
+    labels: task.issue.labels,
+    commentBody: comment.body,
+    actor: comment.author,
+    fallbackMention: process.env.AGENT_TRIGGER_MENTION ?? "@agent-prd"
+  }).shouldTrigger;
+}
+
+function getIssueRetriggerRestartStatus(task: Task, comment: IssueComment): TaskStatus | undefined {
+  if (task.status === "FAILED" || task.status === "BLOCKED") {
+    return task.prd ? "PRD_APPROVED" : "QUEUED";
+  }
+
+  if (isComputeActiveStatus(task.status) && task.prd && isExplicitRetryComment(comment)) {
+    return "PRD_APPROVED";
+  }
+
+  return undefined;
+}
+
+function isExplicitRetryComment(comment: IssueComment): boolean {
+  return /\b(retry|rerun|resume|restart)\b|重新|重试|再跑|继续处理|重新处理/.test(comment.body.toLowerCase());
 }
 
 function isGeneratedCodeZeroComment(body: string): boolean {

@@ -176,7 +176,7 @@ Memory update candidates 默认只是 artifact，不能静默写入项目长期�
 
 ## 6. Tool Gateway Contract
 
-Runtime 不应让普通 LLM action 直接执行任意命令。兼容 fallback 和高风险工具都进入 Tool Gateway：
+Runtime 不应让普通 LLM action 直接执行任意命令。读/search/shell 和高风险工具治理进入 Tool Gateway；实现阶段的代码编辑只走 OpenCode executor：
 
 ```ts
 type ToolDefinition = {
@@ -218,35 +218,11 @@ CodeZero workflow
 
 对 OpenAI-compatible 自定义网关，CodeZero 会在 task artifact 目录生成临时 `OPENCODE_CONFIG` 文件，注册内部 `codezero/<model>` provider。配置文件只包含 base URL、model 和 `{env:OPENAI_API_KEY}` 引用，不写入真实 API key，也不会进入被测仓库 diff。用户也可以在 `providers.<id>.coding_executor` 里把 sandbox coding executor 切换到任意 OpenCode native/custom provider，例如 OpenRouter、Anthropic、DeepSeek、Qwen 或私有网关。底层 CLI 是内部实现细节，不能出现在用户-facing PR body 或 issue comment 中。
 
-### 6.2 JSON Action 兼容模式
+### 6.2 Implementation Editing Boundary
 
-为兼容 DeepSeek / Qwen 等不同 provider，Tool Gateway 必须支持 JSON action fallback。
+实现阶段不接受 JSON action、patch action、replace text action 或 write file action。Orchestrator 只负责准备 sandbox、prompt、provider 环境，调用 OpenCode executor，然后读取最终 `git diff`。
 
-模型输出：
-
-```json
-{
-  "summary": "Apply the minimal refund status copy fix.",
-  "actions": [
-    {
-      "tool": "repo.apply_patch",
-      "input": {
-        "unifiedDiff": "diff --git ..."
-      }
-    }
-  ]
-}
-```
-
-Orchestrator 负责：
-
-- 校验 action 是否存在。
-- 校验 input schema。
-- 运行 policy。
-- 执行 tool。
-- 把 tool result 写回 task event、`tool-call` artifact 和 trace。
-
-如果 provider 支持稳定 native tool calling，可以由 adapter 转成同一套 `ToolCallRequest`。
+如果 executor 失败、退出码非零或没有产生 diff，任务进入失败/阻塞路径并记录 executor log；系统不能再退回到自研文件替换工具。
 
 ## 7. Subagent 审核流程
 

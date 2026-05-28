@@ -48,9 +48,6 @@ repositories:
         - repo.read_file
         - codegraph.query
         - codegraph.context
-        - repo.apply_patch
-        - repo.replace_text
-        - repo.write_file
         - shell.run
       blocked_tools: []
       allowed_permissions:

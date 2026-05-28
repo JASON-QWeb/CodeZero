@@ -5,6 +5,7 @@ import { runIssueWorkflow, type IssueWorkflowJob } from "./workflows/issue-workf
 export const queueName = "issue-workflows";
 
 export type IssueWorkflowQueue = Pick<Queue<IssueWorkflowJob>, "add">;
+export type ResumableIssueWorkflowQueue = IssueWorkflowQueue & Pick<Queue<IssueWorkflowJob>, "resume">;
 export type IssueWorkflowProcessor = (job: IssueWorkflowJob) => Promise<Awaited<ReturnType<typeof runIssueWorkflow>>>;
 
 export function getWorkerConcurrency(value = process.env.WORKER_CONCURRENCY ?? "4"): number {
@@ -48,9 +49,12 @@ export async function processIssueWorkflowJob(
   return result;
 }
 
-export function startWorker(input: { connection?: IORedis; queue?: IssueWorkflowQueue; concurrency?: number } = {}): Worker<IssueWorkflowJob> {
+export function startWorker(input: { connection?: IORedis; queue?: ResumableIssueWorkflowQueue; concurrency?: number } = {}): Worker<IssueWorkflowJob> {
   const connection = input.connection ?? createRedisConnection();
   const queue = input.queue ?? createIssueWorkflowQueue(connection);
+  void queue.resume().catch((error) => {
+    console.warn(`Unable to resume issue workflow queue: ${error instanceof Error ? error.message : String(error)}`);
+  });
   return new Worker<IssueWorkflowJob>(
     queueName,
     async (job) => processIssueWorkflowJob(job.data, queue),

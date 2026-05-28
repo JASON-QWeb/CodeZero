@@ -11,14 +11,10 @@ export {
   qualityGateFailureLooksEnvironmental,
   resetImplementationAttempt,
   restoreImplementationCheckpoint,
-  selectImplementationEditActions,
-  selectImplementationPatchActions,
-  selectImplementationPatchPaths,
   selectImplementationSnippetPaths,
   shouldExtendQualityGateSelfCheck,
   shouldExtendReviewSelfCheck,
   shouldExtendSelfCheckAfterFailureKindChange,
-  validateImplementationWriteFileActions,
   type ImplementationCheckpoint,
   type IssueWorkflowResult
 } from "./issue-workflow-runner.js";
@@ -41,6 +37,7 @@ export { createArtifactId, writeTaskArtifact } from "./artifacts.js";
 export {
   buildCodingExecutorEnv,
   buildCodingExecutorPrompt,
+  normalizeCodingExecutorProgressLine,
   normalizeImplementationExecutorConfig,
   runCodingCliExecutor,
   type CodingExecutorPromptInput,
@@ -49,5 +46,4 @@ export {
   type NormalizedImplementationExecutorConfig
 } from "./coding-executor.js";
 export { createRepositoryPermissionPolicies, repositoryAllowsTool } from "./repository-policies.js";
-export { implementationSchema, planSchema, prdSchema, reviewSchema } from "./schemas.js";
-export { implementationToToolActions, summarizeToolFailure } from "./tool-actions.js";
+export { planSchema, prdSchema, reviewSchema } from "./schemas.js";

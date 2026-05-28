@@ -1,27 +1,36 @@
 <div align="center">
 
-# Code零
+# CodeZero
 
-### 人只写需求，AI 写完全部代码，并把结果验证成 PR。
+### GitHub Issue 进来，验证过的 Pull Request 出去。
 
 [English](README.md) · **中文**
 
 </div>
 
-Code零 是一个面向 GitHub 的工程 Agent 平台，用来把产品意图自动推进到可审核、可验证的 Pull Request。你只需要创建 Issue、`@agent` 评论，或通过仓库策略触发任务；Code零 会生成 PRD，理解代码仓库，规划最小安全改动，在隔离沙箱中完成代码，实现后跑质量门禁、做差异审核，并创建带本地验证指令的 draft PR。
+CodeZero 是一个面向 GitHub 的工程 Agent 平台，用来把产品意图推进成可审核、可验证的 Pull Request。你可以创建 Issue、评论里 `@agent`，也可以交给仓库策略自动触发。CodeZero 会生成 PRD，阅读仓库，构建聚焦的上下文包，把实现交给沙箱里的 coding agent，实时把执行进度显示到看板，跑完验证、复审 diff，最后创建带本地验证指令的 draft PR。
 
-它的核心想法很直接：人负责表达意图，AI 负责走完整个编码路径。它不是一次性 prompt 生成代码的 demo，而是一套可追踪的工程系统，覆盖 durable workflow、多 Agent 编排、仓库智能理解、沙箱执行、质量门禁、记忆治理和必要的人审控制。
+它处理的是从“我有个想法”到“这份 PR 可以让人 review 了”之间那段最容易卡住的工程过程。CodeZero 不把代码生成当成一次性 prompt，而是把它放进 durable workflow、仓库智能理解、隔离执行、质量门禁、可追踪事件和必要的人审节点里。
+
+## 用起来是什么感觉
+
+- 在 GitHub Issue 里用自然语言描述产品意图。
+- CodeZero 把意图整理成 PRD、验收标准、风险说明和最小改动计划。
+- Implementation Agent 通过 OpenCode 在隔离沙箱里改代码，stdout/stderr 和结构化进度会流式进入 Run Console。
+- 看板能看到任务卡在哪一步：同步中、索引中、规划中、实现中、Review 中、阻塞、失败或待合并。
+- 最终得到一个 draft PR，里面有 diff、验证证据、风险说明，以及维护者本地复现用的命令。
 
 ## 项目亮点
 
 - **Issue 到 PRD 到 PR**：把 GitHub Issue 转成结构化 PRD、实现计划、验证后的 diff 和 draft PR。
-- **零代码操作流**：产品或工程负责人描述“要改什么”，Agent 处理代码实现闭环。
-- **仓库智能理解**：修改前初始化或刷新上游 CodeGraph 索引，并构建带证据链的 ContextPack。
-- **隔离执行**：每个 Issue 拥有独立沙箱、独立分支、独立产物和独立质量门禁记录。
-- **人可控**：PRD 审批、Policy 门禁、Review subagent 和 memory update proposal 让每一步可检查。
-- **PR 可本地验证**：生成的 PR 自动包含 checkout、安装、测试和启动验证指令。
-- **兼容多模型接口**：面向 OpenAI、DeepSeek、Qwen 或任何 OpenAI-compatible 模型网关。
-- **运行控制台**：提供 Run Console、Settings Console、Memory Inbox、Trace Replay API 和 Golden Issue Eval CLI。
+- **异步 GitHub 同步**：仓库同步和 Issue 接入走队列 worker，不再阻塞页面。
+- **实时 Agent 进度**：OpenCode 输出会被捕获成 task events，看板能显示 coding executor 正在做什么。
+- **OpenCode-first 实现路径**：主实现流程交给 coding CLI executor，不再依赖旧的 JSON 文件写入动作。
+- **仓库智能理解**：CodeGraph、Repo Navigation Graph、approved memory 和 ContextPack 会在改代码前收敛修改范围。
+- **隔离执行**：每个 Issue 都有独立沙箱、独立分支、独立产物、日志和验证轨迹。
+- **人可控**：PRD 审批、Policy 门禁、Review subagent 和 memory proposal 让关键步骤可检查。
+- **模型供应商灵活**：支持 OpenAI-compatible 网关，也可以按 agent 路由不同 provider 和 model。
+- **操作台完整**：包含 Run Console、Settings Console、Memory Inbox、Trace Replay API 和 Golden Issue Eval CLI。
 
 ## 架构图
 
@@ -29,10 +38,11 @@ Code零 是一个面向 GitHub 的工程 Agent 平台，用来把产品意图自
 flowchart TD
   GH["GitHub Issue / Comment / Label"] --> TP["Repository Trigger Policy"]
   TP --> API["Fastify Webhook API"]
-  API --> WF["Durable Workflow Orchestrator"]
+  API --> Q["Queue-backed sync and workflow jobs"]
+  Q --> WF["Durable Workflow Orchestrator"]
   WF --> PRD["PRD Agent"]
   PRD --> GATE{"Human approval required?"}
-  GATE -->|Yes| UI["Web Review Board"]
+  GATE -->|Yes| UI["Run Console / Review Board"]
   UI --> WF
   GATE -->|No| SB["Per-Issue Sandbox"]
   WF --> SB
@@ -41,7 +51,9 @@ flowchart TD
   GRAPH --> MEM["Approved Memory Retrieval"]
   MEM --> CP["Evidence-backed ContextPack"]
   CP --> PLAN["Minimal Change Planner"]
-  PLAN --> IMPL["Implementation Agent"]
+  PLAN --> IMPL["OpenCode Coding Executor"]
+  IMPL --> STREAM["Live Progress Events"]
+  STREAM --> UI
   IMPL --> QA["Quality Gates"]
   QA --> REV["Review Subagent"]
   REV --> PRW["PR Writer"]
@@ -53,29 +65,32 @@ flowchart TD
 
 1. **触发任务**：GitHub webhook、`@agent` 评论、标签或手动导入创建任务。
 2. **理解需求**：PRD Agent 提取目标、风险、验收标准和复杂度。
-3. **规划上下文**：通过仓库索引、导航图、approved memory 和 ContextPack 收敛修改范围。
-4. **实现代码**：Implementation Agent 在隔离沙箱中执行最小安全改动。
-5. **验证结果**：运行 build、lint、test、typecheck、截图 hook、policy check 和 Review subagent。
-6. **创建 PR**：Code零 推送分支并创建 draft PR，附带证据、风险说明和本地验证命令。
+3. **定位上下文**：仓库索引、导航图、approved memory 和 ContextPack 找到最相关的文件。
+4. **规划改动**：workflow 先写出 minimal change plan，再交给 coding executor。
+5. **实现代码**：OpenCode 使用生成的 prompt file 和模型配置，在沙箱仓库内编辑。
+6. **流式观测**：executor 的 stdout/stderr 和结构化 JSON 行会变成看板事件，包括进度、文件活动、命令和错误。
+7. **验证结果**：运行 build、lint、test、typecheck、截图 hook、policy check 和 Review subagent。
+8. **创建 PR**：CodeZero 推送分支并创建 draft PR，附带证据、风险说明和本地验证命令。
 
 ## Monorepo 结构
 
 ```text
 apps/
-  api/       Fastify API、GitHub webhook、settings 与 task routes
-  web/       Next.js Run Console、Settings Console 与 Memory Inbox
-  worker/    workflow worker 与仓库任务执行
+  api/       Fastify API、GitHub webhook、settings routes、task routes
+  web/       Next.js Run Console、Settings Console、Memory Inbox
+  worker/    队列 worker 与仓库任务执行
 packages/
   agent-runtime/          model provider 与结构化 agent 基础能力
-  codebase-intelligence/  索引、混合搜索、ContextPack 与 repo graph
+  codebase-intelligence/  索引、混合搜索、ContextPack、repo graph
   config/                 YAML 配置加载与校验
-  github/                 GitHub Issue、branch 与 PR 集成
+  github/                 GitHub Issue、branch、comment、PR 集成
   memory/                 approved memory 与 memory proposal 存储
+  observability/          task traces 与可回放事件整理
   orchestrator/           任务状态机与 workflow 决策
   persistence/            文件/Postgres task 持久化
   sandbox/                Docker/worktree 沙箱抽象
   skills/                 平台 skill loader 与内置 skills
-  tool-gateway/           可审计的工具执行边界
+  tool-gateway/           可审计的 read/search/shell 工具边界
   verification/           测试、截图与本地验证辅助能力
   workflows/              Issue-to-PR workflow 编排
 ```
@@ -116,8 +131,25 @@ pnpm dev:web
 
 打开 Web 控制台：`http://localhost:3000`。
 
-若要在仓库卡片中生成并查看项目知识图，请安装官方
-[Understand-Anything](https://github.com/Lum1104/Understand-Anything) Codex skill：
+## OpenCode Executor
+
+CodeZero 的实现路径是 CLI-first。默认沙箱 executor 会带着生成好的 prompt file 运行 OpenCode：
+
+```bash
+npx -y opencode-ai@latest run \
+  --agent build \
+  --model "$CODEZERO_OPENCODE_MODEL" \
+  --format json \
+  --dangerously-skip-permissions \
+  "Implement the CodeZero request in the attached prompt file." \
+  --file="$CODEZERO_PROMPT_FILE"
+```
+
+对 OpenAI-compatible 网关，CodeZero 会写入临时 `OPENCODE_CONFIG`，把 provider/model 映射给 OpenCode，同时不把 API key 写进产物。provider 级别的 executor 覆盖可以配置在 `providers.<id>.coding_executor`。
+
+## 项目知识图
+
+CodeZero 内置了轻量级仓库智能理解流程。如果希望在仓库卡片里生成并查看更完整的项目知识图，可以安装官方 [Understand-Anything](https://github.com/Lum1104/Understand-Anything) Codex skill：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/install.sh | bash -s codex
@@ -125,7 +157,11 @@ curl -fsSL https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/in
 
 Run Console 的项目知识图操作会运行官方 `$understand` 多 Agent pipeline，并在页面内启动其官方 dashboard；产物保持为上游定义的 `.understand-anything/knowledge-graph.json`，不会使用平台轻量图替代。
 
-Run Console 默认中文并提供中英文切换。机器人会按 Issue/PR 评论语言生成 PRD、计划、Review 说明和 PR 正文；前端截图会随 PR 分支提交到 `.agent/screenshots/`，并在 PR 描述中直接以内嵌图片展示。PR 创建后，用户在同一个 PR conversation 中继续评论，机器人会更新同一个分支、重新自检并刷新原 PR，直到用户满意后自行合并。
+## 操作说明
+
+Run Console 默认中文并提供中英文切换。机器人会按 Issue/PR 评论语言生成 PRD、计划、Review 说明和 PR 正文。
+
+前端截图会随 PR 分支提交到 `.agent/screenshots/`，并在 PR 描述中直接以内嵌图片展示。PR 创建后，用户在同一个 PR conversation 中继续评论，机器人会更新同一个分支、重新验证并刷新原 PR，直到用户满意后自行合并。
 
 ## 验证命令
 
@@ -134,7 +170,7 @@ pnpm check
 pnpm eval:golden
 ```
 
-`pnpm check` 会运行 lint、typecheck、tests 和 build。`pnpm eval:golden` 会使用 `evals/golden-issues` 中的样例评估候选产物，并把报告写入 `artifacts/eval-report.md`。
+`pnpm check` 会运行 lint、typecheck、带 coverage 的测试和 build。`pnpm eval:golden` 会使用 `evals/golden-issues` 中的样例评估候选产物，并把报告写入 `artifacts/eval-report.md`。
 
 ## 配置
 
@@ -164,6 +200,6 @@ pnpm eval:golden
 
 ## 当前状态
 
-MVP 已可本地运行，包含 GitHub Issue 接入、仓库触发策略、仓库队列与并发限制、PRD 生成、人工 PRD 审批、Repo Navigation Graph MVP、ContextPack 生成、Understand-Anything 官方项目知识图入口、Tool Gateway JSON action fallback、Trace Replay API、Run Console、Settings Console、Memory Inbox、Golden Issue Eval CLI/CI、Repository Onboarding、沙箱执行、质量门禁、Review subagent 和 draft PR 创建。
+MVP 已可本地运行，包含 GitHub Issue 接入、异步仓库同步、仓库触发策略、队列与并发限制、PRD 生成、条件式人工审批、Repo Navigation Graph MVP、ContextPack 生成、Understand-Anything 官方项目知识图入口、基于 OpenCode 的沙箱实现、Agent 进度流式事件、Trace Replay API、Run Console、Settings Console、Memory Inbox、Golden Issue Eval CLI/CI、Repository Onboarding、质量门禁、Review subagent 和 draft PR 创建。
 
-下一步重点是审批恢复、更严格的 tool input schema、安全扫描、更丰富的 eval assertion，以及面向大仓库的更深层图适配器。
+下一步重点是审批恢复、更强的 provider 健康诊断、更严格的命令与工具 schema、安全扫描、更丰富的 eval assertion，以及面向大仓库的更深层图适配器。

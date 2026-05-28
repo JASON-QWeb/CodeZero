@@ -54,9 +54,27 @@ describe("sandbox command runner", () => {
 
   it("runs commands and captures output", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-sandbox-"));
-    const result = await runCommand({ cwd: dir, command: "printf hello" });
+    const chunks: string[] = [];
+    const result = await runCommand({
+      cwd: dir,
+      command: "printf hello; printf warn >&2",
+      onOutput: (chunk) => chunks.push(`${chunk.stream}:${chunk.text}`)
+    });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe("hello");
+    expect(result.stderr).toBe("warn");
+    expect(chunks).toEqual(["stdout:hello", "stderr:warn"]);
+  });
+
+  it("terminates nested child processes when commands time out", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-sandbox-timeout-"));
+    const result = await runCommand({ cwd: dir, command: "sh -c 'sleep 1; printf alive > child.txt'", timeoutMs: 100 });
+
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Command timed out");
+    await expect(access(path.join(dir, "child.txt"))).rejects.toThrow();
   });
 
   it("clears stale clone targets before cloning a repository", async () => {

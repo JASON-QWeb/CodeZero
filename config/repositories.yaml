@@ -39,9 +39,6 @@ repositories:
         - repo.read_file
         - codegraph.query
         - codegraph.context
-        - repo.apply_patch
-        - repo.replace_text
-        - repo.write_file
         - shell.run
         - github.create_draft_pr
         - browser.screenshot
@@ -105,9 +102,6 @@ repositories:
         - repo.read_file
         - codegraph.query
         - codegraph.context
-        - repo.apply_patch
-        - repo.replace_text
-        - repo.write_file
         - shell.run
         - github.create_draft_pr
         - browser.screenshot

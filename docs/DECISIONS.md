@@ -238,7 +238,7 @@ Repo Navigation Graph 确认为大仓库能力的核心模块。
 - PRD、ContextPack、minimal change plan、review report 等平台 artifact 使用结构化 JSON。
 - 实现阶段主路径不是手写 JSON patch，而是在 sandbox 中启动内部 coding executor。默认 executor 通过 OpenCode CLI 执行，但它是内部实现细节，不能暴露到用户-facing issue、PR 或 dashboard 文案中。
 - `providers.<id>.coding_executor` 可以配置 `auto`、`custom` 或 `native`，让不同仓库/用户选择 OpenCode 支持的 native provider 或自定义 OpenAI-compatible 网关。
-- Tool Gateway 和 JSON action 保留为兼容 fallback、高风险工具治理和审计层，不再作为普通编码任务的主实现方式。
+- Tool Gateway 保留为读/search/shell、高风险工具治理和审计层；实现阶段删除 JSON edit fallback，普通编码任务只走 OpenCode executor。
 
 当前阶段不重点处理：
 

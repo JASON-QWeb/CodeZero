@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -103,109 +103,13 @@ describe("tool gateway", () => {
     expect(results[0]?.taskId).toBe("task-1");
   });
 
-  it("applies unified diffs through repo.apply_patch", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
-    await writeFile(path.join(repoDir, "note.txt"), "before\n");
-    const gateway = new ToolGateway({ registry: createBuiltInToolRegistry() });
-    const result = await gateway.execute(
-      {
-        toolName: "repo.apply_patch",
-        input: {
-          unifiedDiff: [
-            "diff --git a/note.txt b/note.txt",
-            "index 96d80cd..cb5a311 100644",
-            "--- a/note.txt",
-            "+++ b/note.txt",
-            "@@ -1 +1 @@",
-            "-before",
-            "+after",
-            ""
-          ].join("\n")
-        }
-      },
-      { repoDir }
-    );
-
-    await expect(readFile(path.join(repoDir, "note.txt"), "utf8")).resolves.toBe("after\n");
-    expect(result.status).toBe("success");
-  });
-
-  it("writes and replaces sandbox files through direct repository edit tools", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
-    const gateway = new ToolGateway({ registry: createBuiltInToolRegistry() });
-    const writeResult = await gateway.execute(
-      {
-        toolName: "repo.write_file",
-        input: { path: "src/note.txt", content: "before\n" }
-      },
-      { repoDir }
-    );
-    const replaceResult = await gateway.execute(
-      {
-        toolName: "repo.replace_text",
-        input: { path: "src/note.txt", search: "before", replace: "after" }
-      },
-      { repoDir }
-    );
-
-    expect(writeResult.status).toBe("success");
-    expect(replaceResult.status).toBe("success");
-    await expect(readFile(path.join(repoDir, "src/note.txt"), "utf8")).resolves.toBe("after\n");
-  });
-
-  it("fails direct replacements when the exact text is missing", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
-    await writeFile(path.join(repoDir, "note.txt"), "before\n");
-    const gateway = new ToolGateway({ registry: createBuiltInToolRegistry() });
-    const result = await gateway.execute(
-      {
-        toolName: "repo.replace_text",
-        input: { path: "note.txt", search: "missing", replace: "after" }
-      },
-      { repoDir }
-    );
-
-    expect(result.status).toBe("failed");
-    expect(result.error).toContain("Search text was not found");
-    await expect(readFile(path.join(repoDir, "note.txt"), "utf8")).resolves.toBe("before\n");
-  });
-
-  it("recounts hunk lengths when applying model-generated patches", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
-    await writeFile(path.join(repoDir, "note.txt"), "before\n");
-    const gateway = new ToolGateway({ registry: createBuiltInToolRegistry() });
-    const result = await gateway.execute(
-      {
-        toolName: "repo.apply_patch",
-        input: {
-          unifiedDiff: [
-            "diff --git a/note.txt b/note.txt",
-            "--- a/note.txt",
-            "+++ b/note.txt",
-            "@@ -1,99 +1,99 @@",
-            "-before",
-            "+after",
-            ""
-          ].join("\n")
-        }
-      },
-      { repoDir }
-    );
-
-    await expect(readFile(path.join(repoDir, "note.txt"), "utf8")).resolves.toBe("after\n");
-    expect(result.status).toBe("success");
-  });
-
   it("marks non-zero process tool results as failed", async () => {
     const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
-    await writeFile(path.join(repoDir, "note.txt"), "before\n");
     const gateway = new ToolGateway({ registry: createBuiltInToolRegistry() });
     const result = await gateway.execute(
       {
-        toolName: "repo.apply_patch",
-        input: {
-          unifiedDiff: "diff --git a/note.txt b/note.txt\n--- a/note.txt\n+++ b/note.txt\n@@ bad patch\n"
-        }
+        toolName: "shell.run",
+        input: { command: "printf 'boom' >&2; exit 3" }
       },
       { repoDir }
     );
@@ -213,10 +117,9 @@ describe("tool gateway", () => {
     expect(result.status).toBe("failed");
     expect(result.error).toContain("Process exited with code");
     expect(JSON.stringify(result.output)).toContain("exitCode");
-    await expect(readFile(path.join(repoDir, "note.txt"), "utf8")).resolves.toBe("before\n");
   });
 
-  it("evaluates path policy against unified diff paths", async () => {
+  it("evaluates path policy against repository read paths", async () => {
     const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-tool-gateway-"));
     await writeFile(path.join(repoDir, ".env"), "SECRET=old\n");
     const gateway = new ToolGateway({
@@ -225,18 +128,8 @@ describe("tool gateway", () => {
     });
     const result = await gateway.execute(
       {
-        toolName: "repo.apply_patch",
-        input: {
-          unifiedDiff: [
-            "diff --git a/.env b/.env",
-            "--- a/.env",
-            "+++ b/.env",
-            "@@ -1 +1 @@",
-            "-SECRET=old",
-            "+SECRET=new",
-            ""
-          ].join("\n")
-        }
+        toolName: "repo.read_file",
+        input: { path: ".env" }
       },
       { repoDir }
     );

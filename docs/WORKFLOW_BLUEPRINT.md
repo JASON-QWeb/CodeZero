@@ -95,7 +95,7 @@ CodeZero implementation executor 输出：
 
 编排层负责启动内部 coding executor、记录 `AGENT_RUN_*` / `FILE_CHANGED` / artifact、读取 `git diff`、运行质量门禁和 review agent。默认 executor 通过 `config/sandbox.yaml` 的 `sandbox.implementation_executor` 配置调用 OpenCode，但用户在 Issue、PR、dashboard 中看到的都是 CodeZero 的实现过程，不暴露底层 CLI 名称。
 
-JSON action 模式只保留为兼容 fallback。它可以继续通过 Tool Gateway 记录 `TOOL_CALL_*`、`POLICY_DECISION` 事件和 `tool-call` artifact，但不再是主线实现路径。
+实现阶段不再保留 JSON action fallback。OpenCode executor 失败、退出码非零或没有产出 diff 时，编排层记录 executor artifact 并让任务进入失败/阻塞路径。
 
 ## 4. Subagent 策略
 

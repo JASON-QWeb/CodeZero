@@ -82,6 +82,10 @@ function eventKind(type: TaskEventType): TraceSpanKind {
     return "tool";
   }
 
+  if (type.startsWith("AGENT_RUN") || type === "PLAN_CREATED" || type === "PRD_DRAFTED" || type === "SUBAGENT_REVIEW_FINISHED") {
+    return "model";
+  }
+
   if (type === "POLICY_DECISION") {
     return "policy";
   }

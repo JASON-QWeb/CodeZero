@@ -108,7 +108,7 @@
 - 通过 provider profile 接入 DeepSeek / Qwen 等国产 OpenAI-compatible API。
 - 把模型输出解析为 PRD、ContextPack、minimal change plan、review report 等 structured artifact。
 - 在主线实现阶段启动内部 coding executor，让 executor 在隔离 sandbox 中读写文件并运行命令。
-- 仅在兼容 fallback 或高风险受控工具场景中解析 JSON action 并交给 Tool Gateway。
+- 实现阶段不解析 JSON edit action；Tool Gateway 仅承载读/search/shell 和高风险受控工具场景。
 - 上报事件。
 
 ### 3.7 Codebase Intelligence Service
@@ -200,8 +200,8 @@ Repo Navigation Graph 是 Agent 读大仓库的核心加速器。它不替代检
 
 职责：
 
-- 当前主线 implementation workflow 通过内部 coding executor 直接修改 sandbox working tree；Tool Gateway 保留为 JSON action 兼容 fallback 和高风险工具治理层。
-- 已落地基础 `@agent/tool-gateway`，提供 `ToolRegistry`、`ToolGateway`、policy decision、JSON action fallback、`repo.apply_patch` 和内置 repo/shell 工具。
+- 当前主线 implementation workflow 通过内部 OpenCode coding executor 直接修改 sandbox working tree；Tool Gateway 保留为读/search/shell 和高风险工具治理层。
+- 已落地基础 `@agent/tool-gateway`，提供 `ToolRegistry`、`ToolGateway`、policy decision 和内置 repo/shell 只读或受控工具。
 - 注册 shell、git、github、browser、verification、memory、indexer 等工具。
 - 使用 schema 校验 tool input/output。
 - 执行 timeout、retry、redaction、permission check 和 audit log。

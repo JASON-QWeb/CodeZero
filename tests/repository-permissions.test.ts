@@ -22,7 +22,7 @@ describe("repository tool permissions", () => {
     const tools = registry.list();
 
     expect(repositoryAllowsTool(repositoryConfig, tools.find((tool) => tool.name === "repo.read_file")!)).toBe(true);
-    expect(repositoryAllowsTool(repositoryConfig, tools.find((tool) => tool.name === "repo.apply_patch")!)).toBe(false);
+    expect(repositoryAllowsTool(repositoryConfig, tools.find((tool) => tool.name === "shell.run")!)).toBe(false);
 
     const gateway = new ToolGateway({
       registry,
@@ -30,18 +30,8 @@ describe("repository tool permissions", () => {
     });
     const result = await gateway.execute(
       {
-        toolName: "repo.apply_patch",
-        input: {
-          unifiedDiff: [
-            "diff --git a/README.md b/README.md",
-            "--- a/README.md",
-            "+++ b/README.md",
-            "@@ -1 +1 @@",
-            "-# Locked",
-            "+# Changed",
-            ""
-          ].join("\n")
-        }
+        toolName: "shell.run",
+        input: { command: "printf changed > README.md" }
       },
       { repoDir }
     );

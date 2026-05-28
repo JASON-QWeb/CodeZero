@@ -7,7 +7,6 @@ import {
   buildNavigationRoute,
   buildRepoNavigationGraph,
   buildCodeGraphTaskContext,
-  createContextSnippet,
   indexFiles,
   indexRepositoryWithCodeGraph,
   indexSymbols,
@@ -35,15 +34,6 @@ import {
 } from "@agent/sandbox";
 import type { Artifact, ContextPack, JsonObject, JsonValue, MinimalChangePlan, PrdDocument, QualityGateResult, ReviewResult, Task } from "@agent/shared";
 import { loadPlatformSkills } from "@agent/skills";
-import {
-  createBuiltInToolRegistry,
-  extractDiffPaths,
-  ToolGateway,
-  type JsonToolAction,
-  type PolicyDefinition,
-  type ToolCallResult,
-  type ToolDefinition
-} from "@agent/tool-gateway";
 import { createQualityGateCommands, runFrontendScreenshotGate, runQualityGates } from "@agent/verification";
 import { createExecutionAgents, createWorkflowAgent, createWorkflowAgentRunner } from "./agent-factory.js";
 import { createArtifactId, writeTaskArtifact } from "./artifacts.js";
@@ -64,13 +54,7 @@ import {
   detectIssueLocale,
   languageInstruction
 } from "./pr-local-verification.js";
-import { createRepositoryPermissionPolicies, repositoryAllowsTool } from "./repository-policies.js";
-import { implementationSchema, planSchema, prdSchema, reviewSchema } from "./schemas.js";
-import { implementationToToolActions, summarizeToolFailure } from "./tool-actions.js";
-
-const MAX_IMPLEMENTATION_ATTEMPTS = 8;
-const MAX_EXISTING_WRITE_FILE_BYTES = 2_000;
-const MAX_EXISTING_WRITE_FILE_LINES = 120;
+import { planSchema, prdSchema, reviewSchema } from "./schemas.js";
 
 export type IssueWorkflowResult = {
   taskId: string;
@@ -631,40 +615,22 @@ export class IssueWorkflowRunner {
   private async applyImplementation(
     task: Task,
     sandbox: Sandbox,
-    repositoryConfig: RepositoryConfig,
-    runner: AgentRunner,
     agent: AgentDefinition,
     reviewerFeedback = ""
   ): Promise<void> {
     const executor = normalizeImplementationExecutorConfig(this.config.sandbox.implementation_executor);
 
-    if (executor.mode === "cli") {
-      try {
-        await this.applyImplementationWithCodingExecutor(task, sandbox, agent, executor, reviewerFeedback);
-        return;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        await this.event(
-          task.id,
-          "AGENT_RUN_FINISHED",
-          executor.fallback_to_legacy_json_actions
-            ? "CodeZero implementation executor failed; falling back to legacy structured edits"
-            : "CodeZero implementation executor failed",
-          executor.fallback_to_legacy_json_actions ? "warn" : "error",
-          {
-            executor: executor.name,
-            mode: executor.mode,
-            error: message.slice(0, 4000)
-          }
-        );
-
-        if (!executor.fallback_to_legacy_json_actions) {
-          throw error;
-        }
-      }
+    try {
+      await this.applyImplementationWithCodingExecutor(task, sandbox, agent, executor, reviewerFeedback);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.event(task.id, "AGENT_RUN_FINISHED", "CodeZero implementation executor failed", "error", {
+        executor: executor.name,
+        mode: executor.mode,
+        error: message.slice(0, 4000)
+      });
+      throw error;
     }
-
-    await this.applyImplementationWithLegacyJsonActions(task, sandbox, repositoryConfig, runner, agent, reviewerFeedback);
   }
 
   private async applyImplementationWithCodingExecutor(
@@ -710,7 +676,17 @@ export class IssueWorkflowRunner {
           repoDir: sandbox.repoDir,
           artifactDir: sandbox.artifactDir,
           prompt,
-          attempt: Date.now()
+          attempt: Date.now(),
+          onProgress: async (progress) => {
+            await this.event(task.id, "AGENT_RUN_PROGRESS", progress.message, progress.level ?? "info", {
+              ...(progress.metadata ?? {}),
+              agentId: agent.id,
+              agentRole: agent.role,
+              phase: "implementation",
+              executor: executor.name,
+              mode: executor.mode
+            });
+          }
         });
       } catch (error) {
         await restoreImplementationCheckpoint(sandbox.repoDir, checkpoint);
@@ -751,186 +727,6 @@ export class IssueWorkflowRunner {
     }
   }
 
-  private async applyImplementationWithLegacyJsonActions(
-    task: Task,
-    sandbox: Sandbox,
-    repositoryConfig: RepositoryConfig,
-    runner: AgentRunner,
-    agent: AgentDefinition,
-    reviewerFeedback = ""
-  ): Promise<void> {
-    const contextPack = task.contextPack ?? this.missing<ContextPack>("ContextPack");
-    const feedbackSnippetPaths = await extractImplementationFeedbackPaths(sandbox.repoDir, reviewerFeedback);
-    const snippets = await readContextFileSnippets(sandbox.repoDir, contextPack, {
-      includePaths: uniquePaths([...feedbackSnippetPaths, ...selectImplementationSnippetPaths(task)]),
-      maxCharsPerFile: 16_000,
-      maxFiles: 12
-    });
-    const implementationContextPack = compactContextPackForImplementation(contextPack);
-    let previousApplyError = "";
-    let previousEditActions: JsonToolAction[] = [];
-    const locale = detectIssueLocale(task.issue);
-
-    const implementationToolNames = new Set(this.getImplementationTools(repositoryConfig).map((tool) => tool.name));
-    const supportedToolList = [...implementationToolNames].join(", ");
-
-    for (let attempt = 1; attempt <= MAX_IMPLEMENTATION_ATTEMPTS; attempt += 1) {
-      const repairContext =
-        attempt === 1
-          ? undefined
-          : await createImplementationRepairContext(sandbox.repoDir, previousEditActions.length > 0 ? previousEditActions : []);
-      const firstAttemptPrompt = reviewerFeedback
-        ? [
-            "Implement the latest PR reviewer feedback on the existing PR branch. Return only JSON.",
-            `Latest reviewer feedback:\n${reviewerFeedback}`,
-            "Return one or more repository edit actions. Prefer repo.replace_text for existing files and repo.write_file for new files.",
-            "repo.apply_patch is unavailable in this phase; for multi-location changes return multiple repo.replace_text actions.",
-            "Do not rewrite a large existing file with repo.write_file to work around a narrow failed edit.",
-            "Do not call read-only tools during implementation; use the provided fileSnippets and error feedback.",
-            "Preferred targeted edit format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
-            "Preferred file creation format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.write_file\",\"input\":{\"path\":\"src/file.ts\",\"content\":\"complete file contents\"}}]}",
-            "Use only the provided tool names and keep the existing PR branch focused on the same issue."
-          ].join("\n")
-        : [
-            "Implement the minimal change plan. Return only JSON.",
-            "Return one or more repository edit actions. Prefer repo.replace_text for existing files and repo.write_file for new files.",
-            "Do not call read-only tools during implementation; use the provided fileSnippets and plan.",
-            "Use repo.replace_text for targeted edits based on exact current snippets.",
-            "Use repo.write_file only for new files or tiny full-file replacements where every existing export and behavior is intentionally preserved.",
-            "repo.apply_patch is unavailable in this phase; for multi-location changes return multiple repo.replace_text actions.",
-            "Use only the provided tool names and do not include unrelated changes."
-          ].join("\n");
-      const checkpoint = await createImplementationCheckpoint(sandbox.repoDir);
-      try {
-        await this.event(task.id, "AGENT_RUN_STARTED", `Implementation agent started attempt ${attempt}/${MAX_IMPLEMENTATION_ATTEMPTS}`, "info", {
-          agentId: agent.id,
-          agentRole: agent.role,
-          phase: "implementation",
-          attempt,
-          maxAttempts: MAX_IMPLEMENTATION_ATTEMPTS
-        });
-        let result: JsonObject;
-        try {
-          result = await runJsonAgent({
-            runner,
-            agent,
-            userPrompt:
-              attempt === 1
-                ? [firstAttemptPrompt, languageInstruction(locale)].join("\n")
-                : [
-                    "Repair the implementation so it applies cleanly. Return only JSON.",
-                    `Previous tool/edit error:\n${previousApplyError}`,
-                    "The failed edit attempt was restored to the checkpoint from before that attempt; fileSnippets reflect the current worktree.",
-                    "The repair context contains exact current file snippets for the files touched by the failed edit.",
-                    "For repo.replace_text, search must exactly match current file text.",
-                    "If exact replacement is brittle, use smaller repo.replace_text actions with exact current snippets.",
-                    "Use repo.write_file only for new files; do not rewrite large existing files during repair.",
-                    `Return corrected repository edit action(s) only using: ${supportedToolList}. Do not call repo.read_file, repo.search, repo.apply_patch, or other tools.`,
-                    "Preferred format: {\"summary\":\"...\",\"actions\":[{\"tool\":\"repo.replace_text\",\"input\":{\"path\":\"src/file.ts\",\"search\":\"exact existing text\",\"replace\":\"new text\"}}]}",
-                    languageInstruction(locale)
-                  ].join("\n"),
-            context: {
-              issue: task.issue as unknown as JsonObject,
-              prd: task.prd as unknown as JsonObject,
-              contextPack: implementationContextPack,
-              minimalChangePlan: task.minimalChangePlan as unknown as JsonObject,
-              reviewerFeedback,
-              previousApplyError,
-              previousEditFiles: repairContext?.editFiles ?? [],
-              previousEditPreview: repairContext?.editPreview ?? "",
-              fileSnippets: (repairContext?.fileSnippets ?? snippets) as JsonObject,
-              availableTools: this.getImplementationTools(repositoryConfig) as unknown as JsonObject,
-              policies: this.config.policies as unknown as JsonObject,
-              repositoryPermissions: repositoryConfig.permissions as unknown as JsonObject
-            }
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent failed attempt ${attempt}/${MAX_IMPLEMENTATION_ATTEMPTS}: ${message}`, "error", {
-            agentId: agent.id,
-            agentRole: agent.role,
-            phase: "implementation",
-            attempt,
-            maxAttempts: MAX_IMPLEMENTATION_ATTEMPTS,
-            error: message
-          });
-          if (attempt < MAX_IMPLEMENTATION_ATTEMPTS && agentRunFailureLooksRecoverable(message)) {
-            previousApplyError = agentJsonFailureLooksRecoverable(message)
-              ? `Implementation agent returned invalid JSON. Return valid JSON only. Parser error: ${message}`
-              : `Implementation agent provider call failed transiently. Retry with the same task context. Error: ${message}`;
-            previousEditActions = [];
-            continue;
-          }
-          throw error;
-        }
-        await this.event(task.id, "AGENT_RUN_FINISHED", `Implementation agent returned JSON for attempt ${attempt}/${MAX_IMPLEMENTATION_ATTEMPTS}`, "info", {
-          agentId: agent.id,
-          agentRole: agent.role,
-          phase: "implementation",
-          attempt,
-          maxAttempts: MAX_IMPLEMENTATION_ATTEMPTS
-        });
-        let implementation: ReturnType<typeof implementationSchema.parse>;
-        try {
-          implementation = implementationSchema.parse(result);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          previousApplyError = `Implementation JSON failed schema validation. Return JSON matching the implementation schema. Schema error: ${message}`;
-          await this.writeArtifact(task.id, "tool-call", `implementation-attempt-${attempt}-invalid.json`, JSON.stringify(result, null, 2));
-          await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
-          continue;
-        }
-        const actions = implementationToToolActions(implementation);
-        await this.writeArtifact(task.id, "tool-call", `implementation-attempt-${attempt}.json`, JSON.stringify(implementation, null, 2));
-        const candidateEditActions = selectImplementationEditActions(actions);
-        const editActions = candidateEditActions.filter((action) => implementationToolNames.has(action.toolName));
-        if (editActions.length === 0) {
-          const attemptedTools = candidateEditActions.map((action) => action.toolName);
-          previousApplyError =
-            attemptedTools.length > 0
-              ? `Implementation attempted unsupported edit tool(s): ${attemptedTools.join(", ")}. Use only: ${supportedToolList}.`
-              : "Implementation attempt did not include a repository edit action; read-only actions are not a valid implementation.";
-          await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
-          previousEditActions = candidateEditActions;
-          continue;
-        }
-        const writeFileGuardError = await validateImplementationWriteFileActions(sandbox.repoDir, editActions);
-        if (writeFileGuardError) {
-          previousApplyError = writeFileGuardError;
-          previousEditActions = editActions;
-          await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
-          continue;
-        }
-        const toolResults = await this.executeToolActions(task, sandbox, repositoryConfig, editActions, attempt);
-        const failedToolCall = toolResults.find((toolResult) => toolResult.status !== "success");
-
-        if (!failedToolCall) {
-          const diff = await getGitDiff(sandbox.repoDir);
-          if (!diff) {
-            previousApplyError = "Implementation tool actions succeeded but produced no diff";
-            await this.event(task.id, "TOOL_CALL_FINISHED", previousApplyError, "error");
-            continue;
-          }
-          await this.writeArtifact(task.id, "diff", "implementation.diff", diff);
-          await this.event(task.id, "FILE_CHANGED", implementation.summary);
-          return;
-        }
-
-        previousApplyError = summarizeToolFailure(failedToolCall);
-        previousEditActions = editActions;
-        await restoreImplementationCheckpoint(sandbox.repoDir, checkpoint);
-        await this.event(task.id, "TOOL_CALL_FINISHED", "Restored failed implementation attempt to the pre-attempt checkpoint before retry", "warn", {
-          attempt,
-          failedTool: failedToolCall.toolName
-        });
-      } finally {
-        await cleanupImplementationCheckpoint(checkpoint);
-      }
-    }
-
-    throw new Error(`Implementation edits did not apply after ${MAX_IMPLEMENTATION_ATTEMPTS} attempts: ${previousApplyError}`);
-  }
-
   private async runImplementationSelfCheckLoop(
     task: Task,
     sandbox: Sandbox,
@@ -954,7 +750,7 @@ export class IssueWorkflowRunner {
         updated = await this.updateStatus(updated.id, "IMPLEMENTING");
       }
 
-      await this.applyImplementation(updated, sandbox, repositoryConfig, runner, implementationAgent, implementationFeedback);
+      await this.applyImplementation(updated, sandbox, implementationAgent, implementationFeedback);
       await this.syncCodeGraphAfterImplementation(updated, sandbox, repositoryConfig);
 
       const qualityGateResults = await this.runQualityGates(updated, sandbox, repositoryConfig);
@@ -1021,63 +817,6 @@ export class IssueWorkflowRunner {
     }
 
     return { task: updated, passed: false, reason: "Self-check did not complete" };
-  }
-
-  private getImplementationTools(repositoryConfig: RepositoryConfig): ToolDefinition[] {
-    const implementationToolNames = new Set(["repo.replace_text", "repo.write_file"]);
-    return this.getAvailableTools(repositoryConfig).filter((tool) => implementationToolNames.has(tool.name));
-  }
-
-  private async executeToolActions(
-    task: Task,
-    sandbox: Sandbox,
-    repositoryConfig: RepositoryConfig,
-    actions: JsonToolAction[],
-    attempt: number
-  ): Promise<ToolCallResult[]> {
-    const gateway = this.createToolGateway(repositoryConfig);
-    const results: ToolCallResult[] = [];
-
-    for (const action of actions) {
-      await this.event(task.id, "TOOL_CALL_STARTED", `Tool ${action.toolName} started`, "info", {
-        toolName: action.toolName,
-        attempt
-      });
-      const result = await gateway.execute(
-        {
-          id: action.id,
-          taskId: task.id,
-          toolName: action.toolName,
-          input: action.input
-        },
-        { taskId: task.id, repoDir: sandbox.repoDir }
-      );
-      results.push(result);
-
-      for (const decision of result.policyDecisions) {
-        await this.event(task.id, "POLICY_DECISION", `Policy ${decision.policyId} returned ${decision.action}`, decision.action === "block" ? "error" : "warn", {
-          toolCallId: result.id,
-          policyId: decision.policyId,
-          action: decision.action,
-          reasons: decision.reasons
-        });
-      }
-
-      await this.event(task.id, "TOOL_CALL_FINISHED", `Tool ${action.toolName} finished with ${result.status}`, result.status === "success" ? "info" : "error", {
-        toolCallId: result.id,
-        toolName: result.toolName,
-        status: result.status,
-        durationMs: result.durationMs,
-        error: result.error ?? null
-      });
-
-      if (result.status !== "success") {
-        break;
-      }
-    }
-
-    await this.writeArtifact(task.id, "tool-call", `tool-calls-attempt-${attempt}.json`, JSON.stringify(results, null, 2));
-    return results;
   }
 
   private async runQualityGates(task: Task, sandbox: Sandbox, repositoryConfig: RepositoryConfig): Promise<QualityGateResult[]> {
@@ -1332,31 +1071,6 @@ export class IssueWorkflowRunner {
     return latest ? `${latest.author} at ${latest.createdAt}:\n${latest.body}` : "";
   }
 
-  private createToolGateway(repositoryConfig: RepositoryConfig): ToolGateway {
-    const registry = createBuiltInToolRegistry();
-    return new ToolGateway({
-      registry,
-      policies: [
-        ...this.config.policies.map(
-          (policy): PolicyDefinition => ({
-            id: policy.id,
-            description: policy.description,
-            toolNames: policy.tool_names.length > 0 ? policy.tool_names : undefined,
-            permissions: policy.permissions.length > 0 ? policy.permissions : undefined,
-            matchPaths: policy.match_paths.length > 0 ? policy.match_paths : undefined,
-            matchCommands: policy.match_commands.length > 0 ? policy.match_commands : undefined,
-            action: policy.action
-          })
-        ),
-        ...createRepositoryPermissionPolicies(repositoryConfig, registry.list())
-      ]
-    });
-  }
-
-  private getAvailableTools(repositoryConfig: RepositoryConfig): ToolDefinition[] {
-    return createBuiltInToolRegistry().list().filter((tool) => repositoryAllowsTool(repositoryConfig, tool));
-  }
-
   private requiredRepository(task: Task): RepositoryConfig {
     const repository = findRepository(this.config, task.issue.owner, task.issue.repo);
 
@@ -1421,29 +1135,6 @@ export function selectImplementationSnippetPaths(task: Pick<Task, "contextPack" 
     .filter(Boolean);
 
   return paths.filter((value, index) => paths.indexOf(value) === index);
-}
-
-export function selectImplementationEditActions(actions: JsonToolAction[]): JsonToolAction[] {
-  const implementationToolNames = new Set(["repo.replace_text", "repo.write_file", "repo.apply_patch"]);
-  return actions.filter((action) => implementationToolNames.has(action.toolName));
-}
-
-export function selectImplementationPatchActions(actions: JsonToolAction[]): JsonToolAction[] {
-  return actions.filter((action) => action.toolName === "repo.apply_patch");
-}
-
-export function selectImplementationPatchPaths(actions: JsonToolAction[]): string[] {
-  const paths = actions.flatMap((action) => {
-    const diff = extractPatchDiff(action);
-    if (diff) {
-      return extractDiffPaths(diff);
-    }
-
-    const targetPath = action.input.path;
-    return typeof targetPath === "string" ? [targetPath] : [];
-  });
-
-  return paths.filter((value, index) => value.length > 0 && paths.indexOf(value) === index);
 }
 
 export function formatQualityGateRepairFeedback(results: QualityGateResult[], attempt: number, maxAttempts: number): string {
@@ -1586,50 +1277,6 @@ function reviewFailureSignature(review: ReviewResult): string {
   ]
     .sort()
     .join("\n");
-}
-
-export async function validateImplementationWriteFileActions(repoDir: string, actions: JsonToolAction[]): Promise<string | undefined> {
-  for (const action of actions) {
-    if (action.toolName !== "repo.write_file") {
-      continue;
-    }
-
-    const inputPath = action.input.path;
-    if (typeof inputPath !== "string" || inputPath.length === 0) {
-      continue;
-    }
-
-    const targetPath = path.resolve(repoDir, inputPath);
-    const relativePath = path.relative(repoDir, targetPath);
-    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-      return `repo.write_file cannot write outside the repository: ${inputPath}`;
-    }
-
-    let targetStat;
-    try {
-      targetStat = await stat(targetPath);
-    } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-        continue;
-      }
-      throw error;
-    }
-
-    if (!targetStat.isFile()) {
-      return `repo.write_file cannot replace non-file path ${inputPath}. Use a repository edit action for a concrete file.`;
-    }
-
-    const currentContent = await readFile(targetPath, "utf8");
-    const currentLineCount = currentContent.split(/\r?\n/).length;
-    if (targetStat.size > MAX_EXISTING_WRITE_FILE_BYTES || currentLineCount > MAX_EXISTING_WRITE_FILE_LINES) {
-      return [
-        `repo.write_file cannot overwrite existing large file ${inputPath} (${targetStat.size} bytes, ${currentLineCount} lines).`,
-        "Use repo.replace_text with exact current snippets for existing files, or repo.write_file only for new files."
-      ].join(" ");
-    }
-  }
-
-  return undefined;
 }
 
 export async function resetImplementationAttempt(repoDir: string): Promise<void> {
@@ -1795,68 +1442,6 @@ async function repositoryFileExists(repoDir: string, filePath: string): Promise<
   return fileStat?.isFile() ?? false;
 }
 
-async function createImplementationRepairContext(
-  repoDir: string,
-  actions: JsonToolAction[]
-): Promise<{ editFiles: string[]; editPreview: string; fileSnippets: Record<string, string> }> {
-  const editFiles = selectImplementationPatchPaths(actions).slice(0, 8);
-  return {
-    editFiles,
-    editPreview: createEditPreview(actions, 12_000),
-    fileSnippets: await readFreshFileSnippets(repoDir, editFiles, 24_000, 8)
-  };
-}
-
-async function readFreshFileSnippets(repoDir: string, paths: string[], maxCharsPerFile: number, maxFiles: number): Promise<Record<string, string>> {
-  const snippets: Record<string, string> = {};
-
-  for (const filePath of paths.slice(0, maxFiles)) {
-    const normalized = normalizeRepairPath(filePath);
-    if (!normalized) {
-      continue;
-    }
-
-    const absolutePath = path.resolve(repoDir, normalized);
-    const repoRoot = path.resolve(repoDir);
-    if (!absolutePath.startsWith(`${repoRoot}${path.sep}`)) {
-      continue;
-    }
-
-    const content = await readFile(absolutePath, "utf8").catch(() => "");
-    snippets[normalized] = createContextSnippet(content, maxCharsPerFile);
-  }
-
-  return snippets;
-}
-
-function createEditPreview(actions: JsonToolAction[], maxChars: number): string {
-  const preview = actions
-    .map(describeEditAction)
-    .filter(Boolean)
-    .join("\n\n--- next edit action ---\n\n");
-  return preview.length > maxChars ? `${preview.slice(0, maxChars)}\n... (truncated)` : preview;
-}
-
-function describeEditAction(action: JsonToolAction): string {
-  const diff = extractPatchDiff(action);
-  if (diff) {
-    return diff;
-  }
-
-  return JSON.stringify(action, (_key, value) => (typeof value === "string" && value.length > 4_000 ? `${value.slice(0, 4_000)}\n... (truncated)` : value), 2);
-}
-
-function extractPatchDiff(action: JsonToolAction): string {
-  const input = action.input;
-  const unifiedDiff = input.unifiedDiff;
-  if (typeof unifiedDiff === "string") {
-    return unifiedDiff;
-  }
-
-  const patch = input.patch;
-  return typeof patch === "string" ? patch : "";
-}
-
 function normalizeRepairPath(value: string): string {
   const normalized = value.trim().replace(/\\/g, "/").replace(/^\.\//, "");
   if (!normalized || normalized.startsWith("../") || normalized.includes("/../") || path.isAbsolute(normalized)) {
@@ -1934,17 +1519,6 @@ function uniquePaths(paths: string[]): string[] {
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function agentJsonFailureLooksRecoverable(message: string): boolean {
-  return /json|property name|unexpected token|unexpected end|bad control character|unterminated string/i.test(message);
-}
-
-function agentRunFailureLooksRecoverable(message: string): boolean {
-  return (
-    agentJsonFailureLooksRecoverable(message) ||
-    /network request failed|fetch failed|headers timeout|timed out|timeout error|econnreset|etimedout|und_err_headers_timeout/i.test(message)
-  );
 }
 
 function parseGitHubIssueNumber(url: string): number | undefined {

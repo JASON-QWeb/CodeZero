@@ -129,6 +129,113 @@ describe("GitHub async sync", () => {
     expect(enqueue).toHaveBeenCalledWith(task.id, expect.stringContaining(`${task.id}-prd-approved-`));
   });
 
+  it("requeues a failed tracked issue when a new trigger comment arrives", async () => {
+    const dir = await createConfigFixture("agent-github-issue-retrigger-");
+    const storePath = path.join(dir, "tasks.json");
+    const repository = new FileTaskRepository(storePath);
+    const task = {
+      ...createTask(issue(30, "Retry failed issue"), new Date("2026-05-27T02:00:00Z")),
+      status: "FAILED"
+    } satisfies Task;
+    await repository.createTask(task);
+    process.env.PROJECT_ROOT = dir;
+    process.env.TASK_STORE_FILE = storePath;
+    const enqueue = vi.fn(async () => undefined);
+    const github = fakeGitHub({
+      issueThreads: [
+        {
+          ...issue(30, "Retry failed issue"),
+          author: "alice",
+          updatedAt: "2026-05-27T02:15:00Z",
+          isPullRequest: false,
+          comments: [{ author: "alice", body: "@agent-prd 请重新处理", createdAt: "2026-05-27T02:15:00Z" }]
+        }
+      ]
+    });
+
+    const result = await runGitHubRepositorySync("example-web", { github, enqueue });
+    const updated = await repository.getTask(task.id);
+
+    expect(result).toMatchObject({
+      importedIssueComments: 1,
+      queuedIssueRetriggers: 1
+    });
+    expect(updated?.status).toBe("QUEUED");
+    expect(enqueue).toHaveBeenCalledWith(task.id, expect.stringContaining(`${task.id}-issue-retrigger-`));
+  });
+
+  it("resumes a failed approved issue from PRD_APPROVED when a new trigger comment arrives", async () => {
+    const dir = await createConfigFixture("agent-github-approved-issue-retrigger-");
+    const storePath = path.join(dir, "tasks.json");
+    const repository = new FileTaskRepository(storePath);
+    const task = {
+      ...createTask(issue(34, "Retry approved failed issue"), new Date("2026-05-27T02:00:00Z")),
+      status: "FAILED",
+      prd: highComplexityPrd
+    } satisfies Task;
+    await repository.createTask(task);
+    process.env.PROJECT_ROOT = dir;
+    process.env.TASK_STORE_FILE = storePath;
+    const enqueue = vi.fn(async () => undefined);
+    const github = fakeGitHub({
+      issueThreads: [
+        {
+          ...issue(34, "Retry approved failed issue"),
+          author: "alice",
+          updatedAt: "2026-05-27T02:25:00Z",
+          isPullRequest: false,
+          comments: [{ author: "alice", body: "@agent-prd retry", createdAt: "2026-05-27T02:25:00Z" }]
+        }
+      ]
+    });
+
+    const result = await runGitHubRepositorySync("example-web", { github, enqueue });
+    const updated = await repository.getTask(task.id);
+
+    expect(result).toMatchObject({
+      importedIssueComments: 1,
+      queuedIssueRetriggers: 1
+    });
+    expect(updated?.status).toBe("PRD_APPROVED");
+    expect(enqueue).toHaveBeenCalledWith(task.id, expect.stringContaining(`${task.id}-issue-retrigger-`));
+  });
+
+  it("requeues an interrupted active issue only when the trigger comment asks for a retry", async () => {
+    const dir = await createConfigFixture("agent-github-active-retrigger-");
+    const storePath = path.join(dir, "tasks.json");
+    const repository = new FileTaskRepository(storePath);
+    const task = {
+      ...createTask(issue(33, "Retry active issue"), new Date("2026-05-27T02:00:00Z")),
+      status: "IMPLEMENTING",
+      prd: highComplexityPrd
+    } satisfies Task;
+    await repository.createTask(task);
+    process.env.PROJECT_ROOT = dir;
+    process.env.TASK_STORE_FILE = storePath;
+    const enqueue = vi.fn(async () => undefined);
+    const github = fakeGitHub({
+      issueThreads: [
+        {
+          ...issue(33, "Retry active issue"),
+          author: "alice",
+          updatedAt: "2026-05-27T02:20:00Z",
+          isPullRequest: false,
+          comments: [{ author: "alice", body: "@agent-prd 请重新处理", createdAt: "2026-05-27T02:20:00Z" }]
+        }
+      ]
+    });
+
+    const result = await runGitHubRepositorySync("example-web", { github, enqueue });
+    const updated = await repository.getTask(task.id);
+
+    expect(result).toMatchObject({
+      importedIssueComments: 1,
+      queuedIssueRetriggers: 1
+    });
+    expect(updated?.status).toBe("PRD_APPROVED");
+    expect(enqueue).toHaveBeenCalledWith(task.id, expect.stringContaining(`${task.id}-issue-retrigger-`));
+  });
+
   it("marks sync failed when imported PR feedback cannot be queued", async () => {
     const dir = await createConfigFixture("agent-github-pr-sync-fail-");
     const storePath = path.join(dir, "tasks.json");
@@ -201,3 +308,20 @@ function issue(number: number, title: string): IssueContext {
     baseBranch: "main"
   };
 }
+
+const highComplexityPrd = {
+  title: "Retry active issue",
+  background: "A previously approved issue was interrupted while implementation was running.",
+  goals: ["Resume implementation from the approved PRD."],
+  nonGoals: ["Change the PRD content."],
+  userStories: ["As an operator, I can re-trigger an interrupted active run."],
+  acceptanceCriteria: ["The same task is requeued from an approved PRD state."],
+  risks: ["A duplicate active worker could run if retry comments are not explicit."],
+  unknowns: [],
+  taskType: "fullstack",
+  complexity: {
+    score: 6,
+    requiresHumanReview: true,
+    reasons: ["Cross-module change"]
+  }
+} satisfies Task["prd"];

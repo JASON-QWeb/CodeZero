@@ -183,7 +183,8 @@ export function TaskBoard() {
   const t = text[locale];
   const { data, isError } = useQuery({
     queryKey: ["tasks"],
-    queryFn: fetchTasks
+    queryFn: fetchTasks,
+    refetchInterval: (query) => (query.state.data?.some((task) => isLiveTaskStatus(task.status)) ? 2500 : false)
   });
   const repositoryQuery = useQuery({
     queryKey: ["task-repositories"],
@@ -248,7 +249,8 @@ export function TaskBoard() {
   const traceQuery = useQuery({
     queryKey: ["task-trace", selectedTask?.id],
     queryFn: () => fetchTrace(selectedTask?.id ?? ""),
-    enabled: Boolean(hasLiveTasks && selectedTask?.id)
+    enabled: Boolean(hasLiveTasks && selectedTask?.id),
+    refetchInterval: () => (isLiveTaskStatus(selectedTask?.status) ? 2000 : false)
   });
   const trace = traceQuery.data ?? mockTrace(fallbackTask);
   const stats = useMemo(
@@ -751,7 +753,7 @@ function TaskDetail({ locale, task, trace, traceLoading }: { locale: Locale; tas
   const visibleSpans = trace.spans.slice(safeTracePage * tracePageSize, safeTracePage * tracePageSize + tracePageSize);
 
   useEffect(() => {
-    setTracePage(0);
+    setTracePage(Math.max(0, Math.ceil(trace.spans.length / tracePageSize) - 1));
   }, [task.id, trace.spans.length]);
 
   return (
@@ -831,6 +833,8 @@ function TraceMetric({ label, value }: { label: string; value: number }) {
 }
 
 function TraceRow({ label, span }: { label: string; span: TraceSpan }) {
+  const metadata = traceMetadataEntries(span);
+
   return (
     <li className={`traceRow trace-${span.kind}`}>
       <div className="traceMarker" aria-hidden />
@@ -840,10 +844,31 @@ function TraceRow({ label, span }: { label: string; span: TraceSpan }) {
           <span>{span.kind.replaceAll("_", " ")}</span>
         </div>
         <LongText label={label} text={span.message} />
+        {metadata.length > 0 ? (
+          <div className="traceMeta">
+            {metadata.map(([key, value]) => (
+              <span key={key}>
+                {key}: {value}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
       <span className={`traceStatus status-${span.status}`}>{span.status}</span>
     </li>
   );
+}
+
+function traceMetadataEntries(span: TraceSpan): Array<[string, string]> {
+  const metadata = span.metadata ?? {};
+  const keys = ["eventType", "filePath", "command", "toolName", "stream"];
+
+  return keys
+    .map((key): [string, string] | undefined => {
+      const value = metadata[key];
+      return typeof value === "string" && value.length > 0 ? [key, value.length > 160 ? `${value.slice(0, 160)}...` : value] : undefined;
+    })
+    .filter((entry): entry is [string, string] => Boolean(entry));
 }
 
 function EmptyState({ label }: { label: string }) {
@@ -867,6 +892,26 @@ function LongText({ className, label, text: value }: { className?: string; label
       </summary>
       <pre>{textValue}</pre>
     </details>
+  );
+}
+
+function isLiveTaskStatus(status: Task["status"] | undefined): boolean {
+  return Boolean(
+    status &&
+      [
+        "CONTEXT_COLLECTING",
+        "BRAINSTORMING",
+        "PRD_APPROVED",
+        "SANDBOX_PREPARING",
+        "ISSUE_BRANCH_CREATED",
+        "CODEBASE_INDEXING",
+        "AGENTIC_SEARCHING",
+        "CONTEXT_PACK_CREATED",
+        "IMPLEMENTING",
+        "QUALITY_GATES_RUNNING",
+        "SUBAGENT_REVIEWING",
+        "PR_CREATING"
+      ].includes(status)
   );
 }
 

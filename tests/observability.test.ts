@@ -25,8 +25,8 @@ describe("observability trace", () => {
       createTaskEvent({
         taskId: task.id,
         type: "TOOL_CALL_FINISHED",
-        message: "Tool repo.apply_patch finished with success",
-        metadata: { toolName: "repo.apply_patch", status: "success" }
+        message: "Tool shell.run finished with success",
+        metadata: { toolName: "shell.run", status: "success" }
       }),
       createTaskEvent({
         taskId: task.id,

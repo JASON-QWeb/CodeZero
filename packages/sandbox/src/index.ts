@@ -40,6 +40,11 @@ export type CommandResult = {
   durationMs: number;
 };
 
+export type CommandOutputChunk = {
+  stream: "stdout" | "stderr";
+  text: string;
+};
+
 export class DockerSandboxManager implements SandboxManager {
   constructor(private readonly config: SandboxConfig) {}
 
@@ -80,40 +85,110 @@ export class WorktreeSandboxManager extends DockerSandboxManager {
   }
 }
 
-export async function runCommand(input: { cwd: string; command: string; timeoutMs?: number; env?: NodeJS.ProcessEnv; stdin?: string }): Promise<CommandResult> {
+export async function runCommand(input: {
+  cwd: string;
+  command: string;
+  timeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
+  stdin?: string;
+  onOutput?: (chunk: CommandOutputChunk) => void | Promise<void>;
+}): Promise<CommandResult> {
   const startedAt = Date.now();
   const stdout: string[] = [];
   const stderr: string[] = [];
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? 10 * 60_000);
+  const outputCallbacks: Promise<void>[] = [];
+  const timeoutMs = input.timeoutMs ?? 10 * 60_000;
+  let timedOut = false;
+  let timeout: NodeJS.Timeout | undefined;
+  const dispatchOutput = (stream: CommandOutputChunk["stream"], text: string) => {
+    const callbackResult = input.onOutput?.({ stream, text });
+    if (callbackResult) {
+      outputCallbacks.push(Promise.resolve(callbackResult).catch(() => undefined));
+    }
+  };
 
   const exitCode = await new Promise<number | null>((resolve) => {
     const child = spawn(input.command, {
       cwd: input.cwd,
       shell: true,
       env: { ...process.env, ...input.env },
-      signal: controller.signal
+      detached: true
     });
+    let forceKill: NodeJS.Timeout | undefined;
+    const terminateChildGroup = (signal: NodeJS.Signals) => {
+      if (!child.pid) {
+        return;
+      }
 
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk.toString("utf8")));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk.toString("utf8")));
-    child.on("error", () => resolve(null));
-    child.on("close", (code) => resolve(code));
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        child.kill(signal);
+      }
+    };
+    const onParentSignal = (signal: NodeJS.Signals) => {
+      terminateChildGroup(signal);
+      process.off("SIGTERM", onSigterm);
+      process.off("SIGINT", onSigint);
+      process.kill(process.pid, signal);
+    };
+    const onSigterm = () => onParentSignal("SIGTERM");
+    const onSigint = () => onParentSignal("SIGINT");
+    const cleanup = () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      if (forceKill) {
+        clearTimeout(forceKill);
+      }
+      process.off("SIGTERM", onSigterm);
+      process.off("SIGINT", onSigint);
+    };
+
+    process.once("SIGTERM", onSigterm);
+    process.once("SIGINT", onSigint);
+    timeout = setTimeout(() => {
+      timedOut = true;
+      terminateChildGroup("SIGTERM");
+      forceKill = setTimeout(() => terminateChildGroup("SIGKILL"), 5_000);
+      forceKill.unref();
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      stdout.push(text);
+      dispatchOutput("stdout", text);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      stderr.push(text);
+      dispatchOutput("stderr", text);
+    });
+    child.on("error", () => {
+      cleanup();
+      resolve(null);
+    });
+    child.on("close", (code) => {
+      cleanup();
+      resolve(code);
+    });
 
     if (input.stdin !== undefined) {
       child.stdin.write(input.stdin);
       child.stdin.end();
     }
   });
+  await Promise.all(outputCallbacks);
 
-  clearTimeout(timeout);
+  const stderrText = stderr.join("").slice(-24_000);
+  const timedOutMessage = timedOut ? `Command timed out after ${timeoutMs}ms` : "";
 
   return {
     command: input.command,
     cwd: input.cwd,
     exitCode,
     stdout: stdout.join("").slice(-24_000),
-    stderr: stderr.join("").slice(-24_000),
+    stderr: [stderrText, timedOutMessage].filter(Boolean).join("\n"),
     durationMs: Date.now() - startedAt
   };
 }

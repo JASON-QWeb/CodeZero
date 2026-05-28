@@ -68,7 +68,7 @@ export const agentsFileSchema = z
 
 export const repositoryTriggerModes = ["auto", "mention", "label", "manual", "disabled"] as const;
 export const toolPermissionLevels = ["read", "safe_write", "repo_write", "external_write", "dangerous"] as const;
-export const implementationExecutorModes = ["cli", "legacy-json-actions"] as const;
+export const implementationExecutorModes = ["cli"] as const;
 
 const triggerModeSchema = z.enum(repositoryTriggerModes);
 const toolPermissionSchema = z.enum(toolPermissionLevels);
@@ -212,19 +212,17 @@ const implementationExecutorSchema = z
       .string()
       .min(1)
       .default(
-        'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions --file "$CODEZERO_PROMPT_FILE" "Implement the CodeZero request in the attached prompt file."'
+        'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
       ),
     timeout_ms: z.number().int().positive().default(60 * 60_000),
-    fallback_to_legacy_json_actions: z.boolean().default(true),
     env: z.record(z.string(), z.string()).default({})
   })
   .default({
     mode: "cli",
     name: "codezero-coding-cli",
     command:
-      'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions --file "$CODEZERO_PROMPT_FILE" "Implement the CodeZero request in the attached prompt file."',
+      'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
     timeout_ms: 60 * 60_000,
-    fallback_to_legacy_json_actions: true,
     env: {}
   });
 

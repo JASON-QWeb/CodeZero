@@ -117,15 +117,11 @@ The default implementation path is:
 
 The current default executor command is configured in `config/sandbox.yaml` under `sandbox.implementation_executor`. It uses OpenCode internally through `npx -y opencode-ai@latest`, attaches the generated CodeZero request as a prompt file, and runs non-interactively inside the isolated sandbox. For OpenAI-compatible gateways, CodeZero writes a temporary `OPENCODE_CONFIG` artifact that registers the configured model as `codezero/<model>` while keeping the API key in environment variables. Users can also override `providers.<id>.coding_executor` to select any native or custom OpenCode provider/model for sandbox implementation work. This must not leak into PR bodies or user-facing issue comments. PRs, issue comments, and dashboard summaries should describe the work as CodeZero implementation.
 
-Legacy JSON actions remain only as a compatibility fallback:
+There is no JSON edit fallback in the implementation phase. CodeZero must fail fast and surface executor diagnostics if OpenCode cannot produce a diff, rather than applying self-built file replacement tools.
 
-- `repo.replace_text` for precise edits.
-- `repo.write_file` for new files or complete-file replacement.
-- `repo.apply_patch` only as an older compatibility fallback.
+Tool Gateway still matters for read, search, shell, and future high-risk tool governance. The main implementation path, however, is CodeZero directly modifying the sandbox through OpenCode, not a model handing CodeZero snippets to paste.
 
-Tool Gateway still matters for the fallback path and for future high-risk tools. It provides path isolation, policy checks, event logging, and reproducibility. The main implementation path, however, should feel like CodeZero directly modifying the sandbox through a mature coding executor, not like a model handing CodeZero brittle snippets to paste.
-
-Failed self-checks should feed back into the implementation loop. A failed patch or edit should not be treated as user action required unless the same blocking condition repeats and the task cannot progress safely.
+Failed self-checks should feed back into the implementation loop. Executor failures should not be treated as user action required unless the same blocking condition repeats and the task cannot progress safely.
 
 Quality gates are part of the implementation loop, not the end of the conversation. If tests, lint, typecheck, build, screenshots, or review-agent checks fail because of the agent's code, CodeZero should provide the failure output back to the implementation agent and retry up to the repository sandbox retry budget. If the failure is clearly environmental, such as Docker not being available for a configured setup gate, CodeZero should block with an explicit environment reason instead of making unrelated code changes.
 

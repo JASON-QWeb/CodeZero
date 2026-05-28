@@ -26,7 +26,8 @@ describe("app config loading", () => {
     expect(config.repositories[0]?.permissions.blocked_permissions).toContain("dangerous");
     expect(config.sandbox.implementation_executor?.mode).toBe("cli");
     expect(config.sandbox.implementation_executor?.name).toBe("codezero-coding-cli");
-    expect(config.tools.map((tool) => tool.name)).toContain("repo.apply_patch");
+    expect(config.tools.map((tool) => tool.name)).not.toContain("repo.write_file");
+    expect(config.tools.map((tool) => tool.name)).toContain("shell.run");
     expect(config.policies.map((policy) => policy.id)).toContain("block-dangerous-shell");
     expect(config.memory.filePath).toContain("memory.json");
   });

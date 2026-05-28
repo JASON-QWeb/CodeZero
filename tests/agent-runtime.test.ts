@@ -35,14 +35,14 @@ describe("agent runtime", () => {
   });
 
   it("repairs common trailing commas in JSON-like agent responses", () => {
-    expect(parseJsonObject('{"summary":"ok","actions":[{"tool":"repo.write_file","input":{"path":"src/a.ts","content":"a,b",},}],}')).toEqual({
+    expect(parseJsonObject('{"summary":"ok","actions":[{"tool":"repo.read_file","input":{"path":"src/a.ts","maxBytes":128,},}],}')).toEqual({
       summary: "ok",
       actions: [
         {
-          tool: "repo.write_file",
+          tool: "repo.read_file",
           input: {
             path: "src/a.ts",
-            content: "a,b"
+            maxBytes: 128
           }
         }
       ]
@@ -54,7 +54,7 @@ describe("agent runtime", () => {
       // implementation summary
       "summary": "ok // keep string content",
       "actions": [
-        {"tool": "repo.write_file", /* inline comment */ "input": {"path": "src/a.ts", "content": "x"}}
+        {"tool": "repo.read_file", /* inline comment */ "input": {"path": "src/a.ts", "maxBytes": 64}}
       ],
     }`;
 
@@ -62,10 +62,10 @@ describe("agent runtime", () => {
       summary: "ok // keep string content",
       actions: [
         {
-          tool: "repo.write_file",
+          tool: "repo.read_file",
           input: {
             path: "src/a.ts",
-            content: "x"
+            maxBytes: 64
           }
         }
       ]

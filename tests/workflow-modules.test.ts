@@ -21,24 +21,18 @@ import {
   formatQualityGateRepairFeedback,
   formatReviewRepairFeedback,
   getSelfCheckHardMaxAttempts,
-  implementationSchema,
-  implementationToToolActions,
   IssueWorkflowRunner,
+  normalizeCodingExecutorProgressLine,
   normalizeImplementationExecutorConfig,
   qualityGateFailuresChanged,
   qualityGateFailureLooksEnvironmental,
   resetImplementationAttempt,
   runCodingCliExecutor,
   restoreImplementationCheckpoint,
-  selectImplementationEditActions,
-  selectImplementationPatchActions,
-  selectImplementationPatchPaths,
   selectImplementationSnippetPaths,
   selectProviderForComplexity,
   shouldExtendQualityGateSelfCheck,
   shouldExtendSelfCheckAfterFailureKindChange,
-  summarizeToolFailure,
-  validateImplementationWriteFileActions,
   writeTaskArtifact
 } from "@agent/workflows";
 
@@ -51,88 +45,6 @@ describe("workflow modules", () => {
     expect(selectProviderForComplexity("default", providerByComplexity, 70)).toBe("balanced");
     expect(selectProviderForComplexity("default", providerByComplexity, 71)).toBe("large");
     expect(selectProviderForComplexity("default", {}, 99)).toBe("default");
-  });
-
-  it("normalizes implementation responses into tool actions", () => {
-    expect(
-      implementationSchema.parse({
-        summary: "tool calls alias",
-        toolCalls: [{ tool: "replace_text", input: { file_path: "src/app.ts", oldText: "old", new_text: "new" } }]
-      }).actions
-    ).toHaveLength(1);
-
-    expect(implementationSchema.parse({ summary: "diff alias", diff: "diff --git a/a b/a\n" }).unifiedDiff).toBe("diff --git a/a b/a\n");
-
-    expect(implementationToToolActions({ summary: "compat", unifiedDiff: "diff --git a/a b/a\n" })).toEqual([
-      {
-        toolName: "repo.apply_patch",
-        input: { unifiedDiff: "diff --git a/a b/a\n" }
-      }
-    ]);
-
-    expect(
-      implementationToToolActions({
-        summary: "tool alias",
-        actions: [{ id: "search", tool: "repo.search", input: { query: "refund" } }]
-      })
-    ).toEqual([{ id: "search", toolName: "repo.search", input: { query: "refund" } }]);
-
-    expect(
-      implementationToToolActions({
-        summary: "edit aliases",
-        actions: [
-          {
-            tool: "replace_text",
-            input: {
-              file_path: "src/app.ts",
-              oldText: "old",
-              new_text: "new"
-            }
-          },
-          {
-            tool: "write_file",
-            input: {
-              filePath: "src/new.ts",
-              contents: "export {};\n"
-            }
-          },
-          {
-            tool: "apply_patch",
-            input: {
-              unified_diff: "diff --git a/a b/a\n"
-            }
-          }
-        ]
-      })
-    ).toEqual([
-      {
-        toolName: "repo.replace_text",
-        input: {
-          file_path: "src/app.ts",
-          oldText: "old",
-          new_text: "new",
-          path: "src/app.ts",
-          search: "old",
-          replace: "new"
-        }
-      },
-      {
-        toolName: "repo.write_file",
-        input: {
-          filePath: "src/new.ts",
-          contents: "export {};\n",
-          path: "src/new.ts",
-          content: "export {};\n"
-        }
-      },
-      {
-        toolName: "repo.apply_patch",
-        input: {
-          unified_diff: "diff --git a/a b/a\n",
-          unifiedDiff: "diff --git a/a b/a\n"
-        }
-      }
-    ]);
   });
 
   it("prepares a hidden CLI coding executor with provider env and prompt context", async () => {
@@ -161,6 +73,10 @@ describe("workflow modules", () => {
 
       expect(executor.mode).toBe("cli");
       expect(executor.command).toContain("opencode-ai");
+      expect(executor.command).toContain('--file="$CODEZERO_PROMPT_FILE"');
+      expect(executor.command).toContain(
+        '"Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
+      );
       expect(env.OPENAI_API_KEY).toBe("secret");
       expect(env.OPENAI_BASE_URL).toBe("https://api.example.test");
       expect(env.CODEZERO_OPENCODE_PROVIDER).toBe("codezero");
@@ -215,6 +131,28 @@ describe("workflow modules", () => {
     expect(env.ANTHROPIC_API_KEY).toBe("secret");
   });
 
+  it("normalizes OpenCode stream output without exposing hidden reasoning text", () => {
+    expect(
+      normalizeCodingExecutorProgressLine(JSON.stringify({ type: "tool", tool: "edit", path: "src/app.ts", message: "editing file" }))
+    ).toMatchObject({
+      message: "OpenCode tool: edit src/app.ts",
+      metadata: {
+        eventType: "tool",
+        filePath: "src/app.ts",
+        toolName: "edit"
+      }
+    });
+
+    expect(normalizeCodingExecutorProgressLine(JSON.stringify({ type: "reasoning", text: "private chain of thought" }))).toMatchObject({
+      message: "OpenCode is planning the next implementation step"
+    });
+    expect(normalizeCodingExecutorProgressLine("npm warn Unknown env config \"recursive\"", "stderr")).toBeUndefined();
+    expect(normalizeCodingExecutorProgressLine("Error: model failed", "stderr")).toMatchObject({
+      level: "error",
+      message: "OpenCode stderr: Error: model failed"
+    });
+  });
+
   it("runs a CLI coding executor in the sandbox and captures the resulting diff", async () => {
     const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-coding-executor-"));
     const artifactDir = path.join(repoDir, "artifacts");
@@ -230,7 +168,6 @@ describe("workflow modules", () => {
       command:
         "node -e \"const fs=require('fs'); if(!process.env.OPENAI_API_KEY || !process.env.CODEZERO_PROMPT_FILE || !process.env.OPENCODE_CONFIG) process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
       timeout_ms: 30_000,
-      fallback_to_legacy_json_actions: false,
       env: {}
     });
     const agent = {
@@ -319,7 +256,6 @@ describe("workflow modules", () => {
       command:
         "node -e \"const fs=require('fs'); if(process.env.CODEZERO_OPENCODE_MODEL !== 'openrouter/anthropic/claude-sonnet-4-5' || process.env.OPENROUTER_API_KEY !== 'secret-openrouter-key') process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
       timeout_ms: 30_000,
-      fallback_to_legacy_json_actions: false,
       env: {}
     });
     const agent = {
@@ -358,105 +294,6 @@ describe("workflow modules", () => {
     expect(openCodeConfig.provider.openrouter.options.apiKey).toBe("{env:OPENROUTER_API_KEY}");
     expect(openCodeConfig.provider.openrouter.models["anthropic/claude-sonnet-4-5"]?.limit?.context).toBe(200000);
     expect(JSON.stringify(openCodeConfig)).not.toContain("secret-openrouter-key");
-  });
-
-  it("summarizes failed tool calls with useful diagnostics", () => {
-    const summary = summarizeToolFailure({
-      id: "tool-1",
-      toolName: "shell.run",
-      status: "failed",
-      error: "Command failed",
-      durationMs: 10,
-      policyDecisions: [],
-      output: { stdout: "stdout text", stderr: "stderr text" }
-    });
-
-    expect(summary).toContain("shell.run");
-    expect(summary).toContain("Command failed");
-    expect(summary).toContain("stderr text");
-    expect(summary).toContain("stdout text");
-  });
-
-  it("keeps only patch actions for implementation execution", () => {
-    expect(
-      selectImplementationPatchActions([
-        { toolName: "repo.read_file", input: { path: "src/app.ts" } },
-        { toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }
-      ])
-    ).toEqual([{ toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }]);
-  });
-
-  it("keeps only repository edit actions for implementation execution", () => {
-    expect(
-      selectImplementationEditActions([
-        { toolName: "repo.read_file", input: { path: "src/app.ts" } },
-        { toolName: "repo.replace_text", input: { path: "src/app.ts", search: "old", replace: "new" } },
-        { toolName: "repo.write_file", input: { path: "src/new.ts", content: "export {};\n" } },
-        { toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }
-      ])
-    ).toEqual([
-      { toolName: "repo.replace_text", input: { path: "src/app.ts", search: "old", replace: "new" } },
-      { toolName: "repo.write_file", input: { path: "src/new.ts", content: "export {};\n" } },
-      { toolName: "repo.apply_patch", input: { unifiedDiff: "diff --git a/src/app.ts b/src/app.ts\n" } }
-    ]);
-  });
-
-  it("extracts failed patch paths for focused implementation repair", () => {
-    expect(
-      selectImplementationPatchPaths([
-        {
-          toolName: "repo.apply_patch",
-          input: {
-            unifiedDiff: [
-              "diff --git a/src/app.ts b/src/app.ts",
-              "--- a/src/app.ts",
-              "+++ b/src/app.ts",
-              "@@ -1 +1 @@",
-              "-old",
-              "+new",
-              ""
-            ].join("\n")
-          }
-        },
-        {
-          toolName: "repo.apply_patch",
-          input: {
-            patch: [
-              "diff --git a/tests/app.test.ts b/tests/app.test.ts",
-              "--- a/tests/app.test.ts",
-              "+++ b/tests/app.test.ts",
-              "@@ -1 +1 @@",
-              "-old",
-              "+new",
-              ""
-            ].join("\n")
-          }
-        }
-      ])
-    ).toEqual(["src/app.ts", "tests/app.test.ts"]);
-  });
-
-  it("extracts direct edit paths for focused implementation repair", () => {
-    expect(
-      selectImplementationPatchPaths([
-        { toolName: "repo.replace_text", input: { path: "src/app.ts", search: "old", replace: "new" } },
-        { toolName: "repo.write_file", input: { path: "tests/app.test.ts", content: "test('ok', () => {});\n" } }
-      ])
-    ).toEqual(["src/app.ts", "tests/app.test.ts"]);
-  });
-
-  it("blocks repo.write_file from overwriting existing large files", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-write-file-guard-"));
-    await mkdir(path.join(repoDir, "src"), { recursive: true });
-    await writeFile(path.join(repoDir, "src/app.ts"), "export const value = 1;\n".repeat(121));
-
-    await expect(
-      validateImplementationWriteFileActions(repoDir, [{ toolName: "repo.write_file", input: { path: "src/app.ts", content: "replacement\n" } }])
-    ).resolves.toContain("repo.write_file cannot overwrite existing large file src/app.ts");
-
-    await expect(
-      validateImplementationWriteFileActions(repoDir, [{ toolName: "repo.write_file", input: { path: "src/new.ts", content: "export {};\n" } }])
-    ).resolves.toBeUndefined();
   });
 
   it("rolls back partial implementation edits before a retry", async () => {

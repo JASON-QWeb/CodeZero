@@ -2,8 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentDefinition } from "@agent/agent-runtime";
 import type { AppConfig, ImplementationExecutorConfig } from "@agent/config";
-import { getGitDiff, runCommand, type CommandResult } from "@agent/sandbox";
-import type { JsonObject, MinimalChangePlan, PrdDocument, QualityGateResult, Task } from "@agent/shared";
+import { getGitDiff, runCommand, type CommandOutputChunk, type CommandResult } from "@agent/sandbox";
+import type { JsonObject, MinimalChangePlan, PrdDocument, QualityGateResult, Task, TaskEvent } from "@agent/shared";
 
 export type NormalizedImplementationExecutorConfig = Required<ImplementationExecutorConfig>;
 type AgentProviderConfig = AppConfig["agents"]["providers"][string];
@@ -27,6 +27,13 @@ export type CodingExecutorRunInput = {
   artifactDir: string;
   prompt: string;
   attempt: number;
+  onProgress?: (event: CodingExecutorProgressEvent) => void | Promise<void>;
+};
+
+export type CodingExecutorProgressEvent = {
+  message: string;
+  level?: TaskEvent["level"];
+  metadata?: JsonObject;
 };
 
 export type CodingExecutorRunResult = {
@@ -45,9 +52,8 @@ export function normalizeImplementationExecutorConfig(
     name: value?.name ?? "codezero-coding-cli",
     command:
       value?.command ??
-      'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions --file "$CODEZERO_PROMPT_FILE" "Implement the CodeZero request in the attached prompt file."',
+      'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
     timeout_ms: value?.timeout_ms ?? 60 * 60_000,
-    fallback_to_legacy_json_actions: value?.fallback_to_legacy_json_actions ?? true,
     env: value?.env ?? {}
   };
 }
@@ -138,6 +144,7 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
     await writeFile(openCodeConfigPath, `${JSON.stringify(openCodeConfig, null, 2)}\n`, "utf8");
   }
 
+  const progressReporter = createCodingExecutorProgressReporter(input.onProgress);
   const commandResult = await runCommand({
     cwd: input.repoDir,
     command: input.executor.command,
@@ -151,8 +158,10 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
       CODEZERO_ISSUE_URL: input.task.issue.url,
       CODEZERO_EXECUTOR_NAME: input.executor.name,
       ...(openCodeConfig ? { OPENCODE_CONFIG: openCodeConfigPath, CODEZERO_OPENCODE_CONFIG_FILE: openCodeConfigPath } : {})
-    }
+    },
+    onOutput: (chunk) => progressReporter.accept(chunk)
   });
+  await progressReporter.flush();
   const diff = await getGitDiff(input.repoDir);
 
   await writeFile(
@@ -181,6 +190,217 @@ export async function runCodingCliExecutor(input: CodingExecutorRunInput): Promi
     logPath,
     diff
   };
+}
+
+function createCodingExecutorProgressReporter(onProgress: CodingExecutorRunInput["onProgress"]) {
+  const buffers: Record<CommandOutputChunk["stream"], string> = { stdout: "", stderr: "" };
+  const pending: Promise<void>[] = [];
+  const recentMessages = new Map<string, number>();
+
+  const emit = (event: CodingExecutorProgressEvent) => {
+    if (!onProgress) {
+      return;
+    }
+
+    const now = Date.now();
+    const key = `${event.level ?? "info"}:${event.message}`;
+    const previous = recentMessages.get(key);
+    if (previous && now - previous < 2_500) {
+      return;
+    }
+    recentMessages.set(key, now);
+    pending.push(Promise.resolve(onProgress(event)).catch(() => undefined));
+  };
+
+  const consumeLine = (stream: CommandOutputChunk["stream"], line: string) => {
+    const event = normalizeCodingExecutorProgressLine(line, stream);
+    if (event) {
+      emit(event);
+    }
+  };
+
+  return {
+    accept(chunk: CommandOutputChunk) {
+      buffers[chunk.stream] += chunk.text;
+      const lines = buffers[chunk.stream].split(/\r?\n/);
+      buffers[chunk.stream] = lines.pop() ?? "";
+      for (const line of lines) {
+        consumeLine(chunk.stream, line);
+      }
+    },
+    async flush() {
+      for (const stream of ["stdout", "stderr"] as const) {
+        if (buffers[stream].trim()) {
+          consumeLine(stream, buffers[stream]);
+        }
+        buffers[stream] = "";
+      }
+      await Promise.all(pending);
+    }
+  };
+}
+
+export function normalizeCodingExecutorProgressLine(
+  line: string,
+  stream: CommandOutputChunk["stream"] = "stdout"
+): CodingExecutorProgressEvent | undefined {
+  const clean = stripAnsi(line).trim();
+  if (!clean || isIgnorableExecutorLine(clean)) {
+    return undefined;
+  }
+
+  if (stream === "stderr") {
+    return {
+      message: `OpenCode stderr: ${truncateProgressText(clean, 600)}`,
+      level: /error|failed|fatal|exception/i.test(clean) ? "error" : "warn",
+      metadata: {
+        source: "opencode",
+        stream
+      }
+    };
+  }
+
+  const parsed = parseJsonLine(clean);
+  if (!isRecord(parsed)) {
+    return {
+      message: `OpenCode output: ${truncateProgressText(clean, 600)}`,
+      level: "info",
+      metadata: {
+        source: "opencode",
+        stream
+      }
+    };
+  }
+
+  const eventType = findStringValue(parsed, ["type", "event", "kind", "name"]);
+  const lowerEventType = eventType.toLowerCase();
+  if (/thinking|reasoning|chain/i.test(eventType)) {
+    return {
+      message: "OpenCode is planning the next implementation step",
+      level: "debug",
+      metadata: {
+        source: "opencode",
+        stream,
+        eventType
+      }
+    };
+  }
+
+  const filePath = findStringValue(parsed, ["path", "file", "filePath", "filename"]);
+  const command = findStringValue(parsed, ["command", "cmd"]);
+  const toolName = findStringValue(parsed, ["tool", "toolName", "tool_name"]);
+  const text = findStringValue(parsed, ["message", "text", "content", "delta", "summary", "title", "output"]);
+  const metadata = compactProgressMetadata({
+    source: "opencode",
+    stream,
+    eventType,
+    filePath,
+    command,
+    toolName
+  });
+
+  if (filePath && /file|edit|patch|write|diff/.test(lowerEventType)) {
+    return {
+      message: `OpenCode file activity: ${filePath}`,
+      level: "info",
+      metadata
+    };
+  }
+
+  if (command) {
+    return {
+      message: `OpenCode command: ${truncateProgressText(command, 300)}`,
+      level: "info",
+      metadata
+    };
+  }
+
+  if (toolName) {
+    return {
+      message: `OpenCode tool: ${toolName}${filePath ? ` ${filePath}` : ""}`,
+      level: "info",
+      metadata
+    };
+  }
+
+  if (text) {
+    return {
+      message: `OpenCode: ${truncateProgressText(text, 600)}`,
+      level: "info",
+      metadata
+    };
+  }
+
+  if (eventType) {
+    return {
+      message: `OpenCode event: ${eventType}`,
+      level: "debug",
+      metadata
+    };
+  }
+
+  return undefined;
+}
+
+function parseJsonLine(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
+}
+
+function isIgnorableExecutorLine(value: string): boolean {
+  return /^npm warn Unknown env config/.test(value);
+}
+
+function findStringValue(value: unknown, keys: string[], depth = 0): string {
+  if (depth > 4 || !isRecord(value)) {
+    return "";
+  }
+
+  for (const key of keys) {
+    const direct = value[key];
+    if (typeof direct === "string" && direct.trim()) {
+      return direct.trim();
+    }
+  }
+
+  for (const entry of Object.values(value)) {
+    if (isRecord(entry)) {
+      const nested = findStringValue(entry, keys, depth + 1);
+      if (nested) {
+        return nested;
+      }
+    }
+    if (Array.isArray(entry)) {
+      for (const item of entry) {
+        const nested = findStringValue(item, keys, depth + 1);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
+function compactProgressMetadata(input: Record<string, string>): JsonObject {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value.length > 0));
+}
+
+function truncateProgressText(value: string, maxChars: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxChars ? `${normalized.slice(0, maxChars)}...` : normalized;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function buildOpenCodeProviderConfig(config: AppConfig, agent: AgentDefinition): JsonObject | undefined {

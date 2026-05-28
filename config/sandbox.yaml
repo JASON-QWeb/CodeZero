@@ -18,7 +18,6 @@ sandbox:
   implementation_executor:
     mode: cli
     name: codezero-coding-cli
-    command: 'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions --file "$CODEZERO_PROMPT_FILE" "Implement the CodeZero request in the attached prompt file."'
+    command: 'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
     timeout_ms: 3600000
-    fallback_to_legacy_json_actions: true
     env: {}
