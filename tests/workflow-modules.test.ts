@@ -9,6 +9,8 @@ import { runCommand } from "@agent/sandbox";
 import type { Artifact, ContextPack, IssueContext, PrdDocument, QualityGateResult, Task, TaskEvent } from "@agent/shared";
 import {
   compactContextPackForImplementation,
+  buildCodingExecutorEnv,
+  buildCodingExecutorPrompt,
   cleanupImplementationCheckpoint,
   createArtifactId,
   createImplementationCheckpoint,
@@ -22,9 +24,11 @@ import {
   implementationSchema,
   implementationToToolActions,
   IssueWorkflowRunner,
+  normalizeImplementationExecutorConfig,
   qualityGateFailuresChanged,
   qualityGateFailureLooksEnvironmental,
   resetImplementationAttempt,
+  runCodingCliExecutor,
   restoreImplementationCheckpoint,
   selectImplementationEditActions,
   selectImplementationPatchActions,
@@ -129,6 +133,100 @@ describe("workflow modules", () => {
         }
       }
     ]);
+  });
+
+  it("prepares a hidden CLI coding executor with provider env and prompt context", async () => {
+    const previousApiKey = process.env.TEST_API_KEY;
+    process.env.TEST_API_KEY = "secret";
+    const executor = normalizeImplementationExecutorConfig(undefined);
+    const agent = {
+      id: "implementation",
+      role: "main-implementation" as const,
+      providerId: "default",
+      systemPrompt: "Implement.",
+      skillRefs: [],
+      tools: [],
+      guardrails: []
+    };
+
+    try {
+      const env = buildCodingExecutorEnv({ config: createAppConfig("/tmp/project"), agent, executor });
+      const prompt = buildCodingExecutorPrompt({
+        task: { ...createTask(issue), prd: highComplexityPrd, minimalChangePlan: minimalPlan(), contextPack: compactableContextPack() },
+        prd: highComplexityPrd,
+        minimalChangePlan: minimalPlan(),
+        implementationContext: compactContextPackForImplementation(compactableContextPack()),
+        fileSnippets: { "src/change.ts": "old\n" }
+      });
+
+      expect(executor.mode).toBe("cli");
+      expect(executor.command).toContain("opencode-ai");
+      expect(env.OPENAI_API_KEY).toBe("secret");
+      expect(env.OPENAI_BASE_URL).toBe("https://api.example.test");
+      expect(env.CODEZERO_OPENCODE_MODEL).toBe("openai/model-default");
+      expect(prompt).toContain("CodeZero Implementation Request");
+      expect(prompt).not.toContain("OpenCode");
+      expect(prompt).toContain("Leave the working tree with the required code changes");
+    } finally {
+      if (previousApiKey === undefined) {
+        delete process.env.TEST_API_KEY;
+      } else {
+        process.env.TEST_API_KEY = previousApiKey;
+      }
+    }
+  });
+
+  it("runs a CLI coding executor in the sandbox and captures the resulting diff", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-coding-executor-"));
+    const artifactDir = path.join(repoDir, "artifacts");
+    await runCommand({ cwd: repoDir, command: "git init" });
+    await runCommand({ cwd: repoDir, command: "git config user.email test@example.com && git config user.name Test" });
+    await writeFile(path.join(repoDir, "app.txt"), "old\n");
+    await runCommand({ cwd: repoDir, command: "git add app.txt && git commit -m init" });
+    const previousApiKey = process.env.TEST_API_KEY;
+    process.env.TEST_API_KEY = "secret";
+    const executor = normalizeImplementationExecutorConfig({
+      mode: "cli",
+      name: "test-cli",
+      command:
+        "node -e \"const fs=require('fs'); if(!process.env.OPENAI_API_KEY || !process.env.CODEZERO_PROMPT_FILE) process.exit(7); fs.writeFileSync('app.txt', 'new\\\\n')\"",
+      timeout_ms: 30_000,
+      fallback_to_legacy_json_actions: false,
+      env: {}
+    });
+    const agent = {
+      id: "implementation",
+      role: "main-implementation" as const,
+      providerId: "default",
+      systemPrompt: "Implement.",
+      skillRefs: [],
+      tools: [],
+      guardrails: []
+    };
+
+    try {
+      const result = await runCodingCliExecutor({
+        config: createAppConfig(repoDir),
+        executor,
+        agent,
+        task: { ...createTask(issue), prd: highComplexityPrd, minimalChangePlan: minimalPlan(), contextPack: compactableContextPack() },
+        repoDir,
+        artifactDir,
+        prompt: "Change app.txt",
+        attempt: 1
+      });
+
+      expect(result.commandResult.exitCode).toBe(0);
+      expect(result.diff).toContain("-old");
+      expect(result.diff).toContain("+new");
+      await expect(readFile(result.promptPath, "utf8")).resolves.toBe("Change app.txt");
+    } finally {
+      if (previousApiKey === undefined) {
+        delete process.env.TEST_API_KEY;
+      } else {
+        process.env.TEST_API_KEY = previousApiKey;
+      }
+    }
   });
 
   it("summarizes failed tool calls with useful diagnostics", () => {
@@ -573,6 +671,19 @@ const highComplexityPrd: PrdDocument = {
     reasons: ["large change"]
   }
 };
+
+function minimalPlan() {
+  return {
+    goal: "Update behavior",
+    acceptanceCriteria: ["The behavior is updated"],
+    filesToRead: ["src/change.ts"],
+    filesExpectedToChange: ["src/change.ts"],
+    testsToAddOrUpdate: ["src/change.test.ts"],
+    commandsToRun: ["npm test"],
+    explicitNonGoals: [],
+    riskNotes: []
+  };
+}
 
 function compactableContextPack(): ContextPack {
   return {

@@ -38,6 +38,16 @@ export {
 } from "./pr-local-verification.js";
 export { createExecutionAgents, createWorkflowAgent, createWorkflowAgentRunner, selectProviderForComplexity } from "./agent-factory.js";
 export { createArtifactId, writeTaskArtifact } from "./artifacts.js";
+export {
+  buildCodingExecutorEnv,
+  buildCodingExecutorPrompt,
+  normalizeImplementationExecutorConfig,
+  runCodingCliExecutor,
+  type CodingExecutorPromptInput,
+  type CodingExecutorRunInput,
+  type CodingExecutorRunResult,
+  type NormalizedImplementationExecutorConfig
+} from "./coding-executor.js";
 export { createRepositoryPermissionPolicies, repositoryAllowsTool } from "./repository-policies.js";
 export { implementationSchema, planSchema, prdSchema, reviewSchema } from "./schemas.js";
 export { implementationToToolActions, summarizeToolFailure } from "./tool-actions.js";

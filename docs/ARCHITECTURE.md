@@ -200,7 +200,8 @@ Repo Navigation Graph 是 Agent 读大仓库的核心加速器。它不替代检
 
 职责：
 
-- 当前已落地基础 `@agent/tool-gateway` 并接入 implementation workflow，提供 `ToolRegistry`、`ToolGateway`、policy decision、JSON action fallback、`repo.apply_patch` 和内置 repo/shell 工具。
+- 当前主线 implementation workflow 通过内部 coding executor 直接修改 sandbox working tree；Tool Gateway 保留为 JSON action 兼容 fallback 和高风险工具治理层。
+- 已落地基础 `@agent/tool-gateway`，提供 `ToolRegistry`、`ToolGateway`、policy decision、JSON action fallback、`repo.apply_patch` 和内置 repo/shell 工具。
 - 注册 shell、git、github、browser、verification、memory、indexer 等工具。
 - 使用 schema 校验 tool input/output。
 - 执行 timeout、retry、redaction、permission check 和 audit log。

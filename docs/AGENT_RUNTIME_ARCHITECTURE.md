@@ -201,7 +201,22 @@ type ToolDefinition = {
 
 高风险工具调用进入 `require_approval`，由看板或 GitHub 评论确认后继续。
 
-### 6.1 JSON Action 模式
+### 6.1 Coding Executor 模式
+
+CodeZero 的主产品边界是服务编排，不是重新实现一个完整 coding CLI。实现阶段默认走内部 coding executor：
+
+```text
+CodeZero workflow
+  -> prepare sandbox + prompt + model env
+  -> run configured coding executor command
+  -> read git diff
+  -> run quality gates + review
+  -> create/update PR
+```
+
+默认 executor 由 `sandbox.implementation_executor` 配置，当前命令通过 `npx -y opencode-ai@latest` 使用 OpenCode，并用 prompt 文件附件传入 CodeZero 请求，避免长上下文被 shell 参数长度限制截断。CodeZero 会把用户在 `agents.yaml` 中配置的 provider API key、base URL、model 映射到 executor 环境变量，例如 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`CODEZERO_OPENCODE_MODEL`。底层 CLI 是内部实现细节，不能出现在用户-facing PR body 或 issue comment 中。
+
+### 6.2 JSON Action 兼容模式
 
 为兼容 DeepSeek / Qwen 等不同 provider，Tool Gateway 必须支持 JSON action fallback。
 

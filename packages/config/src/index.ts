@@ -14,6 +14,7 @@ export type { RepositoryTriggerDecision, RepositoryTriggerDecisionInput } from "
 export {
   agentsFileSchema,
   configSectionNames,
+  implementationExecutorModes,
   policiesFileSchema,
   policySchema,
   repositoriesFileSchema,
@@ -28,6 +29,7 @@ export {
 export type {
   AgentsFileConfig,
   ConfigSectionName,
+  ImplementationExecutorConfig,
   PoliciesFileConfig,
   PolicyConfig,
   RepositoryConfig,

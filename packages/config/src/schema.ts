@@ -46,9 +46,11 @@ export const agentsFileSchema = z
 
 export const repositoryTriggerModes = ["auto", "mention", "label", "manual", "disabled"] as const;
 export const toolPermissionLevels = ["read", "safe_write", "repo_write", "external_write", "dangerous"] as const;
+export const implementationExecutorModes = ["cli", "legacy-json-actions"] as const;
 
 const triggerModeSchema = z.enum(repositoryTriggerModes);
 const toolPermissionSchema = z.enum(toolPermissionLevels);
+const implementationExecutorModeSchema = z.enum(implementationExecutorModes);
 
 const repositoryTriggerSchema = z
   .object({
@@ -180,6 +182,30 @@ export const repositoriesFileSchema = z.object({
   repositories: z.array(repositorySchema)
 });
 
+const implementationExecutorSchema = z
+  .object({
+    mode: implementationExecutorModeSchema.default("cli"),
+    name: z.string().min(1).default("codezero-coding-cli"),
+    command: z
+      .string()
+      .min(1)
+      .default(
+        'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions --file "$CODEZERO_PROMPT_FILE" "Implement the CodeZero request in the attached prompt file."'
+      ),
+    timeout_ms: z.number().int().positive().default(60 * 60_000),
+    fallback_to_legacy_json_actions: z.boolean().default(true),
+    env: z.record(z.string(), z.string()).default({})
+  })
+  .default({
+    mode: "cli",
+    name: "codezero-coding-cli",
+    command:
+      'npx -y opencode-ai@latest run --agent build --model "$CODEZERO_OPENCODE_MODEL" --format json --dangerously-skip-permissions --file "$CODEZERO_PROMPT_FILE" "Implement the CodeZero request in the attached prompt file."',
+    timeout_ms: 60 * 60_000,
+    fallback_to_legacy_json_actions: true,
+    env: {}
+  });
+
 export const sandboxFileSchema = z.object({
   sandbox: z.object({
     mode: z.enum(["docker", "worktree"]).default("docker"),
@@ -202,7 +228,8 @@ export const sandboxFileSchema = z.object({
         max_diff_files: 30,
         max_diff_lines: 1200,
         max_quality_gate_retries: 6
-      })
+      }),
+    implementation_executor: implementationExecutorSchema.optional()
   })
 });
 
@@ -237,6 +264,7 @@ export const toolsFileSchema = z.object({
 export const configSectionNames = ["agents", "repositories", "sandbox", "policies", "tools"] as const;
 
 export type AgentsFileConfig = z.infer<typeof agentsFileSchema>;
+export type ImplementationExecutorConfig = z.infer<typeof implementationExecutorSchema>;
 export type RepositoryConfig = z.infer<typeof repositorySchema>;
 export type RepositoryTriggerConfig = RepositoryConfig["trigger"];
 export type RepositoryTriggerMode = RepositoryTriggerConfig["mode"];

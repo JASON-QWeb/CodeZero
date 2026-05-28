@@ -80,15 +80,22 @@ flowchart TD
 
 每个 Issue 必须创建独立任务分支。除非人工明确设置依赖关系，当前 Issue 不能基于其他未合并 Issue 的分支。
 
-主 Agent 输出：
+CodeZero implementation executor 输入：
 
-- 实现计划
-- JSON action，优先通过 `repo.replace_text` / `repo.write_file` 直接编辑 sandbox 文件
-- 兼容旧格式时可使用 `repo.apply_patch`
-- 运行日志
-- 风险说明
+- Issue、已批准 PRD、内部执行计划
+- ContextPack、CodeGraph/Knowledge Graph 摘要、仓库 rules/skills
+- 上一次质量门禁或 review feedback
+- 用户在 CodeZero 中配置的模型/API key 对应环境变量
 
-编排层负责把 JSON action 交给 Tool Gateway，记录 `TOOL_CALL_*`、`POLICY_DECISION` 事件和 `tool-call` artifact。旧版 `unifiedDiff` 输出会被自动包装成 `repo.apply_patch` action，但主路径应是直接编辑 sandbox 工作区。
+CodeZero implementation executor 输出：
+
+- sandbox working tree 中的真实文件修改
+- 可选运行日志
+- 不负责 commit、push、创建 PR 或回复用户
+
+编排层负责启动内部 coding executor、记录 `AGENT_RUN_*` / `FILE_CHANGED` / artifact、读取 `git diff`、运行质量门禁和 review agent。默认 executor 通过 `config/sandbox.yaml` 的 `sandbox.implementation_executor` 配置调用 OpenCode，但用户在 Issue、PR、dashboard 中看到的都是 CodeZero 的实现过程，不暴露底层 CLI 名称。
+
+JSON action 模式只保留为兼容 fallback。它可以继续通过 Tool Gateway 记录 `TOOL_CALL_*`、`POLICY_DECISION` 事件和 `tool-call` artifact，但不再是主线实现路径。
 
 ## 4. Subagent 策略
 

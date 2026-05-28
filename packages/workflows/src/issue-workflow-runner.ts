@@ -48,6 +48,12 @@ import { createQualityGateCommands, runFrontendScreenshotGate, runQualityGates }
 import { createExecutionAgents, createWorkflowAgent, createWorkflowAgentRunner } from "./agent-factory.js";
 import { createArtifactId, writeTaskArtifact } from "./artifacts.js";
 import {
+  buildCodingExecutorPrompt,
+  normalizeImplementationExecutorConfig,
+  runCodingCliExecutor,
+  type NormalizedImplementationExecutorConfig
+} from "./coding-executor.js";
+import {
   assertAgentPrBodyComplete,
   createAgentPrBody,
   createPrdIssueComment,
@@ -623,6 +629,129 @@ export class IssueWorkflowRunner {
   }
 
   private async applyImplementation(
+    task: Task,
+    sandbox: Sandbox,
+    repositoryConfig: RepositoryConfig,
+    runner: AgentRunner,
+    agent: AgentDefinition,
+    reviewerFeedback = ""
+  ): Promise<void> {
+    const executor = normalizeImplementationExecutorConfig(this.config.sandbox.implementation_executor);
+
+    if (executor.mode === "cli") {
+      try {
+        await this.applyImplementationWithCodingExecutor(task, sandbox, agent, executor, reviewerFeedback);
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.event(
+          task.id,
+          "AGENT_RUN_FINISHED",
+          executor.fallback_to_legacy_json_actions
+            ? "CodeZero implementation executor failed; falling back to legacy structured edits"
+            : "CodeZero implementation executor failed",
+          executor.fallback_to_legacy_json_actions ? "warn" : "error",
+          {
+            executor: executor.name,
+            mode: executor.mode,
+            error: message.slice(0, 4000)
+          }
+        );
+
+        if (!executor.fallback_to_legacy_json_actions) {
+          throw error;
+        }
+      }
+    }
+
+    await this.applyImplementationWithLegacyJsonActions(task, sandbox, repositoryConfig, runner, agent, reviewerFeedback);
+  }
+
+  private async applyImplementationWithCodingExecutor(
+    task: Task,
+    sandbox: Sandbox,
+    agent: AgentDefinition,
+    executor: NormalizedImplementationExecutorConfig,
+    reviewerFeedback = ""
+  ): Promise<void> {
+    const contextPack = task.contextPack ?? this.missing<ContextPack>("ContextPack");
+    const feedbackSnippetPaths = await extractImplementationFeedbackPaths(sandbox.repoDir, reviewerFeedback);
+    const snippets = await readContextFileSnippets(sandbox.repoDir, contextPack, {
+      includePaths: uniquePaths([...feedbackSnippetPaths, ...selectImplementationSnippetPaths(task)]),
+      maxCharsPerFile: 16_000,
+      maxFiles: 12
+    });
+    const prompt = buildCodingExecutorPrompt({
+      task,
+      prd: task.prd ?? this.missing<PrdDocument>("PRD"),
+      minimalChangePlan: task.minimalChangePlan ?? this.missing<MinimalChangePlan>("MinimalChangePlan"),
+      implementationContext: compactContextPackForImplementation(contextPack),
+      fileSnippets: snippets as JsonObject,
+      reviewerFeedback,
+      qualityGateResults: task.qualityGateResults
+    });
+    const checkpoint = await createImplementationCheckpoint(sandbox.repoDir);
+
+    try {
+      await this.event(task.id, "AGENT_RUN_STARTED", "CodeZero implementation executor started", "info", {
+        agentId: agent.id,
+        agentRole: agent.role,
+        phase: "implementation",
+        executor: executor.name,
+        mode: executor.mode
+      });
+      let result: Awaited<ReturnType<typeof runCodingCliExecutor>>;
+      try {
+        result = await runCodingCliExecutor({
+          config: this.config,
+          executor,
+          agent,
+          task,
+          repoDir: sandbox.repoDir,
+          artifactDir: sandbox.artifactDir,
+          prompt,
+          attempt: Date.now()
+        });
+      } catch (error) {
+        await restoreImplementationCheckpoint(sandbox.repoDir, checkpoint);
+        throw error;
+      }
+
+      if (result.commandResult.exitCode !== 0) {
+        await restoreImplementationCheckpoint(sandbox.repoDir, checkpoint);
+        throw new Error(
+          [
+            `Implementation executor exited ${result.commandResult.exitCode ?? "without an exit code"}.`,
+            result.commandResult.stderr,
+            result.commandResult.stdout
+          ]
+            .filter(Boolean)
+            .join("\n")
+        );
+      }
+
+      if (!result.diff) {
+        await restoreImplementationCheckpoint(sandbox.repoDir, checkpoint);
+        throw new Error("Implementation executor completed but produced no repository diff");
+      }
+
+      await this.writeArtifact(task.id, "tool-call", path.basename(result.logPath), await readFile(result.logPath, "utf8"));
+      await this.writeArtifact(task.id, "diff", "implementation.diff", result.diff);
+      await this.event(task.id, "AGENT_RUN_FINISHED", "CodeZero implementation executor finished with repository changes", "info", {
+        agentId: agent.id,
+        agentRole: agent.role,
+        phase: "implementation",
+        executor: executor.name,
+        mode: executor.mode,
+        durationMs: result.commandResult.durationMs
+      });
+      await this.event(task.id, "FILE_CHANGED", "CodeZero implementation executor updated the sandbox working tree");
+    } finally {
+      await cleanupImplementationCheckpoint(checkpoint);
+    }
+  }
+
+  private async applyImplementationWithLegacyJsonActions(
     task: Task,
     sandbox: Sandbox,
     repositoryConfig: RepositoryConfig,

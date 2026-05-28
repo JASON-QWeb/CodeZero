@@ -20,8 +20,8 @@ CodeZero is a GitHub Issue/PR automation product. A user should be able to menti
    - Understand-Anything knowledge graph, when generated for the repository.
    - Repository project rules, testing guide, and `.agent/skills/*/SKILL.md`.
    - Approved memories from previous tasks.
-8. The implementation agent creates an internal Execution Plan. This is not a second PRD; it is the implementation checklist for files, tests, commands, and risk notes.
-9. The implementation agent edits the sandbox working tree through audited repository edit tools. Direct file edits are preferred; unified patches are only a compatibility fallback.
+8. CodeZero creates an internal Execution Plan. This is not a second PRD; it is the implementation checklist for files, tests, commands, and risk notes.
+9. CodeZero invokes its internal coding executor in the sandbox. The default executor is a CLI coding agent configured from the user's CodeZero model/API settings, so it can read files, edit code, run local commands, and repair failures directly in the isolated worktree. The user-facing product remains CodeZero; the executor implementation is an internal runtime detail.
 10. CodeZero runs self-checks before creating or updating a PR:
     - Repository setup gate, when configured, to start local dependencies such as databases, caches, migrations, or seeded services.
     - Review agent.
@@ -105,13 +105,25 @@ Approval resumes the same task. It must not create a duplicate task.
 
 Implementation happens inside the task sandbox branch.
 
-The implementation agent should edit sandbox files directly through audited tools such as:
+CodeZero owns orchestration, state, policies, self-checks, GitHub comments, and PR updates. It should not try to reimplement a full coding-agent editing loop as fragile JSON file operations.
+
+The default implementation path is:
+
+1. CodeZero writes a task prompt into the sandbox artifact directory.
+2. CodeZero injects provider configuration derived from the user's CodeZero API key/model settings into the executor process environment.
+3. CodeZero runs the internal coding executor command in the sandbox repository.
+4. The executor modifies the Git worktree directly and exits.
+5. CodeZero reads `git diff`, stores artifacts, syncs repo intelligence, and runs quality gates.
+
+The current default executor command is configured in `config/sandbox.yaml` under `sandbox.implementation_executor`. It uses OpenCode internally through `npx -y opencode-ai@latest`, attaches the generated CodeZero request as a prompt file, and runs non-interactively inside the isolated sandbox. This must not leak into PR bodies or user-facing issue comments. PRs, issue comments, and dashboard summaries should describe the work as CodeZero implementation.
+
+Legacy JSON actions remain only as a compatibility fallback:
 
 - `repo.replace_text` for precise edits.
 - `repo.write_file` for new files or complete-file replacement.
-- `repo.apply_patch` only as a compatibility fallback.
+- `repo.apply_patch` only as an older compatibility fallback.
 
-Tool Gateway still matters. It provides path isolation, policy checks, event logging, and reproducibility. The product behavior, however, should feel like an agent directly modifying the sandbox, not like a model handing CodeZero a fragile patch to paste.
+Tool Gateway still matters for the fallback path and for future high-risk tools. It provides path isolation, policy checks, event logging, and reproducibility. The main implementation path, however, should feel like CodeZero directly modifying the sandbox through a mature coding executor, not like a model handing CodeZero brittle snippets to paste.
 
 Failed self-checks should feed back into the implementation loop. A failed patch or edit should not be treated as user action required unless the same blocking condition repeats and the task cannot progress safely.
 
