@@ -1,39 +1,154 @@
 <div align="center">
 
+<br />
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/CodeZero-000000?style=for-the-badge&logo=github&logoColor=white&labelColor=000000">
+  <img alt="CodeZero" src="https://img.shields.io/badge/CodeZero-000000?style=for-the-badge&logo=github&logoColor=white&labelColor=000000">
+</picture>
+
 # CodeZero
 
-### GitHub Issues in, verified pull requests out.
+### GitHub Issues in. Verified Pull Requests out.
 
-**English** · [中文](README.zh-CN.md)
+**The AI engineering agent that turns product intent into production-ready, reviewable PRs — autonomously.**
+
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Orchestrated-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
+[![AI SDK](https://img.shields.io/badge/Vercel_AI_SDK-Powered-000000?style=flat-square&logo=vercel&logoColor=white)](https://sdk.vercel.ai/)
+[![pnpm](https://img.shields.io/badge/pnpm-monorepo-F69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io/)
+
+**English** · [中文](README.zh-CN.md) · [Documentation](docs/README.md)
+
+---
+
+**⚡ Write an Issue → Get a verified PR. That's it.**
 
 </div>
 
-CodeZero is a GitHub-native engineering agent platform that turns product intent into reviewable, verified pull requests. Describe the change in an Issue, mention the agent, or let a repository policy trigger the run. CodeZero creates one persistent task sandbox, reads the repository, builds a focused context pack, drafts one PRD/Plan document, asks a coding agent to edit in that same sandbox after approval, streams the work back to the board, runs verification, reviews the diff, and opens a draft PR with local validation steps.
+<br />
 
-It is built for the messy middle between "I have an idea" and "this PR is ready for a human review." Instead of treating code generation as a one-shot prompt, CodeZero wraps it in durable workflow state, repository intelligence, isolated execution, quality gates, traceable events, and approval points where people should stay in control.
+## 🎬 Demo
 
-## What It Feels Like
+<!-- 
+  GIF Demo Placeholders — replace the comments below with your actual GIF paths or URLs.
+  Example: ![Description](./assets/demo-xxx.gif)
+-->
 
-- Open a GitHub Issue and write the product intent in natural language.
-- CodeZero turns that intent and repository context into one PRD/Plan document: acceptance criteria, risks, files, tests, and commands.
-- The implementation agent works through OpenCode in an isolated sandbox, with stdout/stderr and structured progress streamed to the Run Console.
-- The board shows where the run is: syncing, indexing, planning, coding, reviewing, blocked, failed, or ready.
-- A draft PR appears with the diff, verification evidence, risks, and the exact commands a maintainer can run locally.
+<div align="center">
 
-## Highlights
+<!-- ![Create Issue → Auto PRD](./assets/demo-issue-to-prd.gif) -->
+> 🎥 **Issue → PRD Generation** — _GIF coming soon_
 
-- **Issue to PRD/Plan to PR**: convert GitHub Issues into one structured planning document, verified diffs, and draft PRs.
-- **LangGraph orchestration**: issue workflows run through checkpointed graph nodes with approval interrupts and resumable repair loops.
-- **AI SDK model layer**: CodeZero platform agents use one provider registry for PRD, review, context, provider validation, and routing calls.
-- **Live agent progress**: OpenCode output is captured as task events, so the board can show what the coding executor is doing.
-- **OpenCode-first implementation**: the main code path delegates edits to a coding CLI executor instead of legacy JSON file-write actions.
-- **Repository intelligence**: CodeGraph, Repo Navigation Graph, approved memory, and ContextPack narrow the edit surface before code changes begin.
-- **Persistent task sandbox**: each Issue receives one sandbox, branch, artifact set, logs, and verification trail that continue through approval and feedback iterations.
-- **Human control**: PRD approval, policy gates, review subagents, and memory proposals keep sensitive steps inspectable.
-- **Provider flexibility**: works with OpenAI-compatible gateways and can route agents across different providers and models.
-- **Operator console**: Run Console, Settings Console, Memory Inbox, Trace Replay API, and Golden Issue Eval CLI are included.
+<!-- ![Live Agent Progress](./assets/demo-live-progress.gif) -->
+> 🎥 **Live Agent Coding Progress** — _GIF coming soon_
 
-## Architecture
+<!-- ![Draft PR with Verification](./assets/demo-draft-pr.gif) -->
+> 🎥 **Auto Draft PR with Verification Evidence** — _GIF coming soon_
+
+</div>
+
+---
+
+## ✨ Why CodeZero?
+
+Most AI coding tools stop at **code generation**. CodeZero handles the **entire engineering workflow** — from product intent to a verified, reviewable pull request.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🔴 Without CodeZero
+- Write ticket → manually break it down
+- Context switch to IDE → figure out which files to edit
+- Write code → run tests → fix → repeat
+- Open PR → wait for review → fix → repeat
+- **Hours to days per feature**
+
+</td>
+<td width="50%" valign="top">
+
+### 🟢 With CodeZero
+- Write a GitHub Issue in natural language
+- CodeZero reads your repo, drafts a PRD, gets approval
+- Agent codes in an isolated sandbox with live progress
+- Auto-runs verification, opens a draft PR with evidence
+- **Minutes to hours per feature**
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🚀 What It Does
+
+<table>
+<tr>
+<td align="center" width="33%">
+<h3>📋 Plan</h3>
+<p>Converts Issues into structured PRD/Plan documents with acceptance criteria, risks, file analysis, tests, and commands.</p>
+</td>
+<td align="center" width="33%">
+<h3>🤖 Build</h3>
+<p>An AI coding agent implements changes in a persistent sandbox with live stdout/stderr streaming to the Run Console.</p>
+</td>
+<td align="center" width="33%">
+<h3>✅ Ship</h3>
+<p>Runs build, lint, test, typecheck, and review gates — then opens a draft PR with verification evidence and local repro steps.</p>
+</td>
+</tr>
+</table>
+
+---
+
+## 🏗️ Key Features
+
+| Feature | Description |
+|:---|:---|
+| **Issue → PRD → PR** | Transforms GitHub Issues into structured planning documents, verified diffs, and draft PRs |
+| **LangGraph Orchestration** | Checkpointed graph nodes with approval interrupts and resumable repair loops |
+| **AI SDK Model Layer** | Unified provider registry for PRD, review, context, validation, and routing agents |
+| **Live Agent Progress** | Real-time streaming of coding agent output as board events |
+| **OpenCode-First Execution** | CLI-native code editing via OpenCode — no legacy JSON file-write hacks |
+| **Repository Intelligence** | CodeGraph + Navigation Graph + ContextPack narrow the edit surface before changes begin |
+| **Persistent Task Sandbox** | One sandbox per Issue — survives approval cycles, feedback iterations, and reruns |
+| **Human-in-the-Loop** | PRD approval, policy gates, review subagents, and memory proposals keep humans in control |
+| **Multi-Provider Support** | OpenAI, Anthropic, Gemini, xAI, Mistral, Groq — route different agents to different models |
+| **Operator Console** | Run Console, Settings Console, Memory Inbox, Trace Replay API, Golden Issue Eval CLI |
+
+---
+
+## 🔄 How It Works
+
+```
+  ┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────┐
+  │   Trigger    │────▶│   Analyze    │────▶│    Plan      │────▶│   Approve   │
+  │  (Issue /    │     │  (Index repo,│     │  (Generate   │     │  (Human     │
+  │   @mention)  │     │   context)   │     │   PRD/Plan)  │     │   review)   │
+  └─────────────┘     └──────────────┘     └──────────────┘     └──────┬──────┘
+                                                                       │
+  ┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────▼──────┐
+  │   Ship PR   │◀────│   Verify     │◀────│   Stream     │◀────│  Implement  │
+  │  (Draft PR  │     │  (Build/Test/│     │  (Live board │     │  (OpenCode  │
+  │   + evidence│     │   Review)    │     │   events)    │     │   sandbox)  │
+  └─────────────┘     └──────────────┘     └──────────────┘     └─────────────┘
+```
+
+1. **Trigger** — GitHub webhook, `@agent` mention, label, or manual import creates a task
+2. **Workspace** — Creates or reuses the persistent task sandbox and issue branch
+3. **Analyze** — Repository indexing, navigation graph, approved memory, and ContextPack identify relevant files
+4. **Plan** — One planning pass produces the PRD/Plan document for approval and implementation
+5. **Approve** — LangGraph interrupts when human approval is needed, then resumes the same thread
+6. **Implement** — OpenCode edits the sandboxed repository using the generated prompt and model config
+7. **Stream** — Executor output becomes real-time board events: progress, files, commands, errors
+8. **Verify** — Build, lint, test, typecheck, screenshots, policy checks, and review subagents run
+9. **Ship** — Pushes branch and opens a draft PR with evidence, risks, and local verification commands
+
+---
+
+## 🏛️ Architecture
 
 ```mermaid
 flowchart TD
@@ -58,19 +173,9 @@ flowchart TD
   EVENTS --> UI["Run Console"]
 ```
 
-## How It Works
+---
 
-1. **Trigger**: GitHub webhook, `@agent` mention, label, or manual import creates a task.
-2. **Open Workspace**: CodeZero creates or reuses the task sandbox and issue branch.
-3. **Orient**: repository indexing, navigation graph, approved memory, and ContextPack identify the relevant files.
-4. **Plan**: one planning pass produces the PRD/Plan document used for approval and implementation.
-5. **Approve or resume**: LangGraph interrupts the run when human approval or feedback is required, then resumes the same task thread.
-6. **Implement**: after approval, OpenCode edits the same sandboxed repository using the generated prompt file and model configuration.
-7. **Stream**: executor stdout/stderr and structured JSON lines become board events such as progress, file activity, commands, and errors.
-8. **Verify**: build, lint, test, typecheck, screenshot hooks, policy checks, and review subagents run before PR creation.
-9. **Publish**: CodeZero pushes a branch and opens a draft PR with evidence, risks, and local verification commands.
-
-## Monorepo Layout
+## 📁 Monorepo Layout
 
 ```text
 apps/
@@ -78,56 +183,81 @@ apps/
   web/       Next.js Run Console, Settings Console, Memory Inbox
   worker/    Queue worker and repository task execution
 packages/
-  codebase-intelligence/  indexing, hybrid search, ContextPack, repo graph
+  codebase-intelligence/  Indexing, hybrid search, ContextPack, repo graph
   config/                 YAML config loading and validation
   github/                 GitHub Issue, branch, comment, PR integration
-  memory/                 approved memory and memory proposal store
+  memory/                 Approved memory and memory proposal store
   model-runtime/          AI SDK model registry and structured agent runner
-  observability/          task traces and replay-friendly event shaping
-  orchestrator/           task state machine and workflow decisions
-  persistence/            file/Postgres task persistence
+  observability/          Task traces and replay-friendly event shaping
+  orchestrator/           Task state machine and workflow decisions
+  persistence/            File/Postgres task persistence
   sandbox/                Docker/worktree sandbox abstraction
-  skills/                 platform skill loader and built-in skills
-  tool-gateway/           audited read/search/shell tool boundary
-  verification/           test, screenshot, and local verification helpers
+  skills/                 Platform skill loader and built-in skills
+  tool-gateway/           Audited read/search/shell tool boundary
+  verification/           Test, screenshot, and local verification helpers
   workflow-graph/         LangGraph task graph, checkpoints, callbacks
   workflows/              Issue-to-PR workflow composition
 ```
 
-## Quick Start
+---
+
+## ⚡ Quick Start
+
+### Prerequisites
+
+- Node.js ≥ 20
+- [pnpm](https://pnpm.io/) ≥ 10
+- Docker (for local sandbox)
+- [OpenCode CLI](https://github.com/opencode-ai/opencode) on `PATH`
+
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/JASON-QWeb/CodeZero.git
+cd CodeZero
+
+# Install dependencies
 pnpm install
 
+# Configure environment
 cp .env.example .env
 ```
 
-Edit `.env` with the default provider and GitHub token. You can switch the active provider and save its API key later from Settings Console.
+### Configuration
+
+Edit `.env` with your provider and GitHub credentials:
 
 ```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=...
-OPENAI_MODEL=...
-GITHUB_TOKEN=...
-GITHUB_WEBHOOK_SECRET=...
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o
+GITHUB_TOKEN=ghp_...
+GITHUB_WEBHOOK_SECRET=your-webhook-secret
 AGENT_TRIGGER_MENTION=@codezero
 ```
 
-Start local dependencies and services:
+> 💡 **Tip:** You can switch providers and save API keys later from the **Settings Console** UI.
+
+### Launch
 
 ```bash
+# Start infrastructure
 docker compose -f infra/docker/docker-compose.yml up -d
 
-pnpm dev:api
-pnpm dev:worker
-pnpm dev:web
+# Start services (in separate terminals or use `pnpm dev` for all)
+pnpm dev:api      # API server
+pnpm dev:worker   # Task worker
+pnpm dev:web      # Web console
 ```
 
-Open the web console at `http://localhost:3000`.
+Open the **Run Console** at [`http://localhost:3000`](http://localhost:3000) 🎉
 
-## OpenCode Executor
+---
 
-CodeZero's implementation path is CLI-first. The default sandbox executor runs OpenCode with a generated prompt file:
+## 🔧 OpenCode Executor
+
+CodeZero's implementation path is **CLI-first**. The default sandbox executor runs OpenCode with a generated prompt file:
 
 ```bash
 OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
@@ -141,48 +271,72 @@ OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
   --file="$CODEZERO_PROMPT_FILE"
 ```
 
-Install OpenCode on `PATH`, or set `OPENCODE_BIN` in `.env` to a local OpenCode binary. For OpenAI-compatible gateways, CodeZero writes a temporary `OPENCODE_CONFIG` file that maps the configured provider/model into OpenCode without placing API keys in artifacts. Native AI SDK providers such as Anthropic, Google Gemini, xAI, Mistral and Groq use OpenCode's native provider path by default. Advanced executor overrides can live under `providers.<id>.coding_executor`.
+<details>
+<summary><strong>Provider Configuration Details</strong></summary>
 
-## Knowledge Graphs
+- Install OpenCode on `PATH`, or set `OPENCODE_BIN` in `.env` to a local binary
+- For **OpenAI-compatible gateways**, CodeZero writes a temporary `OPENCODE_CONFIG` that maps provider/model without exposing API keys in artifacts
+- **Native AI SDK providers** (Anthropic, Gemini, xAI, Mistral, Groq) use OpenCode's native provider path by default
+- Advanced executor overrides can be configured under `providers.<id>.coding_executor`
 
-CodeZero has a lightweight repository intelligence pipeline built in. To generate and explore richer per-repository knowledge graphs from repository cards, install the official [Understand-Anything](https://github.com/Lum1104/Understand-Anything) Codex skill:
+</details>
+
+---
+
+## 🧠 Knowledge Graphs
+
+CodeZero includes a lightweight repository intelligence pipeline. For richer, per-repository knowledge graphs, install the official [Understand-Anything](https://github.com/Lum1104/Understand-Anything) Codex skill:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/install.sh | bash -s codex
 ```
 
-The Run Console invokes the official `$understand` multi-agent pipeline and starts its official dashboard in the page. The output remains the upstream `.understand-anything/knowledge-graph.json`; the platform's lightweight graph is not substituted for it.
+The Run Console invokes the official `$understand` multi-agent pipeline and renders its dashboard inline. Output remains the upstream `.understand-anything/knowledge-graph.json`.
 
-## Operator Notes
+---
 
-The Run Console defaults to Chinese and includes a Chinese/English switch. Agent PRDs, plans, review notes, and PR descriptions follow the Issue or PR comment language.
-
-Frontend screenshots are stored as CodeZero task artifacts and referenced from the PR verification section without committing image files to the target repository branch. If an external public image URL is configured, CodeZero can still render it inline in the PR description. After PR creation, human comments in the same PR conversation update the same branch, rerun verification, refresh the original PR, and repeat until the user is ready to merge.
-
-## Validation
+## 🧪 Validation
 
 ```bash
-pnpm check
-pnpm eval:golden
+pnpm check          # Lint + Typecheck + Tests (with coverage) + Build
+pnpm eval:golden    # Score golden issues against candidate artifacts
 ```
 
-`pnpm check` runs lint, typecheck, tests with coverage, and build. `pnpm eval:golden` scores the sample golden issues in `evals/golden-issues` against candidate artifacts and writes the report to `artifacts/eval-report.md`.
+Eval reports are written to `artifacts/eval-report.md`.
 
-## Configuration
+---
 
-Runtime configuration lives in one YAML file under `config/`:
+## ⚙️ Configuration
 
-- `codezero.yaml`: model providers, agent roles, repositories, sandbox, policies, and tool gateway defaults.
-- `codezero.example.yaml`: clean template for new installations.
+Runtime configuration lives in `config/`:
 
-The Web Settings Console can edit and validate these files during local operation.
+| File | Purpose |
+|:---|:---|
+| `codezero.yaml` | Model providers, agent roles, repositories, sandbox, policies, tool gateway |
+| `codezero.example.yaml` | Clean template for new installations |
 
-## Documentation
+The **Settings Console** UI can edit and validate these files during local operation.
 
-- [Documentation Index](docs/README.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Refactor Plan](docs/REFACTOR_PLAN.md)
+---
 
-## Current Status
+## 📝 Operator Notes
 
-The runtime is now organized around AI SDK for model access, LangGraph for workflow orchestration, and OpenCode for sandbox code execution. Runtime config is consolidated in `config/codezero.yaml`; `packages/model-runtime` compiles that config for both platform agents and OpenCode; the worker enters `packages/workflow-graph` for issue execution.
+- Agent-generated PRDs, plans, reviews, and PR descriptions follow the Issue/comment language
+- Frontend screenshots are stored as task artifacts (not committed to the target branch)
+- Post-PR-creation, human comments in the same PR conversation trigger re-implementation on the same branch
+
+---
+
+## 📄 License
+
+CodeZero is licensed under the [MIT License](LICENSE).
+
+---
+
+<div align="center">
+
+**Built with ❤️ for engineering teams who ship fast.**
+
+[⬆ Back to Top](#codezero)
+
+</div>
