@@ -1377,12 +1377,27 @@ export class IssueWorkflowRunner {
     const planningDocument =
       task.planningDocument ??
       this.missing<PlanningDocument>("PlanningDocument");
+    const artifacts = await this.tasks.listArtifacts(task.id);
+    const screenshotArtifacts =
+      this.collectScreenshotArtifactsForPr(artifacts);
+    const fileSnippets = task.contextPack
+      ? await readContextFileSnippets(sandbox.repoDir, task.contextPack, {
+          includePaths: uniquePaths([
+            ...changedFiles,
+            ...selectImplementationSnippetPaths(task),
+          ]),
+          maxCharsPerFile: 16_000,
+          maxFiles: 12,
+        })
+      : {};
     const locale = detectIssueLocale(task.issue);
     const result = await runJsonAgent({
       runner,
       agent,
       userPrompt: [
         "Review the draft changes. Return only JSON with approved, findings, missingTests, scopeViolations, riskLevel, and prDescriptionNotes.",
+        "Screenshot artifacts captured by CodeZero's frontend_screenshot quality gate are valid visual evidence; do not block only because screenshots are not manually attached when screenshotArtifacts is non-empty.",
+        "Use fileSnippets to verify whether referenced CSS classes, design tokens, or helper APIs already exist before reporting them as newly introduced or unknown.",
         reviewerFeedback
           ? `This is a PR feedback iteration. Confirm the diff addresses this latest reviewer feedback:\n${reviewerFeedback}`
           : "",
@@ -1396,6 +1411,15 @@ export class IssueWorkflowRunner {
         contextPack: task.contextPack as unknown as JsonObject,
         qualityGateResults: (task.qualityGateResults ??
           []) as unknown as JsonObject,
+        artifacts: artifacts.map((artifact) => ({
+          id: artifact.id,
+          type: artifact.type,
+          path: artifact.path,
+          url: artifact.url,
+          metadata: artifact.metadata,
+        })) as unknown as JsonObject,
+        screenshotArtifacts: screenshotArtifacts as unknown as JsonObject,
+        fileSnippets: fileSnippets as JsonObject,
         reviewerFeedback,
         changedFiles,
         diff,

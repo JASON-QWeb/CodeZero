@@ -140,9 +140,10 @@ describe("workflow modules", () => {
       expect(executor.command).toContain("OPENCODE_BIN");
       expect(executor.command).toContain("opencode");
       expect(executor.command).toContain("--variant");
+      expect(executor.command).toContain("--dangerously-skip-permissions");
       expect(executor.command).toContain('--file="$CODEZERO_PROMPT_FILE"');
       expect(executor.command).toContain(
-        '"Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
+        '--dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"',
       );
       expect(env.OPENAI_API_KEY).toBe("secret");
       expect(env.OPENAI_BASE_URL).toBe("https://api.example.test");
@@ -366,6 +367,137 @@ describe("workflow modules", () => {
         process.env.TEST_API_KEY = previousApiKey;
       }
     }
+  });
+
+  it("passes screenshot artifacts and supporting snippets into review context", async () => {
+    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-review-context-"));
+    await mkdir(path.join(repoDir, "styles", "sections"), { recursive: true });
+    await writeFile(
+      path.join(repoDir, "index.html"),
+      '<section id="projects"><p>Old copy</p></section>\n',
+    );
+    await writeFile(
+      path.join(repoDir, "styles", "sections", "projects.css"),
+      ".project-kicker { color: var(--accent); }\n",
+    );
+    await runCommand({ cwd: repoDir, command: "git init" });
+    await runCommand({
+      cwd: repoDir,
+      command:
+        "git config user.email test@example.com && git config user.name Test",
+    });
+    await runCommand({
+      cwd: repoDir,
+      command: "git add . && git commit -m init",
+    });
+    await writeFile(
+      path.join(repoDir, "index.html"),
+      '<section id="projects"><p><span class="project-kicker">*</span> Verified delivery evidence</p></section>\n',
+    );
+
+    const task = {
+      ...createTask(issue),
+      planningDocument: {
+        ...highComplexityPlanningDocument(),
+        implementationPlan: {
+          ...minimalPlan(),
+          filesToRead: ["styles/sections/projects.css"],
+          filesExpectedToChange: ["index.html"],
+          testsToAddOrUpdate: [],
+        },
+      },
+      contextPack: compactableContextPack(),
+      qualityGateResults: [
+        {
+          kind: "frontend_screenshot",
+          command: "npm run dev",
+          passed: true,
+          exitCode: 0,
+          durationMs: 100,
+          output: "captured",
+        },
+      ] satisfies QualityGateResult[],
+    };
+    const tasks = new InMemoryTaskRepository(task);
+    await tasks.addArtifact({
+      id: "artifact-1",
+      taskId: task.id,
+      type: "screenshot",
+      path: path.join(repoDir, "artifacts", "desktop.png"),
+      metadata: { url: "http://127.0.0.1:5500/", viewport: "desktop" },
+      createdAt: new Date().toISOString(),
+    });
+    let capturedContext: Record<string, unknown> | undefined;
+    const runner = {
+      run: async (input: { context: Record<string, unknown> }) => {
+        capturedContext = input.context;
+        return {
+          content: JSON.stringify({
+            approved: true,
+            blockingFindings: [],
+            nonBlockingFindings: [],
+            missingTests: [],
+            scopeViolations: [],
+            riskLevel: "low",
+            prDescriptionNotes: ["Screenshots provided"],
+          }),
+          raw: {},
+        };
+      },
+    };
+    const agent = {
+      id: "review",
+      role: "review" as const,
+      providerId: "default",
+      systemPrompt: "Review.",
+      skillRefs: [],
+      tools: [],
+      guardrails: [],
+    };
+    const workflow = new IssueWorkflowRunner(createAppConfig(repoDir), tasks);
+
+    await (
+      workflow as unknown as {
+        review: (
+          task: Task,
+          sandbox: {
+            repoDir: string;
+            artifactDir: string;
+            logDir: string;
+            mode: "worktree";
+          },
+          runner: typeof runner,
+          agent: typeof agent,
+        ) => Promise<unknown>;
+      }
+    ).review(
+      task,
+      {
+        repoDir,
+        artifactDir: path.join(repoDir, "artifacts"),
+        logDir: path.join(repoDir, "logs"),
+        mode: "worktree",
+      },
+      runner,
+      agent,
+    );
+
+    expect(capturedContext?.screenshotArtifacts).toEqual([
+      {
+        id: "artifact-1",
+        path: path.join(repoDir, "artifacts", "desktop.png"),
+        url: undefined,
+        metadata: { url: "http://127.0.0.1:5500/", viewport: "desktop" },
+      },
+    ]);
+    expect(
+      (capturedContext?.fileSnippets as Record<string, string>)["index.html"],
+    ).toContain("Verified delivery evidence");
+    expect(
+      (capturedContext?.fileSnippets as Record<string, string>)[
+        "styles/sections/projects.css"
+      ],
+    ).toContain(".project-kicker");
   });
 
   it("writes a custom coding provider config without storing API keys", async () => {

@@ -45,6 +45,14 @@ export type CommandOutputChunk = {
   text: string;
 };
 
+const generatedPathspecExcludes = [
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "test-results/**",
+  "playwright-report/**",
+  "coverage/**"
+];
+
 export class DockerSandboxManager implements SandboxManager {
   constructor(private readonly config: SandboxConfig) {}
 
@@ -248,7 +256,7 @@ export async function cloneRepositoryBranch(input: {
 }
 
 export async function getGitDiff(repoDir: string): Promise<string> {
-  const result = await runCommand({ cwd: repoDir, command: "git diff -- . ':!package-lock.json' ':!pnpm-lock.yaml'", timeoutMs: 60_000 });
+  const result = await runCommand({ cwd: repoDir, command: `git diff -- ${gitTrackedPathspec()}`, timeoutMs: 60_000 });
   return `${result.stdout}${result.stderr}`.trim();
 }
 
@@ -261,7 +269,7 @@ export async function applyUnifiedDiff(repoDir: string, diff: string): Promise<C
 }
 
 export async function listChangedFiles(repoDir: string): Promise<string[]> {
-  const result = await runCommand({ cwd: repoDir, command: "git status --short", timeoutMs: 60_000 });
+  const result = await runCommand({ cwd: repoDir, command: `git status --short -- ${gitTrackedPathspec()}`, timeoutMs: 60_000 });
   return result.stdout
     .split("\n")
     .map((line) => line.slice(3).trim())
@@ -279,7 +287,7 @@ export async function getCurrentCommitSha(repoDir: string, ref = "HEAD"): Promis
 }
 
 export async function commitAll(repoDir: string, message: string): Promise<CommandResult[]> {
-  const add = await runCommand({ cwd: repoDir, command: "git add -A", timeoutMs: 60_000 });
+  const add = await runCommand({ cwd: repoDir, command: `git add -A -- ${gitTrackedPathspec()}`, timeoutMs: 60_000 });
 
   if (add.exitCode !== 0) {
     return [add];
@@ -300,4 +308,10 @@ async function resetCloneTarget(repoDir: string): Promise<void> {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function gitTrackedPathspec(): string {
+  return [".", ...generatedPathspecExcludes.map((pattern) => `:(exclude)${pattern}`)]
+    .map(shellQuote)
+    .join(" ");
 }

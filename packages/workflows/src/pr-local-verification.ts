@@ -119,11 +119,11 @@ export function createPrLocalVerificationPlan(
   const cloneUrl =
     input.cloneUrl ?? `https://github.com/${input.owner}/${input.repo}.git`;
   const qualityGates = dedupeQualityGateResults(input.qualityGateResults ?? []);
-  const postCheckoutCommands = [
+  const postCheckoutCommands = dedupeCommands([
     input.installCommand,
     ...qualityGates.map((result) => result.command),
     input.devCommand,
-  ].filter((command): command is string => Boolean(command));
+  ].filter((command): command is string => Boolean(command)));
 
   return {
     repository: {
@@ -556,6 +556,17 @@ function dedupeQualityGateResults(
   }
 
   return deduped;
+}
+
+function dedupeCommands(commands: string[]): string[] {
+  const seen = new Set<string>();
+  return commands.filter((command) => {
+    if (seen.has(command)) {
+      return false;
+    }
+    seen.add(command);
+    return true;
+  });
 }
 
 function metadataString(value: JsonValue | undefined): string | undefined {

@@ -122,6 +122,12 @@ describe("sandbox command runner", () => {
     const initialSha = await getCurrentCommitSha(dir);
 
     await writeFile(path.join(dir, "a.txt"), "b\n");
+    await mkdir(path.join(dir, "test-results"), { recursive: true });
+    await mkdir(path.join(dir, "playwright-report"), { recursive: true });
+    await mkdir(path.join(dir, "coverage"), { recursive: true });
+    await writeFile(path.join(dir, "test-results", ".last-run.json"), "{}\n");
+    await writeFile(path.join(dir, "playwright-report", "index.html"), "<!doctype html>\n");
+    await writeFile(path.join(dir, "coverage", "coverage-final.json"), "{}\n");
     expect(await getGitDiff(dir)).toContain("-a");
     expect(await listChangedFiles(dir)).toEqual(["a.txt"]);
 
@@ -145,6 +151,10 @@ describe("sandbox command runner", () => {
 
     const commitResults = await commitAll(dir, "update files");
     expect(commitResults.every((result) => result.exitCode === 0)).toBe(true);
+    const committedFiles = await runCommand({ cwd: dir, command: "git show --name-only --format= HEAD" });
+    expect(committedFiles.stdout).not.toContain("test-results");
+    expect(committedFiles.stdout).not.toContain("playwright-report");
+    expect(committedFiles.stdout).not.toContain("coverage");
     await expect(getCurrentCommitSha(dir)).resolves.not.toBe(initialSha);
     await expect(getCurrentCommitSha(dir, "missing-ref")).rejects.toThrow("Failed to resolve git ref missing-ref");
   });

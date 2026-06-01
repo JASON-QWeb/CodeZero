@@ -12,6 +12,7 @@ sandboxes
 data/*.json
 data/codegraph/
 data/understand-anything/
+data/repository-onboarding/
 data/repository-context/
 apps/api/data/
 dump.rdb

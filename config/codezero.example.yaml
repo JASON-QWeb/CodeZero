@@ -116,7 +116,7 @@ sandbox:
   implementation_executor:
     mode: cli
     name: codezero-coding-cli
-    command: 'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
+    command: 'OPENCODE_BIN="${OPENCODE_BIN:-opencode}"; "$OPENCODE_BIN" run --agent build --model "$CODEZERO_OPENCODE_MODEL" --variant "${CODEZERO_OPENCODE_VARIANT:-minimal}" --format json --dangerously-skip-permissions "Implement the CodeZero request in the attached prompt file." --file="$CODEZERO_PROMPT_FILE"'
     timeout_ms: 3600000
     env: {}
 

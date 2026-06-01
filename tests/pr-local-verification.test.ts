@@ -136,6 +136,55 @@ describe("PR local verification", () => {
     );
   });
 
+  it("deduplicates checkout verification commands that overlap with quality gates", () => {
+    const verification = createPrLocalVerificationPlan({
+      owner: "acme",
+      repo: "shop",
+      baseBranch: "main",
+      baseSha: "abc123",
+      agentBranch: "agent/issue-7-fix-refund-status-copy",
+      installCommand: "npm ci",
+      qualityGateResults: [
+        {
+          kind: "setup",
+          command: "npm ci",
+          passed: true,
+          exitCode: 0,
+          durationMs: 100,
+          output: "",
+        },
+        {
+          kind: "build",
+          command: "npm run build",
+          passed: true,
+          exitCode: 0,
+          durationMs: 100,
+          output: "",
+        },
+        {
+          kind: "frontend_screenshot",
+          command: "npm run dev",
+          passed: true,
+          exitCode: 0,
+          durationMs: 100,
+          output: "",
+        },
+      ],
+      devCommand: "npm run dev",
+    });
+
+    expect(
+      verification.commands.githubCli.filter((command) => command === "npm ci"),
+    ).toHaveLength(1);
+    expect(
+      verification.commands.githubCli.filter(
+        (command) => command === "npm run dev",
+      ),
+    ).toHaveLength(1);
+    expect(verification.commands.githubCli).toContain("npm run build");
+    expect(verification.commands.qualityGates).toHaveLength(3);
+  });
+
   it("localizes PR text and embeds public screenshot URLs as images", () => {
     const chineseTask: Task = {
       ...task,
