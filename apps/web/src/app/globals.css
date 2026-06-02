@@ -773,6 +773,7 @@ p {
 .detailPanel,
 .memoryPanel {
   display: grid;
+  align-content: start;
   gap: 10px;
   min-width: 0;
 }
@@ -892,11 +893,14 @@ p {
   min-width: 0;
 }
 
-.issueTitle {
+.issueCell span {
   overflow: hidden;
-  font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.issueTitle {
+  font-weight: 800;
 }
 
 .issueCell span,
