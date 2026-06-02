@@ -356,6 +356,7 @@ p {
 
 .homeOperationsRow {
   grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+  align-items: start;
 }
 
 .homeConfigRow {
@@ -538,7 +539,8 @@ p {
 .issueTrendChart path {
   fill: none;
   stroke: var(--line);
-  stroke-width: 2;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 .issueTrendChart polyline {
@@ -546,13 +548,15 @@ p {
   stroke: var(--accent);
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 4;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
 }
 
 .issueTrendChart circle {
   fill: var(--surface);
   stroke: var(--accent);
-  stroke-width: 3;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
 }
 
 .issueTrendChart polyline.issueTrendLineResolved,
@@ -598,21 +602,24 @@ p {
 
 .alertList {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .alertList li {
-  border-left: 3px solid var(--blocked);
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  border-left: 2px solid var(--blocked);
   border-radius: 8px;
   background: rgba(217, 72, 53, 0.08);
   color: var(--blocked);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
-  line-height: 1.45;
-  padding: 10px 11px;
+  line-height: 1.25;
+  padding: 6px 9px;
 }
 
 .overviewRepositoryList,
@@ -858,12 +865,12 @@ p {
 
 .taskRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto minmax(136px, 0.42fr);
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  min-height: 118px;
-  padding: 14px;
+  min-height: 58px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -881,7 +888,7 @@ p {
 
 .issueCell {
   display: grid;
-  gap: 6px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -895,7 +902,24 @@ p {
 .issueCell span,
 .branchCell {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+}
+
+.taskRow .statusPill {
+  min-width: 112px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.taskRow .branchCell {
+  min-width: 0;
+  height: 28px;
+  justify-content: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 0 8px;
 }
 
 .branchCell span {
