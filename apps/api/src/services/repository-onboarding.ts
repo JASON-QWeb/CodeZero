@@ -29,7 +29,7 @@ export type RepositoryOnboardingState = {
     tests: number;
     packageManager: string;
   };
-  documents?: Array<{ path: string; type: string }>;
+  documents?: Array<{ path: string; type: string; content?: string }>;
 };
 
 type StoredRepositoryOnboardingState = Omit<RepositoryOnboardingState, "repositoryId" | "fullName" | "codeGraphAvailable" | "cacheDatabaseFile"> & {
@@ -97,7 +97,7 @@ export async function getRepositoryOnboardingState(config: AppConfig, repository
     updatedAt: stored?.updatedAt,
     codeGraph: stored?.codeGraph,
     summary: stored?.summary,
-    documents: stored?.documents
+    documents: await readOnboardingDocuments(config, repository, stored?.documents)
   };
 }
 
@@ -220,6 +220,25 @@ function onboardingDir(config: AppConfig, repository: RepositoryConfig): string 
 
 function codeGraphCacheDatabaseFile(config: AppConfig, repository: RepositoryConfig): string {
   return path.join(config.rootDir, "data", "codegraph", repositoryStorageKey(repository), "codegraph.db");
+}
+
+async function readOnboardingDocuments(
+  config: AppConfig,
+  repository: RepositoryConfig,
+  documents: Array<{ path: string; type: string; content?: string }> | undefined
+): Promise<Array<{ path: string; type: string; content?: string }> | undefined> {
+  if (!documents) {
+    return undefined;
+  }
+
+  const documentRoot = path.join(onboardingDir(config, repository), "documents");
+
+  return Promise.all(
+    documents.map(async (document) => ({
+      ...document,
+      content: document.content ?? (await readFile(path.join(documentRoot, document.path), "utf8").catch(() => undefined))
+    }))
+  );
 }
 
 function repositoryStorageKey(repository: RepositoryConfig): string {

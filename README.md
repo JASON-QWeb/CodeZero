@@ -332,11 +332,3 @@ The **Settings Console** UI can edit and validate these files during local opera
 CodeZero is licensed under the [MIT License](LICENSE).
 
 ---
-
-<div align="center">
-
-**Built with ❤️ for engineering teams who ship fast.**
-
-[⬆ Back to Top](#codezero)
-
-</div>

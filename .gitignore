@@ -8,6 +8,7 @@ dist
 .env.local
 coverage
 artifacts
+output/
 sandboxes
 data/*.json
 data/codegraph/

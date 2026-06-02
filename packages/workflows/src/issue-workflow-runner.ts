@@ -358,6 +358,7 @@ export class IssueWorkflowRunner {
           repo: repositoryConfig.github_repo,
           defaultBranch: repositoryConfig.default_branch,
           projectSkillPath: repositoryConfig.project_skill_path,
+          projectRulePath: repositoryConfig.project_rule_path,
         },
       },
     });
@@ -621,10 +622,11 @@ export class IssueWorkflowRunner {
     const projectContext = await loadProjectContext(
       sandbox.repoDir,
       repositoryConfig.project_skill_path,
+      repositoryConfig.project_rule_path,
     );
-    const businessRules = [
-      summarizeProjectContext(projectContext),
-    ].filter((entry): entry is string => Boolean(entry));
+    const businessRules = [summarizeProjectContext(projectContext)].filter(
+      (entry): entry is string => Boolean(entry),
+    );
     const memoryStore = new FileMemoryStore(this.config.memory.filePath);
     const memoryResults = await memoryStore.search(task.issue, 8);
     const memories = toContextMemories(memoryResults);
@@ -1378,8 +1380,7 @@ export class IssueWorkflowRunner {
       task.planningDocument ??
       this.missing<PlanningDocument>("PlanningDocument");
     const artifacts = await this.tasks.listArtifacts(task.id);
-    const screenshotArtifacts =
-      this.collectScreenshotArtifactsForPr(artifacts);
+    const screenshotArtifacts = this.collectScreenshotArtifactsForPr(artifacts);
     const fileSnippets = task.contextPack
       ? await readContextFileSnippets(sandbox.repoDir, task.contextPack, {
           includePaths: uniquePaths([
@@ -1456,8 +1457,7 @@ export class IssueWorkflowRunner {
     const baseSha = await getCurrentCommitSha(sandbox.repoDir);
     const installCommand = await detectInstallCommand(sandbox.repoDir);
     const artifacts = await this.tasks.listArtifacts(task.id);
-    const screenshotArtifacts =
-      this.collectScreenshotArtifactsForPr(artifacts);
+    const screenshotArtifacts = this.collectScreenshotArtifactsForPr(artifacts);
     const verification = createPrLocalVerificationPlan({
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
@@ -1513,7 +1513,7 @@ export class IssueWorkflowRunner {
     const prUrl = await github.createDraftPullRequest({
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
-      title: `${locale === "zh" ? "机器人" : "Agent"}: ${task.issue.title}`,
+      title: `Agent: ${task.issue.title}`,
       body,
       head: agentBranch,
       base: repositoryConfig.default_branch,
@@ -1566,8 +1566,7 @@ export class IssueWorkflowRunner {
     const agentBranch = task.branchName ?? `agent/issue-${task.issue.number}`;
     const baseSha = await getCurrentCommitSha(sandbox.repoDir);
     const artifacts = await this.tasks.listArtifacts(task.id);
-    const screenshotArtifacts =
-      this.collectScreenshotArtifactsForPr(artifacts);
+    const screenshotArtifacts = this.collectScreenshotArtifactsForPr(artifacts);
     const installCommand = await detectInstallCommand(sandbox.repoDir);
     const verification = createPrLocalVerificationPlan({
       owner: repositoryConfig.github_owner,
@@ -1635,7 +1634,7 @@ export class IssueWorkflowRunner {
       owner: repositoryConfig.github_owner,
       repo: repositoryConfig.github_repo,
       pullNumber,
-      title: `${locale === "zh" ? "机器人" : "Agent"}: ${task.issue.title}`,
+      title: `Agent: ${task.issue.title}`,
       body,
     });
     await github.createIssueComment({

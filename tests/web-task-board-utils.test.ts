@@ -3,12 +3,14 @@ import type { Task, TaskTrace, TraceSpan, TraceSpanKind } from "@agent/shared";
 import {
   fetchMemories,
   fetchProjectKnowledgeGraph,
+  fetchRepositoryContextFiles,
   fetchRepositoryOnboarding,
   fetchRepositoryQueues,
   fetchTasks,
   fetchTrace,
   generateProjectKnowledgeGraph,
   openProjectKnowledgeGraphDashboard,
+  saveRepositoryContextFile,
   updateMemoryStatus
 } from "../apps/web/src/features/tasks/api";
 import { buildRepositorySummariesFromTasks, isQueuedStatus, isRunningStatus } from "../apps/web/src/features/tasks/repository-summary";
@@ -93,6 +95,18 @@ describe("web task board utilities", () => {
           }
         });
       }
+      if (url.includes("/repositories/commerce/context-files")) {
+        return ok({
+          files: [
+            {
+              kind: "skill",
+              path: ".agent/skills/refunds/SKILL.md",
+              name: "refunds",
+              content: "# Refunds\n"
+            }
+          ]
+        });
+      }
       return ok({ memory: { ...mockMemories[0], status: "approved" } });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -103,8 +117,15 @@ describe("web task board utilities", () => {
     await expect(fetchMemories("proposed")).resolves.toEqual(mockMemories);
     await expect(fetchProjectKnowledgeGraph("commerce")).resolves.toMatchObject({ status: "ready" });
     await expect(fetchRepositoryOnboarding("commerce")).resolves.toMatchObject({ codeGraphAvailable: true });
+    await expect(fetchRepositoryContextFiles("commerce")).resolves.toHaveLength(1);
     await expect(generateProjectKnowledgeGraph({ repositoryId: "commerce" })).resolves.toMatchObject({ provider: { name: "Understand-Anything" } });
     await expect(openProjectKnowledgeGraphDashboard("commerce")).resolves.toMatchObject({ graphAvailable: true });
+    await expect(saveRepositoryContextFile({
+      repositoryId: "commerce",
+      kind: "rule",
+      path: ".agent/rules/project.md",
+      content: "# Project\n"
+    })).resolves.toHaveLength(1);
     await expect(updateMemoryStatus({ id: mockMemories[0]?.id ?? "", status: "approved" })).resolves.toMatchObject({ status: "approved" });
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/tasks");
   });
@@ -116,8 +137,15 @@ describe("web task board utilities", () => {
     await expect(fetchRepositoryQueues()).rejects.toThrow("Failed to load repository queues");
     await expect(fetchProjectKnowledgeGraph("shop")).rejects.toThrow("Failed to load project knowledge graph");
     await expect(fetchRepositoryOnboarding("shop")).rejects.toThrow("Failed to load repository onboarding");
+    await expect(fetchRepositoryContextFiles("shop")).rejects.toThrow("Failed to load repository context files");
     await expect(generateProjectKnowledgeGraph({ repositoryId: "shop" })).rejects.toThrow("Failed to generate project knowledge graph");
     await expect(openProjectKnowledgeGraphDashboard("shop")).rejects.toThrow("Failed to start the Understand-Anything dashboard");
+    await expect(saveRepositoryContextFile({
+      repositoryId: "shop",
+      kind: "skill",
+      path: ".agent/skills/new-skill/SKILL.md",
+      content: "# Skill\n"
+    })).rejects.toThrow("Failed to save repository context file");
     await expect(fetchTrace("task-1")).rejects.toThrow("Failed to load task trace");
     await expect(fetchMemories("proposed")).rejects.toThrow("Failed to load memories");
     await expect(updateMemoryStatus({ id: "memory-1", status: "rejected" })).rejects.toThrow("Failed to update memory");

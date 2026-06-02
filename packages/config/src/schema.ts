@@ -238,6 +238,7 @@ export const repositorySchema = z.object({
   github_repo: z.string().min(1),
   default_branch: z.string().default("main"),
   project_skill_path: z.string().default(".agent"),
+  project_rule_path: z.string().default(".agent/rules"),
   trigger: repositoryTriggerSchema,
   codebase_intelligence: repositoryCodebaseIntelligenceSchema,
   queue: z
@@ -387,6 +388,7 @@ export type RepositoryRuntimeSettingsPatch = {
   mention?: string;
   maxConcurrentIssues?: number;
   projectSkillPath?: string;
+  projectRulePath?: string;
   allowedPermissions?: ToolPermissionLevel[];
   blockedPermissions?: ToolPermissionLevel[];
 };

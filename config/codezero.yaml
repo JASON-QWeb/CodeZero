@@ -40,6 +40,7 @@ repositories:
     github_repo: CodeZero
     default_branch: main
     project_skill_path: ".agent"
+    project_rule_path: ".agent/rules"
     trigger:
       mode: mention
       mention: "@agent-prd"
@@ -104,6 +105,7 @@ repositories:
     github_repo: BeautySkillsHub
     default_branch: main
     project_skill_path: ".agent"
+    project_rule_path: ".agent/rules"
     trigger:
       mode: mention
       mention: "@codeZero"

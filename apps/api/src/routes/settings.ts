@@ -44,6 +44,7 @@ const repositoryRuntimeSettingsSchema = z
     mention: z.string().min(1).optional(),
     maxConcurrentIssues: z.number().int().positive().max(50).optional(),
     projectSkillPath: z.string().min(1).optional(),
+    projectRulePath: z.string().min(1).optional(),
     allowedPermissions: z.array(z.enum(toolPermissionLevels)).optional(),
     blockedPermissions: z.array(z.enum(toolPermissionLevels)).optional(),
   })
@@ -63,13 +64,11 @@ export async function registerSettingsRoutes(
     const parsed = validateProviderBodySchema.safeParse(request.body);
 
     if (!parsed.success) {
-      return reply
-        .code(400)
-        .send({
-          valid: false,
-          message: "Invalid provider validation payload",
-          issues: parsed.error.issues,
-        });
+      return reply.code(400).send({
+        valid: false,
+        message: "Invalid provider validation payload",
+        issues: parsed.error.issues,
+      });
     }
 
     try {
@@ -89,13 +88,11 @@ export async function registerSettingsRoutes(
       const parsed = saveProviderApiKeyBodySchema.safeParse(request.body);
 
       if (!parsed.success) {
-        return reply
-          .code(400)
-          .send({
-            saved: false,
-            message: "Invalid provider API key payload",
-            issues: parsed.error.issues,
-          });
+        return reply.code(400).send({
+          saved: false,
+          message: "Invalid provider API key payload",
+          issues: parsed.error.issues,
+        });
       }
 
       try {
@@ -161,6 +158,7 @@ export async function registerSettingsRoutes(
       mention?: string;
       maxConcurrentIssues?: number;
       projectSkillPath?: string;
+      projectRulePath?: string;
       allowedPermissions?: string[];
       blockedPermissions?: string[];
     };
@@ -168,12 +166,10 @@ export async function registerSettingsRoutes(
     const parsed = repositoryRuntimeSettingsSchema.safeParse(request.body);
 
     if (!parsed.success) {
-      return reply
-        .code(400)
-        .send({
-          message: "Invalid repository runtime settings",
-          issues: parsed.error.issues,
-        });
+      return reply.code(400).send({
+        message: "Invalid repository runtime settings",
+        issues: parsed.error.issues,
+      });
     }
 
     try {
@@ -186,11 +182,9 @@ export async function registerSettingsRoutes(
       void startConfiguredRepositoryOnboarding(services.config);
       return section;
     } catch (error) {
-      return reply
-        .code(400)
-        .send({
-          message: error instanceof Error ? error.message : String(error),
-        });
+      return reply.code(400).send({
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   });
 
@@ -206,12 +200,10 @@ export async function registerSettingsRoutes(
       const parsed = updateConfigBodySchema.safeParse(request.body);
 
       if (!parsed.success) {
-        return reply
-          .code(400)
-          .send({
-            message: "Invalid config payload",
-            issues: parsed.error.issues,
-          });
+        return reply.code(400).send({
+          message: "Invalid config payload",
+          issues: parsed.error.issues,
+        });
       }
 
       try {
@@ -221,13 +213,11 @@ export async function registerSettingsRoutes(
           parsed: parseConfigSection(section, parsed.data.content),
         };
       } catch (error) {
-        return reply
-          .code(400)
-          .send({
-            section,
-            valid: false,
-            message: error instanceof Error ? error.message : String(error),
-          });
+        return reply.code(400).send({
+          section,
+          valid: false,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     },
   );
@@ -244,12 +234,10 @@ export async function registerSettingsRoutes(
       const parsed = updateConfigBodySchema.safeParse(request.body);
 
       if (!parsed.success) {
-        return reply
-          .code(400)
-          .send({
-            message: "Invalid config payload",
-            issues: parsed.error.issues,
-          });
+        return reply.code(400).send({
+          message: "Invalid config payload",
+          issues: parsed.error.issues,
+        });
       }
 
       try {
@@ -262,12 +250,10 @@ export async function registerSettingsRoutes(
         void startConfiguredRepositoryOnboarding(services.config);
         return saved;
       } catch (error) {
-        return reply
-          .code(400)
-          .send({
-            section,
-            message: error instanceof Error ? error.message : String(error),
-          });
+        return reply.code(400).send({
+          section,
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     },
   );

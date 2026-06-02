@@ -5,7 +5,7 @@ import {
   saveConfig,
   updateRepositoryRuntimeSettings,
   validateConfig,
-  validateProviderConnection
+  validateProviderConnection,
 } from "../apps/web/src/features/settings/api";
 import {
   buildSummary,
@@ -13,7 +13,7 @@ import {
   collectRepositoryQuickConfigs,
   normalizePermissionList,
   normalizePositiveInteger,
-  normalizeTriggerMode
+  normalizeTriggerMode,
 } from "../apps/web/src/features/settings/summary";
 import type { ConfigSection } from "../apps/web/src/features/settings/types";
 
@@ -26,30 +26,63 @@ describe("web settings utilities", () => {
   it("builds compact summaries for each config section", () => {
     expect(buildSummary(undefined)).toEqual([]);
     expect(
-      buildSummary(section("agents", { providers: { qwen: {} }, agents: { prd: { provider: "qwen" }, review: { provider: "qwen" } } }))
+      buildSummary(
+        section("agents", {
+          providers: { qwen: {} },
+          agents: { prd: { provider: "qwen" }, review: { provider: "qwen" } },
+        }),
+      ),
     ).toEqual([
-      { label: "Providers", value: "1" },
-      { label: "Agent Steps", value: "2" },
-      { label: "Routing", value: "prd:qwen, review:qwen" }
+      { label: "供应商", value: "1" },
+      { label: "代理步骤", value: "2" },
+      { label: "路由", value: "prd:qwen, review:qwen" },
     ]);
-    expect(buildSummary(section("tools", { tools: [{ permission: "read" }, { permission: "repo_write" }] }))).toContainEqual({
-      label: "Permissions",
-      value: "read, repo_write"
+    expect(
+      buildSummary(
+        section("tools", {
+          tools: [{ permission: "read" }, { permission: "repo_write" }],
+        }),
+      ),
+    ).toContainEqual({
+      label: "权限",
+      value: "read, repo_write",
     });
-    expect(buildSummary(section("policies", { policies: [{ action: "block" }, { action: "audit" }] }))).toContainEqual({
-      label: "Actions",
-      value: "block, audit"
+    expect(
+      buildSummary(
+        section("policies", {
+          policies: [{ action: "block" }, { action: "audit" }],
+        }),
+      ),
+    ).toContainEqual({
+      label: "动作",
+      value: "block, audit",
     });
-    expect(buildSummary(section("sandbox", { sandbox: { mode: "worktree", image: "node", root_dir: "sandboxes" } }))).toContainEqual({
-      label: "Mode",
-      value: "worktree"
+    expect(
+      buildSummary(
+        section("sandbox", {
+          sandbox: { mode: "worktree", image: "node", root_dir: "sandboxes" },
+        }),
+      ),
+    ).toContainEqual({
+      label: "模式",
+      value: "worktree",
     });
   });
 
   it("collects provider ids from parsed config plus in-progress YAML", () => {
-    const draft = ["providers:", "  qwen:", "    model: qwen3.5", "  openai.experimental: # staged", "agents: {}"].join("\n");
+    const draft = [
+      "providers:",
+      "  qwen:",
+      "    model: qwen3.5",
+      "  openai.experimental: # staged",
+      "agents: {}",
+    ].join("\n");
 
-    expect(collectProviderIds({ providers: { deepseek: {} } }, draft)).toEqual(["deepseek", "qwen", "openai.experimental"]);
+    expect(collectProviderIds({ providers: { deepseek: {} } }, draft)).toEqual([
+      "deepseek",
+      "qwen",
+      "openai.experimental",
+    ]);
   });
 
   it("normalizes repository quick settings safely", () => {
@@ -61,7 +94,10 @@ describe("web settings utilities", () => {
           github_repo: "shop",
           trigger: { mode: "auto", mention: "@agent" },
           queue: { max_concurrent_issues: "3" },
-          permissions: { allowed_permissions: ["read", "bad"], blocked_permissions: ["dangerous"] }
+          permissions: {
+            allowed_permissions: ["read", "bad"],
+            blocked_permissions: ["dangerous"],
+          },
         },
         {
           id: "broken",
@@ -69,22 +105,23 @@ describe("web settings utilities", () => {
           github_repo: "broken",
           trigger: { mode: "unknown" },
           queue: { max_concurrent_issues: -1 },
-          permissions: {}
-        }
-      ]
+          permissions: {},
+        },
+      ],
     });
 
     expect(repositories[0]).toMatchObject({
       projectSkillPath: ".agent",
+      projectRulePath: ".agent/rules",
       triggerMode: "auto",
       maxConcurrentIssues: 3,
       allowedPermissions: ["read"],
-      blockedPermissions: ["dangerous"]
+      blockedPermissions: ["dangerous"],
     });
     expect(repositories[1]).toMatchObject({
       triggerMode: "manual",
       mention: "@agent-prd",
-      maxConcurrentIssues: 1
+      maxConcurrentIssues: 1,
     });
     expect(normalizeTriggerMode("label")).toBe("label");
     expect(normalizePositiveInteger("2.9")).toBe(2);
@@ -93,31 +130,44 @@ describe("web settings utilities", () => {
 
   it("calls settings API endpoints and handles validation failures", async () => {
     process.env.NEXT_PUBLIC_API_URL = "https://api.example.test";
-    const fetchMock = vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
-      if (url.endsWith("/settings/config") && init?.method === undefined) {
-        return ok({ rootDir: "/repo", sections: [] });
-      }
-      if (url.endsWith("/settings/config/agents/validate")) {
-        return { ok: false, json: async () => ({ message: "bad yaml" }) };
-      }
-      if (url.endsWith("/settings/config/agents") && init?.method === "PUT") {
-        return ok(section("agents", {}));
-      }
-      if (url.endsWith("/settings/providers/validate")) {
-        return ok({ providerId: "qwen", valid: true, message: "ok" });
-      }
-      if (url.endsWith("/settings/providers/api-key")) {
-        return ok({ providerId: "qwen", saved: true, message: "saved" });
-      }
-      return ok(section("repositories", {}));
-    });
+    const fetchMock = vi.fn(
+      async (url: string, init?: { method?: string; body?: string }) => {
+        if (url.endsWith("/settings/config") && init?.method === undefined) {
+          return ok({ rootDir: "/repo", sections: [] });
+        }
+        if (url.endsWith("/settings/config/agents/validate")) {
+          return { ok: false, json: async () => ({ message: "bad yaml" }) };
+        }
+        if (url.endsWith("/settings/config/agents") && init?.method === "PUT") {
+          return ok(section("agents", {}));
+        }
+        if (url.endsWith("/settings/providers/validate")) {
+          return ok({ providerId: "qwen", valid: true, message: "ok" });
+        }
+        if (url.endsWith("/settings/providers/api-key")) {
+          return ok({ providerId: "qwen", saved: true, message: "saved" });
+        }
+        return ok(section("repositories", {}));
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchConfig()).resolves.toMatchObject({ rootDir: "/repo" });
-    await expect(validateConfig({ section: "agents", content: "bad" })).resolves.toMatchObject({ section: "agents", valid: false });
-    await expect(saveConfig({ section: "agents", content: "providers: {}" })).resolves.toMatchObject({ section: "agents" });
-    await expect(validateProviderConnection({ providerId: "qwen", content: "providers: {}" })).resolves.toMatchObject({ valid: true });
-    await expect(saveProviderApiKey({ providerId: "qwen", apiKey: "secret" })).resolves.toMatchObject({ saved: true });
+    await expect(
+      validateConfig({ section: "agents", content: "bad" }),
+    ).resolves.toMatchObject({ section: "agents", valid: false });
+    await expect(
+      saveConfig({ section: "agents", content: "providers: {}" }),
+    ).resolves.toMatchObject({ section: "agents" });
+    await expect(
+      validateProviderConnection({
+        providerId: "qwen",
+        content: "providers: {}",
+      }),
+    ).resolves.toMatchObject({ valid: true });
+    await expect(
+      saveProviderApiKey({ providerId: "qwen", apiKey: "secret" }),
+    ).resolves.toMatchObject({ saved: true });
     await expect(
       updateRepositoryRuntimeSettings({
         repositoryId: "shop repo",
@@ -125,20 +175,33 @@ describe("web settings utilities", () => {
         mention: "@agent",
         maxConcurrentIssues: 2,
         projectSkillPath: ".agent",
+        projectRulePath: ".agent/rules",
         allowedPermissions: ["read"],
-        blockedPermissions: []
-      })
+        blockedPermissions: [],
+      }),
     ).resolves.toMatchObject({ section: "repositories" });
     expect(fetchMock.mock.calls.at(-1)?.[0]).toContain("shop%20repo");
   });
 
   it("raises clear errors when settings API saves fail", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => ({ message: "nope" }) })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        json: async () => ({ message: "nope" }),
+      })),
+    );
 
-    await expect(fetchConfig()).rejects.toThrow("Failed to load settings");
-    await expect(saveConfig({ section: "tools", content: "tools: []" })).rejects.toThrow("nope");
-    await expect(validateProviderConnection({ providerId: "qwen", content: "" })).resolves.toMatchObject({ valid: false, message: "nope" });
-    await expect(saveProviderApiKey({ providerId: "qwen", apiKey: "secret" })).resolves.toMatchObject({ saved: false, message: "nope" });
+    await expect(fetchConfig()).rejects.toThrow("设置加载失败");
+    await expect(
+      saveConfig({ section: "tools", content: "tools: []" }),
+    ).rejects.toThrow("nope");
+    await expect(
+      validateProviderConnection({ providerId: "qwen", content: "" }),
+    ).resolves.toMatchObject({ valid: false, message: "nope" });
+    await expect(
+      saveProviderApiKey({ providerId: "qwen", apiKey: "secret" }),
+    ).resolves.toMatchObject({ saved: false, message: "nope" });
     await expect(
       updateRepositoryRuntimeSettings({
         repositoryId: "shop",
@@ -146,27 +209,31 @@ describe("web settings utilities", () => {
         mention: "@agent",
         maxConcurrentIssues: 1,
         projectSkillPath: ".agent",
+        projectRulePath: ".agent/rules",
         allowedPermissions: [],
-        blockedPermissions: []
-      })
+        blockedPermissions: [],
+      }),
     ).rejects.toThrow("nope");
   });
 });
 
-function section(sectionName: ConfigSection["section"], parsed: unknown): ConfigSection {
+function section(
+  sectionName: ConfigSection["section"],
+  parsed: unknown,
+): ConfigSection {
   return {
     section: sectionName,
     path: "/config/codezero.yaml",
     templatePath: "/config/codezero.example.yaml",
     exists: true,
     content: "",
-    parsed
+    parsed,
   };
 }
 
 function ok(body: unknown): { ok: true; json: () => Promise<unknown> } {
   return {
     ok: true,
-    json: async () => body
+    json: async () => body,
   };
 }

@@ -10,22 +10,34 @@ describe("task queue summaries", () => {
     const configuredRunning = taskFor("acme", "shop", "IMPLEMENTING");
     const unconfiguredBlocked = taskFor("other", "api", "BLOCKED");
 
-    const summaries = buildRepositoryQueueSummaries([configuredQueued, configuredRunning, unconfiguredBlocked], [repositoryConfig()]);
-    const configured = summaries.find((summary) => summary.fullName === "acme/shop");
-    const unconfigured = summaries.find((summary) => summary.fullName === "other/api");
+    const summaries = buildRepositoryQueueSummaries(
+      [configuredQueued, configuredRunning, unconfiguredBlocked],
+      [repositoryConfig()],
+    );
+    const configured = summaries.find(
+      (summary) => summary.fullName === "acme/shop",
+    );
+    const unconfigured = summaries.find(
+      (summary) => summary.fullName === "other/api",
+    );
 
     expect(configured).toMatchObject({
       configured: true,
+      projectSkillPath: ".agent",
+      projectRulePath: ".agent/rules",
       runningCount: 1,
       queuedCount: 1,
       maxConcurrentIssues: 2,
-      availableSlots: 1
+      availableSlots: 1,
     });
-    expect(configured?.tasks.map((task) => task.status)).toEqual(["QUEUED", "IMPLEMENTING"]);
+    expect(configured?.tasks.map((task) => task.status)).toEqual([
+      "QUEUED",
+      "IMPLEMENTING",
+    ]);
     expect(unconfigured).toMatchObject({
       configured: false,
       blockedCount: 1,
-      maxConcurrentIssues: 1
+      maxConcurrentIssues: 1,
     });
   });
 
@@ -33,19 +45,32 @@ describe("task queue summaries", () => {
     const summaries = buildRepositoryQueueSummaries(
       [taskFor("beta", "api", "QUEUED")],
       [
-        { ...repositoryConfig(), id: "alpha", github_owner: "alpha", github_repo: "web" },
-        { ...repositoryConfig(), id: "beta", github_owner: "beta", github_repo: "api" }
-      ]
+        {
+          ...repositoryConfig(),
+          id: "alpha",
+          github_owner: "alpha",
+          github_repo: "web",
+        },
+        {
+          ...repositoryConfig(),
+          id: "beta",
+          github_owner: "beta",
+          github_repo: "api",
+        },
+      ],
     );
 
-    expect(summaries.map((summary) => summary.fullName)).toEqual(["beta/api", "alpha/web"]);
+    expect(summaries.map((summary) => summary.fullName)).toEqual([
+      "beta/api",
+      "alpha/web",
+    ]);
   });
 });
 
 function taskFor(owner: string, repo: string, status: Task["status"]): Task {
   return {
     ...createTask(issue(owner, repo)),
-    status
+    status,
   };
 }
 
@@ -60,7 +85,7 @@ function issue(owner: string, repo: string): IssueContext {
     body: "",
     labels: [],
     comments: [],
-    baseBranch: "main"
+    baseBranch: "main",
   };
 }
 
@@ -71,13 +96,14 @@ function repositoryConfig(): RepositoryConfig {
     github_repo: "shop",
     default_branch: "main",
     project_skill_path: ".agent",
+    project_rule_path: ".agent/rules",
     trigger: {
       mode: "manual",
       mention: "@agent-prd",
       auto_events: [],
       label_allowlist: [],
       label_blocklist: [],
-      actor_allowlist: []
+      actor_allowlist: [],
     },
     codebase_intelligence: {
       codegraph: {
@@ -85,30 +111,30 @@ function repositoryConfig(): RepositoryConfig {
         package: "@colbymchenry/codegraph@0.9.3",
         init_args: ["--index"],
         timeout_ms: 600_000,
-        fail_on_error: true
+        fail_on_error: true,
       },
       navigation_graph: {
         enabled: true,
         include_git_history: true,
         include_codeowners: true,
-        max_depth: 4
-      }
+        max_depth: 4,
+      },
     },
     queue: {
-      max_concurrent_issues: 2
+      max_concurrent_issues: 2,
     },
     permissions: {
       allowed_tools: [],
       blocked_tools: [],
       allowed_permissions: [],
-      blocked_permissions: []
+      blocked_permissions: [],
     },
     quality_gates: {},
     frontend: {
-      screenshot_urls: []
+      screenshot_urls: [],
     },
     pr: {
-      default_draft: true
-    }
+      default_draft: true,
+    },
   };
 }

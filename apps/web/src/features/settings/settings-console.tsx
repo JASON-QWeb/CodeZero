@@ -39,10 +39,49 @@ import type {
   ValidationResponse,
 } from "./types";
 
-export function SettingsConsole() {
+const triggerModeLabels: Record<TriggerMode, string> = {
+  auto: "自动",
+  mention: "提及触发",
+  label: "标签触发",
+  manual: "手动",
+  disabled: "停用",
+};
+
+const permissionLevelLabels: Record<ToolPermissionLevel, string> = {
+  read: "读取",
+  safe_write: "安全写入",
+  repo_write: "仓库写入",
+  external_write: "外部写入",
+  dangerous: "高风险",
+};
+
+type SettingsConsoleProps = {
+  description?: string;
+  initialSection?: ConfigSectionName;
+  showTopline?: boolean;
+  title?: string;
+  visibleSections?: ConfigSectionName[];
+};
+
+export function SettingsConsole({
+  description,
+  initialSection,
+  showTopline = true,
+  title = "设置控制台",
+  visibleSections,
+}: SettingsConsoleProps = {}) {
   const queryClient = useQueryClient();
-  const [selectedSection, setSelectedSection] =
-    useState<ConfigSectionName>("agents");
+  const availableSections = useMemo(() => {
+    if (!visibleSections || visibleSections.length === 0) {
+      return orderedSections;
+    }
+
+    const allowed = new Set(visibleSections);
+    return orderedSections.filter((section) => allowed.has(section));
+  }, [visibleSections]);
+  const [selectedSection, setSelectedSection] = useState<ConfigSectionName>(
+    initialSection ?? availableSections[0] ?? "agents",
+  );
   const [draft, setDraft] = useState("");
   const [validation, setValidation] = useState<
     ValidationResponse | undefined
@@ -113,6 +152,16 @@ export function SettingsConsole() {
   );
 
   useEffect(() => {
+    const fallback = availableSections.includes(initialSection ?? "agents")
+      ? (initialSection ?? "agents")
+      : availableSections[0];
+
+    if (fallback && !availableSections.includes(selectedSection)) {
+      setSelectedSection(fallback);
+    }
+  }, [availableSections, initialSection, selectedSection]);
+
+  useEffect(() => {
     if (selected) {
       setDraft(selected.content);
       setValidation(undefined);
@@ -130,36 +179,44 @@ export function SettingsConsole() {
   }, [providerId, providerIds, selected?.section]);
 
   return (
-    <section className="settingsShell" aria-label="Configuration center">
-      <div className="settingsTopline">
-        <div>
-          <p className="eyebrow">Configuration Center</p>
-          <h1>Settings Console</h1>
-          <span>
-            {configQuery.data
-              ? configQuery.data.rootDir
-              : "Connect API to edit runtime configuration"}
-          </span>
+    <section className="settingsShell" aria-label="配置中心">
+      {showTopline ? (
+        <div className="settingsTopline">
+          <div>
+            <p className="eyebrow">配置中心</p>
+            <h1>{title}</h1>
+            <span>
+              {description ??
+                (configQuery.data
+                  ? configQuery.data.rootDir
+                  : "连接 API 后可编辑运行时配置")}
+            </span>
+            {description ? (
+              <span>
+                {configQuery.data
+                  ? configQuery.data.rootDir
+                  : "连接 API 后可编辑运行时配置"}
+              </span>
+            ) : null}
+          </div>
+          <div
+            className={`settingsHealth ${configQuery.isError ? "settingsBad" : "settingsGood"}`}
+          >
+            {configQuery.isError ? (
+              <AlertCircle size={18} aria-hidden />
+            ) : (
+              <SlidersHorizontal size={18} aria-hidden />
+            )}
+            <span>
+              {configQuery.isError ? "设置 API 离线" : "可编辑 YAML 配置"}
+            </span>
+          </div>
         </div>
-        <div
-          className={`settingsHealth ${configQuery.isError ? "settingsBad" : "settingsGood"}`}
-        >
-          {configQuery.isError ? (
-            <AlertCircle size={18} aria-hidden />
-          ) : (
-            <SlidersHorizontal size={18} aria-hidden />
-          )}
-          <span>
-            {configQuery.isError
-              ? "Settings API offline"
-              : "Editable YAML config"}
-          </span>
-        </div>
-      </div>
+      ) : null}
 
       <div className="settingsGrid">
-        <nav className="settingsNav" aria-label="Settings sections">
-          {orderedSections.map((section) => {
+        <nav className="settingsNav" aria-label="设置分区">
+          {availableSections.map((section) => {
             const meta = sectionMeta[section];
             const current = sections.find((item) => item.section === section);
             return (
@@ -171,13 +228,13 @@ export function SettingsConsole() {
               >
                 <span>{meta.icon}</span>
                 <strong>{meta.title}</strong>
-                <small>{current?.exists ? "configured" : "template"}</small>
+                <small>{current?.exists ? "已配置" : "模板"}</small>
               </button>
             );
           })}
         </nav>
 
-        <section className="settingsEditor" aria-label="Settings editor">
+        <section className="settingsEditor" aria-label="设置编辑器">
           {selected ? (
             <>
               <div className="editorHeader">
@@ -187,7 +244,7 @@ export function SettingsConsole() {
                   <span>
                     {selected.exists
                       ? selected.path
-                      : `Template: ${selected.templatePath}`}
+                      : `模板：${selected.templatePath}`}
                   </span>
                 </div>
                 <div className="editorActions">
@@ -203,7 +260,7 @@ export function SettingsConsole() {
                     type="button"
                   >
                     <CheckCircle2 size={16} aria-hidden />
-                    <span>Validate</span>
+                    <span>校验</span>
                   </button>
                   <button
                     className="iconButton positive"
@@ -217,12 +274,12 @@ export function SettingsConsole() {
                     type="button"
                   >
                     <Save size={16} aria-hidden />
-                    <span>Save</span>
+                    <span>保存</span>
                   </button>
                 </div>
               </div>
 
-              <div className="settingsSummary" aria-label="Parsed summary">
+              <div className="settingsSummary" aria-label="配置摘要">
                 {summary.map((item) => (
                   <div key={item.label}>
                     <span>{item.label}</span>
@@ -335,20 +392,19 @@ export function SettingsConsole() {
                     )}
                     <span>
                       {validation.valid
-                        ? "Config is valid and ready to save."
-                        : (validation.message ?? "Config validation failed.")}
+                        ? "配置已通过校验，可以保存。"
+                        : (validation.message ?? "配置校验失败。")}
                     </span>
                   </>
                 ) : (
                   <span>
-                    Validate before saving when changing model routing,
-                    repositories, tools or policies.
+                    修改模型路由、仓库、工具或策略后，建议先校验再保存。
                   </span>
                 )}
               </div>
             </>
           ) : (
-            <div className="emptyState">Settings API is unavailable</div>
+            <div className="emptyState">设置 API 不可用</div>
           )}
         </section>
       </div>
@@ -388,17 +444,17 @@ function ProviderConnectionTest({
   saveResult?: ProviderApiKeySaveResponse;
 }) {
   return (
-    <div className="providerVerifier" aria-label="Provider connection test">
+    <div className="providerVerifier" aria-label="供应商连接测试">
       <div>
-        <h3>Provider Connection Test</h3>
+        <h3>供应商连接测试</h3>
         <span>
-          Use a one-time key here, or leave it empty to use the provider's
-          api_key_env on the API server.
+          可临时输入一次性 Key；留空时会使用 API 服务端 provider.api_key_env
+          指向的环境变量。
         </span>
       </div>
       <div className="providerVerifierControls">
         <label>
-          <span>Service</span>
+          <span>服务</span>
           <select
             onChange={(event) => {
               const preset = providerPresets.find(
@@ -412,7 +468,7 @@ function ProviderConnectionTest({
             defaultValue=""
           >
             <option disabled value="">
-              Choose provider
+              选择供应商
             </option>
             {providerPresets.map((preset) => (
               <option key={preset.id} value={preset.id}>
@@ -422,7 +478,7 @@ function ProviderConnectionTest({
           </select>
         </label>
         <label>
-          <span>Provider</span>
+          <span>供应商 ID</span>
           <select
             disabled={providerIds.length === 0}
             onChange={(event) => onProviderChange(event.target.value)}
@@ -436,11 +492,11 @@ function ProviderConnectionTest({
           </select>
         </label>
         <label>
-          <span>One-time API key</span>
+          <span>一次性 API Key</span>
           <input
             autoComplete="off"
             onChange={(event) => onApiKeyChange(event.target.value)}
-            placeholder="Optional"
+            placeholder="可选"
             type="password"
             value={apiKey}
           />
@@ -452,7 +508,7 @@ function ProviderConnectionTest({
           type="button"
         >
           <CheckCircle2 size={16} aria-hidden />
-          <span>{isPending ? "Testing" : "Test"}</span>
+          <span>{isPending ? "测试中" : "测试"}</span>
         </button>
         <button
           className="iconButton positive"
@@ -466,7 +522,7 @@ function ProviderConnectionTest({
           type="button"
         >
           <Save size={16} aria-hidden />
-          <span>{savePending ? "Saving" : "Save Key"}</span>
+          <span>{savePending ? "保存中" : "保存 Key"}</span>
         </button>
         <button
           className="iconButton positive"
@@ -481,7 +537,7 @@ function ProviderConnectionTest({
         >
           <Save size={16} aria-hidden />
           <span>
-            {saveConfigPending || savePending ? "Saving" : "Save Provider"}
+            {saveConfigPending || savePending ? "保存中" : "保存供应商"}
           </span>
         </button>
       </div>
@@ -507,15 +563,12 @@ function ProviderConnectionTest({
             <span>
               {result.message}
               {result.model && result.latencyMs !== undefined
-                ? ` Model: ${result.model}. Latency: ${result.latencyMs}ms.`
+                ? ` 模型：${result.model}。延迟：${result.latencyMs}ms。`
                 : ""}
             </span>
           </>
         ) : (
-          <span>
-            Provider test sends one minimal chat completion request and never
-            saves the one-time key.
-          </span>
+          <span>连接测试只发送一次最小聊天补全请求，不会保存一次性 Key。</span>
         )}
       </div>
     </div>
@@ -534,14 +587,11 @@ function RepositoryQuickSettings({
   repositories: RepositoryQuickConfig[];
 }) {
   return (
-    <div
-      className="repositoryQuickEditor"
-      aria-label="Repository quick settings"
-    >
+    <div className="repositoryQuickEditor" aria-label="仓库快捷设置">
       <div className="repositoryQuickHeader">
         <div>
-          <h3>Repository Quick Settings</h3>
-          <span>{repositories.length} repositories</span>
+          <h3>仓库快捷设置</h3>
+          <span>{repositories.length} 个仓库</span>
         </div>
         {errorMessage ? (
           <span className="quickSettingsError">
@@ -583,6 +633,9 @@ function RepositoryQuickSettingsItem({
   const [projectSkillPath, setProjectSkillPath] = useState(
     repository.projectSkillPath,
   );
+  const [projectRulePath, setProjectRulePath] = useState(
+    repository.projectRulePath,
+  );
   const [allowedPermissions, setAllowedPermissions] = useState<
     ToolPermissionLevel[]
   >(repository.allowedPermissions);
@@ -595,6 +648,7 @@ function RepositoryQuickSettingsItem({
     setMention(repository.mention);
     setMaxConcurrentIssues(String(repository.maxConcurrentIssues));
     setProjectSkillPath(repository.projectSkillPath);
+    setProjectRulePath(repository.projectRulePath);
     setAllowedPermissions(repository.allowedPermissions);
     setBlockedPermissions(repository.blockedPermissions);
   }, [repository]);
@@ -610,7 +664,7 @@ function RepositoryQuickSettingsItem({
 
       <div className="repositoryQuickControls">
         <label>
-          <span>Trigger</span>
+          <span>触发方式</span>
           <select
             onChange={(event) =>
               setTriggerMode(event.target.value as TriggerMode)
@@ -619,14 +673,14 @@ function RepositoryQuickSettingsItem({
           >
             {triggerModes.map((mode) => (
               <option key={mode} value={mode}>
-                {mode}
+                {triggerModeLabels[mode]}
               </option>
             ))}
           </select>
         </label>
 
         <label>
-          <span>Mention</span>
+          <span>提及触发词</span>
           <input
             onChange={(event) => setMention(event.target.value)}
             type="text"
@@ -635,7 +689,7 @@ function RepositoryQuickSettingsItem({
         </label>
 
         <label>
-          <span>Max Running</span>
+          <span>最大并发</span>
           <input
             min={1}
             onChange={(event) => setMaxConcurrentIssues(event.target.value)}
@@ -646,22 +700,31 @@ function RepositoryQuickSettingsItem({
         </label>
 
         <label>
-          <span>Skill Path</span>
+          <span>Skill 路径</span>
           <input
             onChange={(event) => setProjectSkillPath(event.target.value)}
             type="text"
             value={projectSkillPath}
           />
         </label>
+
+        <label>
+          <span>Rule 路径</span>
+          <input
+            onChange={(event) => setProjectRulePath(event.target.value)}
+            type="text"
+            value={projectRulePath}
+          />
+        </label>
       </div>
 
       <PermissionChecklist
-        label="Allowed Permissions"
+        label="允许权限"
         onChange={setAllowedPermissions}
         selected={allowedPermissions}
       />
       <PermissionChecklist
-        label="Blocked Permissions"
+        label="阻止权限"
         onChange={setBlockedPermissions}
         selected={blockedPermissions}
       />
@@ -674,7 +737,8 @@ function RepositoryQuickSettingsItem({
             !Number.isFinite(Number(maxConcurrentIssues)) ||
             Number(maxConcurrentIssues) < 1 ||
             !mention.trim() ||
-            !projectSkillPath.trim()
+            !projectSkillPath.trim() ||
+            !projectRulePath.trim()
           }
           onClick={() =>
             onSave({
@@ -686,6 +750,7 @@ function RepositoryQuickSettingsItem({
                 Math.floor(Number(maxConcurrentIssues)),
               ),
               projectSkillPath: projectSkillPath.trim(),
+              projectRulePath: projectRulePath.trim(),
               allowedPermissions,
               blockedPermissions,
             })
@@ -693,7 +758,7 @@ function RepositoryQuickSettingsItem({
           type="button"
         >
           <Save size={16} aria-hidden />
-          <span>{isPending ? "Saving" : "Save Repo"}</span>
+          <span>{isPending ? "保存中" : "保存仓库"}</span>
         </button>
       </div>
     </article>
@@ -728,7 +793,7 @@ function PermissionChecklist({
                 }}
                 type="checkbox"
               />
-              <span>{permission}</span>
+              <span>{permissionLevelLabels[permission]}</span>
             </label>
           );
         })}

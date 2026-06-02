@@ -127,7 +127,11 @@ describe("PR local verification", () => {
     );
     expect(body).toContain("## Local Verification");
     expect(body).toContain("## PR Content Completeness Check");
-    expect(body).toContain("### Frontend Screenshot Verification");
+    expect(body).toContain("## Frontend Screenshot Verification");
+    expect(body).toContain(
+      "<summary>View local reproduction commands and Agent environment</summary>",
+    );
+    expect(body).toContain("| build | passed | `pnpm build` |");
     expect(body).toContain("pnpm install --frozen-lockfile");
     expect(body).toContain("pnpm build");
     expect(body).toContain("Base commit: abc123");
@@ -216,8 +220,10 @@ describe("PR local verification", () => {
 
     expect(detectIssueLocale(chineseTask.issue)).toBe("zh");
     expect(body).toContain("## 摘要");
-    expect(body).toContain("## PR 内容完整性检查");
+    expect(body).toContain("## 提交检查");
     expect(body).toContain("## 质量门禁");
+    expect(body).toContain("## Agent Review");
+    expect(body).toContain("### Agent 自检");
     expect(body).toContain(
       "![http://localhost:3000 desktop](https://raw.githubusercontent.com/acme/shop/refs/heads/agent/issue-8-home-card/.agent/screenshots/issue-8/01-desktop.png)",
     );

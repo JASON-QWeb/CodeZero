@@ -10,6 +10,8 @@ export type RepositoryQueueSummary = {
   repo: string;
   fullName: string;
   configured: boolean;
+  projectSkillPath: string;
+  projectRulePath: string;
   maxConcurrentIssues: number;
   runningCount: number;
   queuedCount: number;
@@ -54,7 +56,11 @@ export type GitHubSyncResponse = {
   sync: GitHubSyncState;
 };
 
-export type KnowledgeGraphStatus = "missing" | "generating" | "ready" | "failed";
+export type KnowledgeGraphStatus =
+  | "missing"
+  | "generating"
+  | "ready"
+  | "failed";
 
 export type ProjectKnowledgeGraph = {
   repositoryId: string;
@@ -82,7 +88,11 @@ export type ProjectKnowledgeGraphResponse = {
   knowledgeGraph: ProjectKnowledgeGraph;
 };
 
-export type RepositoryOnboardingStatus = "missing" | "generating" | "ready" | "failed";
+export type RepositoryOnboardingStatus =
+  | "missing"
+  | "generating"
+  | "ready"
+  | "failed";
 
 export type RepositoryOnboarding = {
   repositoryId: string;
@@ -94,7 +104,10 @@ export type RepositoryOnboarding = {
   updatedAt?: string;
   codeGraph?: {
     operation: "initialized" | "synced";
-    changeDetection: "initial-index" | "restored-cache-hash-scan" | "working-tree-sync";
+    changeDetection:
+      | "initial-index"
+      | "restored-cache-hash-scan"
+      | "working-tree-sync";
     databaseFile: string;
     indexDir: string;
     durationMs: number;
@@ -107,11 +120,25 @@ export type RepositoryOnboarding = {
     tests: number;
     packageManager: string;
   };
-  documents?: Array<{ path: string; type: string }>;
+  documents?: Array<{ path: string; type: string; content?: string }>;
 };
 
 export type RepositoryOnboardingResponse = {
   onboarding: RepositoryOnboarding;
+};
+
+export type RepositoryContextFileKind = "skill" | "rule";
+
+export type RepositoryContextFile = {
+  kind: RepositoryContextFileKind;
+  path: string;
+  name: string;
+  content: string;
+  updatedAt?: string;
+};
+
+export type RepositoryContextFilesResponse = {
+  files: RepositoryContextFile[];
 };
 
 export type TraceResponse = {

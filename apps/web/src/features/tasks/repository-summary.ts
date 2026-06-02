@@ -1,7 +1,9 @@
 import type { Task } from "@agent/shared";
 import type { RepositoryQueueSummary } from "./types";
 
-export function buildRepositorySummariesFromTasks(tasks: Task[]): RepositoryQueueSummary[] {
+export function buildRepositorySummariesFromTasks(
+  tasks: Task[],
+): RepositoryQueueSummary[] {
   const summaries = new Map<string, RepositoryQueueSummary>();
 
   for (const task of tasks) {
@@ -14,6 +16,8 @@ export function buildRepositorySummariesFromTasks(tasks: Task[]): RepositoryQueu
         repo: task.issue.repo,
         fullName: key,
         configured: true,
+        projectSkillPath: ".agent",
+        projectRulePath: ".agent/rules",
         maxConcurrentIssues: task.issue.repo === "commerce" ? 2 : 1,
         runningCount: 0,
         queuedCount: 0,
@@ -22,7 +26,7 @@ export function buildRepositorySummariesFromTasks(tasks: Task[]): RepositoryQueu
         completedCount: 0,
         totalCount: 0,
         availableSlots: 0,
-        tasks: []
+        tasks: [],
       } satisfies RepositoryQueueSummary);
 
     summary.tasks.push(task);
@@ -32,7 +36,11 @@ export function buildRepositorySummariesFromTasks(tasks: Task[]): RepositoryQueu
       summary.runningCount += 1;
     } else if (isQueuedStatus(task.status)) {
       summary.queuedCount += 1;
-    } else if (["PRD_REVIEW_REQUIRED", "HUMAN_REVIEW", "WAITING_MERGE"].includes(task.status)) {
+    } else if (
+      ["PRD_REVIEW_REQUIRED", "HUMAN_REVIEW", "WAITING_MERGE"].includes(
+        task.status,
+      )
+    ) {
       summary.reviewCount += 1;
     } else if (["BLOCKED", "FAILED"].includes(task.status)) {
       summary.blockedCount += 1;
@@ -40,7 +48,10 @@ export function buildRepositorySummariesFromTasks(tasks: Task[]): RepositoryQueu
       summary.completedCount += 1;
     }
 
-    summary.availableSlots = Math.max(0, summary.maxConcurrentIssues - summary.runningCount);
+    summary.availableSlots = Math.max(
+      0,
+      summary.maxConcurrentIssues - summary.runningCount,
+    );
     summaries.set(key, summary);
   }
 
@@ -64,6 +75,6 @@ export function isRunningStatus(status: Task["status"]): boolean {
     "IMPLEMENTING",
     "QUALITY_GATES_RUNNING",
     "SUBAGENT_REVIEWING",
-    "PR_CREATING"
+    "PR_CREATING",
   ].includes(status);
 }

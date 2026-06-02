@@ -6,6 +6,9 @@ import type {
   GitHubSyncState,
   ProjectKnowledgeGraph,
   ProjectKnowledgeGraphResponse,
+  RepositoryContextFile,
+  RepositoryContextFileKind,
+  RepositoryContextFilesResponse,
   RepositoryOnboarding,
   RepositoryOnboardingResponse,
   RepositoryQueueSummary,
@@ -82,6 +85,42 @@ export async function fetchRepositoryOnboarding(repositoryId: string): Promise<R
   }
 
   return ((await response.json()) as RepositoryOnboardingResponse).onboarding;
+}
+
+export async function fetchRepositoryContextFiles(repositoryId: string): Promise<RepositoryContextFile[]> {
+  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/context-files`, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error("Failed to load repository context files");
+  }
+
+  return ((await response.json()) as RepositoryContextFilesResponse).files;
+}
+
+export async function saveRepositoryContextFile(input: {
+  repositoryId: string;
+  kind: RepositoryContextFileKind;
+  path: string;
+  content: string;
+}): Promise<RepositoryContextFile[]> {
+  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/context-files`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: input.kind,
+      path: input.path,
+      content: input.content
+    })
+  });
+
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as {
+      message?: string;
+    };
+    throw new Error(data.message ?? "Failed to save repository context file");
+  }
+
+  return ((await response.json()) as RepositoryContextFilesResponse).files;
 }
 
 export async function generateProjectKnowledgeGraph(input: { repositoryId: string; full?: boolean }): Promise<ProjectKnowledgeGraph> {

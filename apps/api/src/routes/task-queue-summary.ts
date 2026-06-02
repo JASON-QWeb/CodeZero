@@ -8,6 +8,8 @@ export type RepositoryQueueSummary = {
   repo: string;
   fullName: string;
   configured: boolean;
+  projectSkillPath: string;
+  projectRulePath: string;
   maxConcurrentIssues: number;
   runningCount: number;
   queuedCount: number;
@@ -19,7 +21,10 @@ export type RepositoryQueueSummary = {
   tasks: Task[];
 };
 
-export function buildRepositoryQueueSummaries(tasks: Task[], repositories: RepositoryConfig[]): RepositoryQueueSummary[] {
+export function buildRepositoryQueueSummaries(
+  tasks: Task[],
+  repositories: RepositoryConfig[],
+): RepositoryQueueSummary[] {
   const summaries = new Map<string, RepositoryQueueSummary>();
 
   for (const repository of repositories) {
@@ -31,8 +36,10 @@ export function buildRepositoryQueueSummaries(tasks: Task[], repositories: Repos
       repo: repository.github_repo,
       fullName: `${repository.github_owner}/${repository.github_repo}`,
       configured: true,
+      projectSkillPath: repository.project_skill_path,
+      projectRulePath: repository.project_rule_path,
       ...state,
-      tasks: []
+      tasks: [],
     });
   }
 
@@ -46,8 +53,8 @@ export function buildRepositoryQueueSummaries(tasks: Task[], repositories: Repos
         github_owner: task.issue.owner,
         github_repo: task.issue.repo,
         queue: {
-          max_concurrent_issues: 1
-        }
+          max_concurrent_issues: 1,
+        },
       };
       const state = computeRepositoryQueueState(tasks, inferredRepository);
       summary = {
@@ -56,8 +63,10 @@ export function buildRepositoryQueueSummaries(tasks: Task[], repositories: Repos
         repo: task.issue.repo,
         fullName: `${task.issue.owner}/${task.issue.repo}`,
         configured: false,
+        projectSkillPath: ".agent",
+        projectRulePath: ".agent/rules",
         ...state,
-        tasks: []
+        tasks: [],
       };
       summaries.set(key, summary);
     }
@@ -66,7 +75,10 @@ export function buildRepositoryQueueSummaries(tasks: Task[], repositories: Repos
   }
 
   return [...summaries.values()].sort((left, right) => {
-    const activityDelta = right.runningCount + right.queuedCount - (left.runningCount + left.queuedCount);
+    const activityDelta =
+      right.runningCount +
+      right.queuedCount -
+      (left.runningCount + left.queuedCount);
 
     if (activityDelta !== 0) {
       return activityDelta;

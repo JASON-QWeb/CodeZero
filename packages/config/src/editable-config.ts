@@ -9,7 +9,7 @@ import {
   schemaForSection,
   type CodeZeroFileConfig,
   type ConfigSectionName,
-  type RepositoryRuntimeSettingsPatch
+  type RepositoryRuntimeSettingsPatch,
 } from "./schema.js";
 
 export type EditableConfigSection = {
@@ -27,23 +27,43 @@ export type EditableConfigSnapshot = {
   sections: EditableConfigSection[];
 };
 
-export async function loadEditableConfig(rootDir?: string): Promise<EditableConfigSnapshot> {
-  const resolvedRootDir = rootDir ?? process.env.PROJECT_ROOT ?? (await findWorkspaceRoot(process.cwd()));
+export async function loadEditableConfig(
+  rootDir?: string,
+): Promise<EditableConfigSnapshot> {
+  const resolvedRootDir =
+    rootDir ??
+    process.env.PROJECT_ROOT ??
+    (await findWorkspaceRoot(process.cwd()));
   await loadProjectEnv(resolvedRootDir);
-  const sections = await Promise.all(configSectionNames.map((section) => readConfigSection(resolvedRootDir, section)));
+  const sections = await Promise.all(
+    configSectionNames.map((section) =>
+      readConfigSection(resolvedRootDir, section),
+    ),
+  );
   return { rootDir: resolvedRootDir, sections };
 }
 
-export async function readConfigSection(rootDir: string, section: ConfigSectionName): Promise<EditableConfigSection> {
+export async function readConfigSection(
+  rootDir: string,
+  section: ConfigSectionName,
+): Promise<EditableConfigSection> {
   await loadProjectEnv(rootDir);
   return readUnifiedConfigSection(rootDir, section);
 }
 
-export async function writeConfigSection(rootDir: string, section: ConfigSectionName, content: string): Promise<EditableConfigSection> {
+export async function writeConfigSection(
+  rootDir: string,
+  section: ConfigSectionName,
+  content: string,
+): Promise<EditableConfigSection> {
   await loadProjectEnv(rootDir);
   const parsedSection = parseConfigSection(section, content);
   const current = await readUnifiedConfigDocument(rootDir);
-  const next = replaceUnifiedConfigSection(current.parsed, section, parsedSection);
+  const next = replaceUnifiedConfigSection(
+    current.parsed,
+    section,
+    parsedSection,
+  );
   const paths = getUnifiedConfigPaths(rootDir);
   await mkdir(path.dirname(paths.path), { recursive: true });
   const tempPath = `${paths.path}.tmp`;
@@ -55,45 +75,62 @@ export async function writeConfigSection(rootDir: string, section: ConfigSection
 export async function updateRepositoryRuntimeSettings(
   rootDir: string,
   repositoryId: string,
-  patch: RepositoryRuntimeSettingsPatch
+  patch: RepositoryRuntimeSettingsPatch,
 ): Promise<EditableConfigSection> {
   const current = await readConfigSection(rootDir, "repositories");
-  const config = repositoriesFileSchema.parse(YAML.parse(interpolateEnv(current.content)));
-  const index = config.repositories.findIndex((repository) => repository.id === repositoryId);
+  const config = repositoriesFileSchema.parse(
+    YAML.parse(interpolateEnv(current.content)),
+  );
+  const index = config.repositories.findIndex(
+    (repository) => repository.id === repositoryId,
+  );
 
   if (index < 0) {
-    throw new Error(`Repository '${repositoryId}' is not defined in repositories config`);
+    throw new Error(
+      `Repository '${repositoryId}' is not defined in repositories config`,
+    );
   }
 
   const repository = config.repositories[index];
 
   if (!repository) {
-    throw new Error(`Repository '${repositoryId}' is not defined in repositories config`);
+    throw new Error(
+      `Repository '${repositoryId}' is not defined in repositories config`,
+    );
   }
 
   config.repositories[index] = {
     ...repository,
-    project_skill_path: patch.projectSkillPath?.trim() || repository.project_skill_path,
+    project_skill_path:
+      patch.projectSkillPath?.trim() || repository.project_skill_path,
+    project_rule_path:
+      patch.projectRulePath?.trim() || repository.project_rule_path,
     trigger: {
       ...repository.trigger,
       mode: patch.triggerMode ?? repository.trigger.mode,
-      mention: patch.mention?.trim() || repository.trigger.mention
+      mention: patch.mention?.trim() || repository.trigger.mention,
     },
     queue: {
       ...repository.queue,
-      max_concurrent_issues: patch.maxConcurrentIssues ?? repository.queue.max_concurrent_issues
+      max_concurrent_issues:
+        patch.maxConcurrentIssues ?? repository.queue.max_concurrent_issues,
     },
     permissions: {
       ...repository.permissions,
-      allowed_permissions: patch.allowedPermissions ?? repository.permissions.allowed_permissions,
-      blocked_permissions: patch.blockedPermissions ?? repository.permissions.blocked_permissions
-    }
+      allowed_permissions:
+        patch.allowedPermissions ?? repository.permissions.allowed_permissions,
+      blocked_permissions:
+        patch.blockedPermissions ?? repository.permissions.blocked_permissions,
+    },
   };
 
   return writeConfigSection(rootDir, "repositories", YAML.stringify(config));
 }
 
-export function parseConfigSection(section: ConfigSectionName, content: string): unknown {
+export function parseConfigSection(
+  section: ConfigSectionName,
+  content: string,
+): unknown {
   return schemaForSection(section).parse(YAML.parse(interpolateEnv(content)));
 }
 
@@ -101,7 +138,10 @@ export function isConfigSectionName(value: string): value is ConfigSectionName {
   return configSectionNames.includes(value as ConfigSectionName);
 }
 
-async function readUnifiedConfigSection(rootDir: string, section: ConfigSectionName): Promise<EditableConfigSection> {
+async function readUnifiedConfigSection(
+  rootDir: string,
+  section: ConfigSectionName,
+): Promise<EditableConfigSection> {
   const document = await readUnifiedConfigDocument(rootDir);
   const stats = await stat(document.path).catch(() => undefined);
 
@@ -111,8 +151,11 @@ async function readUnifiedConfigSection(rootDir: string, section: ConfigSectionN
     templatePath: document.templatePath,
     exists: document.exists,
     content: YAML.stringify(pickUnifiedConfigSection(document.parsed, section)),
-    parsed: parseConfigSection(section, YAML.stringify(pickUnifiedConfigSection(document.parsed, section))),
-    updatedAt: stats?.mtime.toISOString()
+    parsed: parseConfigSection(
+      section,
+      YAML.stringify(pickUnifiedConfigSection(document.parsed, section)),
+    ),
+    updatedAt: stats?.mtime.toISOString(),
   };
 }
 
@@ -131,16 +174,19 @@ async function readUnifiedConfigDocument(rootDir: string): Promise<{
     templatePath: paths.templatePath,
     exists: true,
     content,
-    parsed: codezeroFileSchema.parse(YAML.parse(interpolateEnv(content)))
+    parsed: codezeroFileSchema.parse(YAML.parse(interpolateEnv(content))),
   };
 }
 
-function pickUnifiedConfigSection(config: CodeZeroFileConfig, section: ConfigSectionName): unknown {
+function pickUnifiedConfigSection(
+  config: CodeZeroFileConfig,
+  section: ConfigSectionName,
+): unknown {
   switch (section) {
     case "agents":
       return {
         providers: config.providers,
-        agents: config.agents
+        agents: config.agents,
       };
     case "repositories":
       return { repositories: config.repositories };
@@ -153,12 +199,19 @@ function pickUnifiedConfigSection(config: CodeZeroFileConfig, section: ConfigSec
   }
 }
 
-function replaceUnifiedConfigSection(config: CodeZeroFileConfig, section: ConfigSectionName, parsedSection: unknown): CodeZeroFileConfig {
+function replaceUnifiedConfigSection(
+  config: CodeZeroFileConfig,
+  section: ConfigSectionName,
+  parsedSection: unknown,
+): CodeZeroFileConfig {
   const next = { ...config };
 
   switch (section) {
     case "agents": {
-      const parsed = schemaForSection("agents").parse(parsedSection) as Pick<CodeZeroFileConfig, "providers" | "agents">;
+      const parsed = schemaForSection("agents").parse(parsedSection) as Pick<
+        CodeZeroFileConfig,
+        "providers" | "agents"
+      >;
       return { ...next, providers: parsed.providers, agents: parsed.agents };
     }
     case "repositories": {
@@ -166,23 +219,35 @@ function replaceUnifiedConfigSection(config: CodeZeroFileConfig, section: Config
       return { ...next, repositories: parsed.repositories };
     }
     case "sandbox": {
-      const parsed = schemaForSection("sandbox").parse(parsedSection) as Pick<CodeZeroFileConfig, "sandbox">;
+      const parsed = schemaForSection("sandbox").parse(parsedSection) as Pick<
+        CodeZeroFileConfig,
+        "sandbox"
+      >;
       return { ...next, sandbox: parsed.sandbox };
     }
     case "policies": {
-      const parsed = schemaForSection("policies").parse(parsedSection) as Pick<CodeZeroFileConfig, "policies">;
+      const parsed = schemaForSection("policies").parse(parsedSection) as Pick<
+        CodeZeroFileConfig,
+        "policies"
+      >;
       return { ...next, policies: parsed.policies };
     }
     case "tools": {
-      const parsed = schemaForSection("tools").parse(parsedSection) as Pick<CodeZeroFileConfig, "tools">;
+      const parsed = schemaForSection("tools").parse(parsedSection) as Pick<
+        CodeZeroFileConfig,
+        "tools"
+      >;
       return { ...next, tools: parsed.tools };
     }
   }
 }
 
-function getUnifiedConfigPaths(rootDir: string): { path: string; templatePath: string } {
+function getUnifiedConfigPaths(rootDir: string): {
+  path: string;
+  templatePath: string;
+} {
   return {
     path: path.join(rootDir, "config", "codezero.yaml"),
-    templatePath: path.join(rootDir, "config", "codezero.example.yaml")
+    templatePath: path.join(rootDir, "config", "codezero.example.yaml"),
   };
 }

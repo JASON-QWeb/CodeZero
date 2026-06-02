@@ -662,7 +662,8 @@ function isExplicitRetryComment(comment: IssueComment): boolean {
 function isGeneratedCodeZeroComment(body: string): boolean {
   return (
     body.includes("## CodeZero PRD") ||
-    body.includes("机器人自检已完成并创建 PR") ||
+    body.includes("Agent 自检已完成并创建 PR") ||
+    body.includes("\u673a\u5668\u4eba自检已完成并创建 PR") ||
     body.includes("Agent self-checks completed and created the PR") ||
     body.includes("已根据最新 PR 评论更新同一个分支") ||
     body.includes("Updated the same PR branch from the latest PR comment")

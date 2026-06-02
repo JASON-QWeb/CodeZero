@@ -62,7 +62,8 @@ describe("workflow modules", () => {
         reasons: "Touches backend and UI status handling.",
       },
       implementationPlan: {
-        filesExpectedToChange: "backend/internal/service/github_sync_service.go",
+        filesExpectedToChange:
+          "backend/internal/service/github_sync_service.go",
         riskNotes: "Keep upload retries idempotent.",
       },
     });
@@ -370,7 +371,9 @@ describe("workflow modules", () => {
   });
 
   it("passes screenshot artifacts and supporting snippets into review context", async () => {
-    const repoDir = await mkdtemp(path.join(os.tmpdir(), "agent-review-context-"));
+    const repoDir = await mkdtemp(
+      path.join(os.tmpdir(), "agent-review-context-"),
+    );
     await mkdir(path.join(repoDir, "styles", "sections"), { recursive: true });
     await writeFile(
       path.join(repoDir, "index.html"),
@@ -943,7 +946,9 @@ describe("workflow modules", () => {
     await expect(readFile(second.path, "utf8")).resolves.toContain("Second");
     expect(artifact.id).toMatch(/^artifact-/);
     expect(second.path).not.toBe(artifact.path);
-    expect(path.basename(second.path)).toMatch(/^prd\.\d+-\d+-[a-f0-9]+\.json$/);
+    expect(path.basename(second.path)).toMatch(
+      /^prd\.\d+-\d+-[a-f0-9]+\.json$/,
+    );
     expect(createArtifactId()).toMatch(/^artifact-/);
     expect(artifacts).toEqual([artifact, second]);
   });
@@ -1379,6 +1384,7 @@ function repositoryConfig(): RepositoryConfig {
     github_repo: "shop",
     default_branch: "main",
     project_skill_path: ".agent",
+    project_rule_path: ".agent/rules",
     trigger: {
       mode: "manual",
       mention: "@agent-prd",

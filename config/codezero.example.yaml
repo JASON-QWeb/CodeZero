@@ -40,6 +40,7 @@ repositories:
     github_repo: your-repo
     default_branch: main
     project_skill_path: ".agent"
+    project_rule_path: ".agent/rules"
     trigger:
       mode: mention
       mention: "@agent-prd"

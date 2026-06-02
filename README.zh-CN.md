@@ -251,7 +251,7 @@ pnpm dev:worker   # 任务 Worker
 pnpm dev:web      # Web 控制台
 ```
 
-打开 **Run Console**：[`http://localhost:3000`](http://localhost:3000) 🎉
+打开 **Web 控制台**：[`http://localhost:3000`](http://localhost:3000) 🎉
 
 ---
 
@@ -332,11 +332,3 @@ pnpm eval:golden    # 使用 golden issues 评估候选产物
 CodeZero 基于 [MIT License](LICENSE) 开源。
 
 ---
-
-<div align="center">
-
-**为快速交付的工程团队而生 ❤️**
-
-[⬆ 回到顶部](#codezero)
-
-</div>

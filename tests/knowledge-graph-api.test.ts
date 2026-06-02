@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -126,6 +126,87 @@ describe("Understand-Anything project knowledge graph API", () => {
     expect(response.json<{ message: string }>().message).toContain(
       "Generate it first",
     );
+
+    await app.close();
+  });
+
+  it("lists and saves repository skill and rule files", async () => {
+    const dir = await createConfigFixture();
+    const repoDir = path.join(
+      dir,
+      "data",
+      "understand-anything",
+      "your-org--your-repo",
+      "repo",
+    );
+    await mkdir(path.join(repoDir, ".git"), { recursive: true });
+    await mkdir(path.join(repoDir, ".agent", "skills", "refunds"), {
+      recursive: true,
+    });
+    await mkdir(path.join(repoDir, ".agent", "rules"), { recursive: true });
+    await writeFile(
+      path.join(repoDir, ".agent", "skills", "refunds", "SKILL.md"),
+      "# Refund skill\n",
+    );
+    await writeFile(
+      path.join(repoDir, ".agent", "rules", "checkout.md"),
+      "# Checkout rule\n",
+    );
+    process.env.PROJECT_ROOT = dir;
+    const app = await buildServer();
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/repositories/example-web/context-files",
+    });
+    const files = listResponse.json<{
+      files: Array<{ kind: string; path: string; name: string; content: string }>;
+    }>().files;
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "skill",
+          path: ".agent/skills/refunds/SKILL.md",
+          name: "refunds",
+          content: "# Refund skill\n",
+        }),
+        expect.objectContaining({
+          kind: "rule",
+          path: ".agent/rules/checkout.md",
+          name: "checkout.md",
+          content: "# Checkout rule\n",
+        }),
+      ]),
+    );
+
+    const saveResponse = await app.inject({
+      method: "PUT",
+      url: "/repositories/example-web/context-files",
+      payload: {
+        kind: "rule",
+        path: ".agent/rules/testing.md",
+        content: "# Testing rule\n",
+      },
+    });
+
+    expect(saveResponse.statusCode).toBe(200);
+    await expect(
+      readFile(path.join(repoDir, ".agent", "rules", "testing.md"), "utf8"),
+    ).resolves.toBe("# Testing rule\n");
+
+    const blockedResponse = await app.inject({
+      method: "PUT",
+      url: "/repositories/example-web/context-files",
+      payload: {
+        kind: "rule",
+        path: "../outside.md",
+        content: "# Outside\n",
+      },
+    });
+
+    expect(blockedResponse.statusCode).toBe(409);
 
     await app.close();
   });

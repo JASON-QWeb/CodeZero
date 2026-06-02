@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { evaluateRepositoryTrigger, type RepositoryConfig } from "@agent/config";
+import {
+  evaluateRepositoryTrigger,
+  type RepositoryConfig,
+} from "@agent/config";
 
-function repositoryWithTrigger(trigger: Partial<RepositoryConfig["trigger"]>): RepositoryConfig {
+function repositoryWithTrigger(
+  trigger: Partial<RepositoryConfig["trigger"]>,
+): RepositoryConfig {
   return {
     id: "shop",
     github_owner: "acme",
     github_repo: "shop",
     default_branch: "main",
     project_skill_path: ".agent",
+    project_rule_path: ".agent/rules",
     trigger: {
       mode: "auto",
       mention: "@agent-prd",
@@ -15,7 +21,7 @@ function repositoryWithTrigger(trigger: Partial<RepositoryConfig["trigger"]>): R
       label_allowlist: [],
       label_blocklist: [],
       actor_allowlist: [],
-      ...trigger
+      ...trigger,
     },
     codebase_intelligence: {
       codegraph: {
@@ -23,18 +29,18 @@ function repositoryWithTrigger(trigger: Partial<RepositoryConfig["trigger"]>): R
         package: "@colbymchenry/codegraph@0.9.3",
         init_args: ["--index"],
         timeout_ms: 600_000,
-        fail_on_error: true
+        fail_on_error: true,
       },
       navigation_graph: {
         enabled: true,
         include_git_history: true,
         include_codeowners: true,
-        max_depth: 4
-      }
+        max_depth: 4,
+      },
     },
     quality_gates: {},
     frontend: { screenshot_urls: [] },
-    pr: { default_draft: true }
+    pr: { default_draft: true },
   };
 }
 
@@ -43,7 +49,7 @@ describe("repository trigger policy", () => {
     const decision = evaluateRepositoryTrigger({
       repository: repositoryWithTrigger({ mode: "auto" }),
       eventName: "issues",
-      action: "opened"
+      action: "opened",
     });
 
     expect(decision.shouldTrigger).toBe(true);
@@ -51,21 +57,24 @@ describe("repository trigger policy", () => {
   });
 
   it("uses mention mode for issue comments only", () => {
-    const repository = repositoryWithTrigger({ mode: "mention", mention: "@repo-agent" });
+    const repository = repositoryWithTrigger({
+      mode: "mention",
+      mention: "@repo-agent",
+    });
 
     expect(
       evaluateRepositoryTrigger({
         repository,
         eventName: "issues",
-        action: "opened"
-      }).shouldTrigger
+        action: "opened",
+      }).shouldTrigger,
     ).toBe(false);
 
     const decision = evaluateRepositoryTrigger({
       repository,
       eventName: "issue_comment",
       action: "created",
-      commentBody: "please handle this, @Repo-Agent"
+      commentBody: "please handle this, @Repo-Agent",
     });
 
     expect(decision.shouldTrigger).toBe(true);
@@ -76,7 +85,7 @@ describe("repository trigger policy", () => {
     const repository = repositoryWithTrigger({
       mode: "label",
       label_allowlist: ["agent-ready"],
-      label_blocklist: ["no-agent"]
+      label_blocklist: ["no-agent"],
     });
 
     expect(
@@ -84,15 +93,15 @@ describe("repository trigger policy", () => {
         repository,
         eventName: "issues",
         action: "labeled",
-        labels: ["agent-ready"]
-      }).shouldTrigger
+        labels: ["agent-ready"],
+      }).shouldTrigger,
     ).toBe(true);
 
     const blocked = evaluateRepositoryTrigger({
       repository,
       eventName: "issues",
       action: "labeled",
-      labels: ["agent-ready", "no-agent"]
+      labels: ["agent-ready", "no-agent"],
     });
 
     expect(blocked.shouldTrigger).toBe(false);
@@ -104,15 +113,15 @@ describe("repository trigger policy", () => {
       evaluateRepositoryTrigger({
         repository: repositoryWithTrigger({ mode: "disabled" }),
         eventName: "issues",
-        action: "opened"
-      }).shouldTrigger
+        action: "opened",
+      }).shouldTrigger,
     ).toBe(false);
 
     expect(
       evaluateRepositoryTrigger({
         eventName: "issues",
-        action: "opened"
-      }).trigger
+        action: "opened",
+      }).trigger,
     ).toBe("unconfigured");
   });
 });

@@ -5,7 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildServer } from "../apps/api/src/server.js";
-import { getServices, resetServicesForTests } from "../apps/api/src/services/task-services.js";
+import {
+  getServices,
+  resetServicesForTests,
+} from "../apps/api/src/services/task-services.js";
 
 describe("settings api", () => {
   afterEach(() => {
@@ -202,6 +205,7 @@ describe("settings api", () => {
         mention: "@repo-agent",
         maxConcurrentIssues: 3,
         projectSkillPath: ".codezero/skills",
+        projectRulePath: ".codezero/rules",
         allowedPermissions: ["read", "repo_write"],
         blockedPermissions: ["dangerous"],
       },
@@ -211,6 +215,7 @@ describe("settings api", () => {
         repositories: Array<{
           trigger: { mode: string; mention: string };
           project_skill_path: string;
+          project_rule_path: string;
           queue: { max_concurrent_issues: number };
           permissions: {
             allowed_permissions: string[];
@@ -225,6 +230,7 @@ describe("settings api", () => {
     expect(repository?.trigger.mode).toBe("label");
     expect(repository?.trigger.mention).toBe("@repo-agent");
     expect(repository?.project_skill_path).toBe(".codezero/skills");
+    expect(repository?.project_rule_path).toBe(".codezero/rules");
     expect(repository?.queue.max_concurrent_issues).toBe(3);
     expect(repository?.permissions.allowed_permissions).toEqual([
       "read",
@@ -232,13 +238,20 @@ describe("settings api", () => {
     ]);
     expect(repository?.permissions.blocked_permissions).toEqual(["dangerous"]);
     expect(
-      (await getServices()).config.repositories.find((entry) => entry.id === "shop")
-        ?.trigger.mode,
+      (await getServices()).config.repositories.find(
+        (entry) => entry.id === "shop",
+      )?.trigger.mode,
     ).toBe("label");
     expect(
-      (await getServices()).config.repositories.find((entry) => entry.id === "shop")
-        ?.project_skill_path,
+      (await getServices()).config.repositories.find(
+        (entry) => entry.id === "shop",
+      )?.project_skill_path,
     ).toBe(".codezero/skills");
+    expect(
+      (await getServices()).config.repositories.find(
+        (entry) => entry.id === "shop",
+      )?.project_rule_path,
+    ).toBe(".codezero/rules");
 
     await app.close();
   });
@@ -271,7 +284,11 @@ describe("settings api", () => {
         apiKey: "persisted-secret",
       },
     });
-    const body = response.json<{ saved: boolean; message: string; apiKeyEnv?: string }>();
+    const body = response.json<{
+      saved: boolean;
+      message: string;
+      apiKeyEnv?: string;
+    }>();
 
     expect(response.statusCode).toBe(200);
     expect(body).toMatchObject({
