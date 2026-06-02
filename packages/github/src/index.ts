@@ -1,8 +1,18 @@
+import { createSign } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { Octokit } from "@octokit/rest";
 import type { IssueContext } from "@agent/shared";
 
+export type GitHubAppConfig = {
+  appId?: string;
+  installationId?: string;
+  privateKey?: string;
+  privateKeyPath?: string;
+};
+
 export type GitHubClientConfig = {
-  token: string;
+  token?: string;
+  app?: GitHubAppConfig;
 };
 
 export type GitHubApiClient = Pick<Octokit, "issues" | "pulls">;
@@ -25,15 +35,23 @@ export type GitHubIssueThread = IssueContext & {
 };
 
 export class GitHubClient {
-  private readonly octokit: GitHubApiClient;
+  private readonly auth: GitHubAuthResolver;
+  private readonly injectedOctokit?: GitHubApiClient;
+  private octokitCache?: { token: string; octokit: GitHubApiClient };
 
-  constructor(config: GitHubClientConfig, octokit: GitHubApiClient = new Octokit({ auth: config.token })) {
-    this.octokit = octokit;
+  constructor(config: GitHubClientConfig, octokit?: GitHubApiClient) {
+    this.auth = new GitHubAuthResolver(config);
+    this.injectedOctokit = octokit;
+  }
+
+  async getAccessToken(): Promise<string | undefined> {
+    return this.auth.getToken();
   }
 
   async getIssue(owner: string, repo: string, issueNumber: number, baseBranch = "main"): Promise<IssueContext> {
+    const octokit = await this.octokit();
     const [{ data: issue }, comments] = await Promise.all([
-      this.octokit.issues.get({ owner, repo, issue_number: issueNumber }),
+      octokit.issues.get({ owner, repo, issue_number: issueNumber }),
       this.listIssueComments(owner, repo, issueNumber)
     ]);
 
@@ -85,7 +103,8 @@ export class GitHubClient {
 
   async listIssueComments(owner: string, repo: string, issueNumber: number): Promise<GitHubIssueComment[]> {
     const comments = await this.listPaginated(async (page, perPage) => {
-      const { data } = await this.octokit.issues.listComments({ owner, repo, issue_number: issueNumber, per_page: perPage, page });
+      const octokit = await this.octokit();
+      const { data } = await octokit.issues.listComments({ owner, repo, issue_number: issueNumber, per_page: perPage, page });
       return data;
     });
 
@@ -103,7 +122,8 @@ export class GitHubClient {
     const [conversationComments, reviewComments, reviews] = await Promise.all([
       this.listIssueComments(owner, repo, pullNumber),
       this.listPaginated(async (page, perPage) => {
-        const { data } = await this.octokit.pulls.listReviewComments({
+        const octokit = await this.octokit();
+        const { data } = await octokit.pulls.listReviewComments({
           owner,
           repo,
           pull_number: pullNumber,
@@ -113,7 +133,8 @@ export class GitHubClient {
         return data;
       }),
       this.listPaginated(async (page, perPage) => {
-        const { data } = await this.octokit.pulls.listReviews({
+        const octokit = await this.octokit();
+        const { data } = await octokit.pulls.listReviews({
           owner,
           repo,
           pull_number: pullNumber,
@@ -154,7 +175,8 @@ export class GitHubClient {
     head: string;
     base: string;
   }): Promise<string> {
-    const { data } = await this.octokit.pulls.create({
+    const octokit = await this.octokit();
+    const { data } = await octokit.pulls.create({
       owner: input.owner,
       repo: input.repo,
       title: input.title,
@@ -175,7 +197,8 @@ export class GitHubClient {
     body?: string;
     state?: "open" | "closed";
   }): Promise<string> {
-    const { data } = await this.octokit.pulls.update({
+    const octokit = await this.octokit();
+    const { data } = await octokit.pulls.update({
       owner: input.owner,
       repo: input.repo,
       pull_number: input.pullNumber,
@@ -188,7 +211,8 @@ export class GitHubClient {
   }
 
   async createIssueComment(input: { owner: string; repo: string; issueNumber: number; body: string }): Promise<string> {
-    const { data } = await this.octokit.issues.createComment({
+    const octokit = await this.octokit();
+    const { data } = await octokit.issues.createComment({
       owner: input.owner,
       repo: input.repo,
       issue_number: input.issueNumber,
@@ -199,7 +223,8 @@ export class GitHubClient {
   }
 
   async closeIssue(input: { owner: string; repo: string; issueNumber: number; stateReason?: "completed" | "not_planned" }): Promise<string> {
-    const { data } = await this.octokit.issues.update({
+    const octokit = await this.octokit();
+    const { data } = await octokit.issues.update({
       owner: input.owner,
       repo: input.repo,
       issue_number: input.issueNumber,
@@ -216,7 +241,8 @@ export class GitHubClient {
 
     while (issues.length < limit) {
       const perPage = Math.min(100, limit - issues.length);
-      const { data } = await this.octokit.issues.listForRepo({
+      const octokit = await this.octokit();
+      const { data } = await octokit.issues.listForRepo({
         owner,
         repo,
         state: "open",
@@ -253,6 +279,34 @@ export class GitHubClient {
       page += 1;
     }
   }
+
+  private async octokit(): Promise<GitHubApiClient> {
+    if (this.injectedOctokit) {
+      return this.injectedOctokit;
+    }
+
+    const token = await this.auth.getToken();
+
+    if (!token) {
+      throw new Error(gitHubAuthRequiredMessage);
+    }
+
+    if (!this.octokitCache || this.octokitCache.token !== token) {
+      this.octokitCache = { token, octokit: new Octokit({ auth: token }) };
+    }
+
+    return this.octokitCache.octokit;
+  }
+}
+
+export const gitHubAuthRequiredMessage = "GITHUB_TOKEN or GitHub App credentials are required";
+
+export function hasGitHubAuthConfig(config: GitHubClientConfig): boolean {
+  return Boolean(isCompleteGitHubAppConfig(config.app) || config.token);
+}
+
+export async function getGitHubAuthToken(config: GitHubClientConfig): Promise<string | undefined> {
+  return new GitHubAuthResolver(config).getToken();
 }
 
 export function createGitHubRemoteUrl(owner: string, repo: string, token?: string): string {
@@ -265,6 +319,80 @@ export function createGitHubRemoteUrl(owner: string, repo: string, token?: strin
 
 export function redactRemoteUrl(remoteUrl: string): string {
   return remoteUrl.replace(/x-access-token:[^@]+@/, "x-access-token:***@");
+}
+
+class GitHubAuthResolver {
+  private appTokenCache?: { token: string; expiresAtMs: number };
+
+  constructor(private readonly config: GitHubClientConfig) {}
+
+  async getToken(): Promise<string | undefined> {
+    if (isCompleteGitHubAppConfig(this.config.app)) {
+      return this.getInstallationToken(this.config.app);
+    }
+
+    return this.config.token;
+  }
+
+  private async getInstallationToken(app: CompleteGitHubAppConfig): Promise<string> {
+    const now = Date.now();
+    if (this.appTokenCache && this.appTokenCache.expiresAtMs - now > 60_000) {
+      return this.appTokenCache.token;
+    }
+
+    const jwt = await createGitHubAppJwt(app);
+    const octokit = new Octokit({ auth: jwt });
+    const { data } = await octokit.request("POST /app/installations/{installation_id}/access_tokens", {
+      installation_id: Number(app.installationId)
+    });
+    const expiresAtMs = Date.parse(data.expires_at ?? "") || now + 50 * 60_000;
+    this.appTokenCache = { token: data.token, expiresAtMs };
+    return data.token;
+  }
+}
+
+type CompleteGitHubAppConfig = Required<Pick<GitHubAppConfig, "appId" | "installationId">> &
+  (Required<Pick<GitHubAppConfig, "privateKey">> | Required<Pick<GitHubAppConfig, "privateKeyPath">>);
+
+function isCompleteGitHubAppConfig(app: GitHubAppConfig | undefined): app is CompleteGitHubAppConfig {
+  return Boolean(app?.appId && app.installationId && (app.privateKey || app.privateKeyPath));
+}
+
+async function createGitHubAppJwt(app: CompleteGitHubAppConfig): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: "RS256", typ: "JWT" };
+  const payload = {
+    iat: now - 60,
+    exp: now + 9 * 60,
+    iss: app.appId
+  };
+  const unsigned = `${base64UrlJson(header)}.${base64UrlJson(payload)}`;
+  const signature = createSign("RSA-SHA256").update(unsigned).sign(await readPrivateKey(app));
+  return `${unsigned}.${base64Url(signature)}`;
+}
+
+async function readPrivateKey(app: CompleteGitHubAppConfig): Promise<string> {
+  if ("privateKeyPath" in app && app.privateKeyPath) {
+    return readFile(app.privateKeyPath, "utf8");
+  }
+
+  if ("privateKey" in app && app.privateKey) {
+    return normalizePrivateKey(app.privateKey);
+  }
+
+  throw new Error("GitHub App private key is required");
+}
+
+function normalizePrivateKey(value: string): string {
+  return value.replace(/\\n/g, "\n");
+}
+
+function base64UrlJson(value: unknown): string {
+  return base64Url(Buffer.from(JSON.stringify(value)));
+}
+
+function base64Url(value: Buffer): string {
+  return value.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 function normalizeLabels(labels: Array<string | { name?: string | null }>): string[] {

@@ -232,10 +232,17 @@ cp .env.example .env
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o
+# 推荐使用 GitHub App，这样 Issue 评论和 PR 会显示为 App/bot 身份。
+GITHUB_APP_ID=123456
+GITHUB_APP_INSTALLATION_ID=789012
+GITHUB_APP_PRIVATE_KEY_PATH=./secrets/codezero-app.pem
+# 未配置 GitHub App 时可用 PAT 作为 fallback。
 GITHUB_TOKEN=ghp_...
 GITHUB_WEBHOOK_SECRET=your-webhook-secret
 AGENT_TRIGGER_MENTION=@codezero
 ```
+
+如果同时配置了 `GITHUB_APP_*` 和 `GITHUB_TOKEN`，CodeZero 会优先使用 GitHub App installation token。本地运行建议使用 `GITHUB_APP_PRIVATE_KEY_PATH`；也可以用 `GITHUB_APP_PRIVATE_KEY`，但需要把换行写成 `\n`。
 
 > 💡 **提示：** 之后也可以在 **Settings Console** UI 中切换活跃 provider 并保存 API key。
 

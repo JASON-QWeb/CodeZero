@@ -4,8 +4,11 @@ import {
 } from "@agent/config";
 import {
   GitHubClient,
+  gitHubAuthRequiredMessage,
+  hasGitHubAuthConfig,
   type GitHubIssueComment,
   type GitHubIssueThread,
+  type GitHubClientConfig,
 } from "@agent/github";
 import { isComputeActiveStatus } from "@agent/orchestrator";
 import { createTaskEvent } from "@agent/persistence";
@@ -135,7 +138,7 @@ export async function runGitHubRepositorySync(
       repositoryId,
     );
     const github =
-      options.github ?? createGitHubSyncClient(services.config.github.token);
+      options.github ?? createGitHubSyncClient(services.config.github);
     const result = await collectGitHubUpdates(
       services,
       repository,
@@ -408,14 +411,14 @@ function findRepositoryById(
   return repository;
 }
 
-function createGitHubSyncClient(token?: string): GitHubSyncClient {
-  if (!token) {
+function createGitHubSyncClient(config: GitHubClientConfig): GitHubSyncClient {
+  if (!hasGitHubAuthConfig(config)) {
     throw new Error(
-      "GITHUB_TOKEN is required to sync GitHub issues and PR comments",
+      `${gitHubAuthRequiredMessage} to sync GitHub issues and PR comments`,
     );
   }
 
-  return new GitHubClient({ token });
+  return new GitHubClient(config);
 }
 
 async function syncTrackedIssueComments(

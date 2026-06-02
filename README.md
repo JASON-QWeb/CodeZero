@@ -232,10 +232,17 @@ Edit `.env` with your provider and GitHub credentials:
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o
+# Prefer GitHub App credentials for CodeZero[bot]-style comments and PRs.
+GITHUB_APP_ID=123456
+GITHUB_APP_INSTALLATION_ID=789012
+GITHUB_APP_PRIVATE_KEY_PATH=./secrets/codezero-app.pem
+# Optional fallback PAT when GitHub App credentials are not configured.
 GITHUB_TOKEN=ghp_...
 GITHUB_WEBHOOK_SECRET=your-webhook-secret
 AGENT_TRIGGER_MENTION=@codezero
 ```
+
+When both `GITHUB_APP_*` and `GITHUB_TOKEN` are configured, CodeZero uses the GitHub App installation token first. Use `GITHUB_APP_PRIVATE_KEY_PATH` for local runs; `GITHUB_APP_PRIVATE_KEY` also works when newlines are escaped as `\n`.
 
 > 💡 **Tip:** You can switch providers and save API keys later from the **Settings Console** UI.
 
