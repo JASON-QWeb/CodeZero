@@ -1176,7 +1176,7 @@ function IssueLineChart({
                 cx={x}
                 cy={y}
                 key={`${item.label}-${labels[index]}`}
-                r="4"
+                r="2.6"
               />
             );
           }),
