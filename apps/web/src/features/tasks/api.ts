@@ -17,29 +17,29 @@ import type {
   TraceResponse,
 } from "./types";
 import type { Task, TaskTrace } from "@agent/shared";
-import { isDemoMode } from "../demo-mode";
+import { isMockDataMode } from "../mock-data-mode";
 import {
-  demoApproveTaskPrd,
-  demoFetchGitHubSync,
-  demoFetchMemories,
-  demoFetchProjectKnowledgeGraph,
-  demoFetchRepositoryContextFiles,
-  demoFetchRepositoryOnboarding,
-  demoFetchRepositoryQueues,
-  demoFetchTasks,
-  demoFetchTrace,
-  demoGenerateProjectKnowledgeGraph,
-  demoOpenProjectKnowledgeGraphDashboard,
-  demoSaveRepositoryContextFile,
-  demoTriggerGitHubSync,
-  demoUpdateMemoryStatus,
+  mockApproveTaskPrd,
+  mockFetchGitHubSync,
+  mockFetchMemories,
+  mockFetchProjectKnowledgeGraph,
+  mockFetchRepositoryContextFiles,
+  mockFetchRepositoryOnboarding,
+  mockFetchRepositoryQueues,
+  mockFetchTasks,
+  mockFetchTrace,
+  mockGenerateProjectKnowledgeGraph,
+  mockOpenProjectKnowledgeGraphDashboard,
+  mockSaveRepositoryContextFile,
+  mockTriggerGitHubSync,
+  mockUpdateMemoryStatus,
 } from "./mock-data";
 
 export const apiBaseUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export async function fetchTasks(): Promise<Task[]> {
-  if (isDemoMode()) {
-    return demoFetchTasks();
+  if (isMockDataMode()) {
+    return mockFetchTasks();
   }
 
   const response = await fetch(`${apiBaseUrl()}/tasks`, { cache: "no-store" });
@@ -53,8 +53,8 @@ export async function fetchTasks(): Promise<Task[]> {
 }
 
 export async function fetchRepositoryQueues(): Promise<RepositoryQueueSummary[]> {
-  if (isDemoMode()) {
-    return demoFetchRepositoryQueues();
+  if (isMockDataMode()) {
+    return mockFetchRepositoryQueues();
   }
 
   const response = await fetch(`${apiBaseUrl()}/tasks/repositories`, { cache: "no-store" });
@@ -68,8 +68,8 @@ export async function fetchRepositoryQueues(): Promise<RepositoryQueueSummary[]>
 }
 
 export async function fetchGitHubSync(repositoryId: string): Promise<GitHubSyncState> {
-  if (isDemoMode()) {
-    return demoFetchGitHubSync(repositoryId);
+  if (isMockDataMode()) {
+    return mockFetchGitHubSync(repositoryId);
   }
 
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`, { cache: "no-store" });
@@ -82,8 +82,8 @@ export async function fetchGitHubSync(repositoryId: string): Promise<GitHubSyncS
 }
 
 export async function triggerGitHubSync(repositoryId: string): Promise<GitHubSyncResponse> {
-  if (isDemoMode()) {
-    return demoTriggerGitHubSync(repositoryId);
+  if (isMockDataMode()) {
+    return mockTriggerGitHubSync(repositoryId);
   }
 
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`, {
@@ -101,8 +101,8 @@ export async function triggerGitHubSync(repositoryId: string): Promise<GitHubSyn
 }
 
 export async function fetchProjectKnowledgeGraph(repositoryId: string): Promise<ProjectKnowledgeGraph> {
-  if (isDemoMode()) {
-    return demoFetchProjectKnowledgeGraph(repositoryId);
+  if (isMockDataMode()) {
+    return mockFetchProjectKnowledgeGraph(repositoryId);
   }
 
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph`, { cache: "no-store" });
@@ -115,8 +115,8 @@ export async function fetchProjectKnowledgeGraph(repositoryId: string): Promise<
 }
 
 export async function fetchRepositoryOnboarding(repositoryId: string): Promise<RepositoryOnboarding> {
-  if (isDemoMode()) {
-    return demoFetchRepositoryOnboarding(repositoryId);
+  if (isMockDataMode()) {
+    return mockFetchRepositoryOnboarding(repositoryId);
   }
 
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/onboarding`, { cache: "no-store" });
@@ -129,8 +129,8 @@ export async function fetchRepositoryOnboarding(repositoryId: string): Promise<R
 }
 
 export async function fetchRepositoryContextFiles(repositoryId: string): Promise<RepositoryContextFile[]> {
-  if (isDemoMode()) {
-    return demoFetchRepositoryContextFiles(repositoryId);
+  if (isMockDataMode()) {
+    return mockFetchRepositoryContextFiles(repositoryId);
   }
 
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/context-files`, { cache: "no-store" });
@@ -148,8 +148,8 @@ export async function saveRepositoryContextFile(input: {
   path: string;
   content: string;
 }): Promise<RepositoryContextFile[]> {
-  if (isDemoMode()) {
-    return demoSaveRepositoryContextFile(input);
+  if (isMockDataMode()) {
+    return mockSaveRepositoryContextFile(input);
   }
 
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/context-files`, {
@@ -173,8 +173,8 @@ export async function saveRepositoryContextFile(input: {
 }
 
 export async function generateProjectKnowledgeGraph(input: { repositoryId: string; full?: boolean }): Promise<ProjectKnowledgeGraph> {
-  if (isDemoMode()) {
-    return demoGenerateProjectKnowledgeGraph(input);
+  if (isMockDataMode()) {
+    return mockGenerateProjectKnowledgeGraph(input);
   }
 
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/knowledge-graph/generate`, {
@@ -194,8 +194,8 @@ export async function generateProjectKnowledgeGraph(input: { repositoryId: strin
 }
 
 export async function openProjectKnowledgeGraphDashboard(repositoryId: string): Promise<ProjectKnowledgeGraph> {
-  if (isDemoMode()) {
-    return demoOpenProjectKnowledgeGraphDashboard(repositoryId);
+  if (isMockDataMode()) {
+    return mockOpenProjectKnowledgeGraphDashboard(repositoryId);
   }
 
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph/dashboard`, {
@@ -213,8 +213,8 @@ export async function openProjectKnowledgeGraphDashboard(repositoryId: string): 
 }
 
 export async function fetchTrace(taskId: string): Promise<TaskTrace> {
-  if (isDemoMode()) {
-    return demoFetchTrace(taskId);
+  if (isMockDataMode()) {
+    return mockFetchTrace(taskId);
   }
 
   const response = await fetch(`${apiBaseUrl()}/tasks/${taskId}/trace`, { cache: "no-store" });
@@ -228,8 +228,8 @@ export async function fetchTrace(taskId: string): Promise<TaskTrace> {
 }
 
 export async function approveTaskPrd(taskId: string): Promise<Task> {
-  if (isDemoMode()) {
-    return demoApproveTaskPrd(taskId);
+  if (isMockDataMode()) {
+    return mockApproveTaskPrd(taskId);
   }
 
   const response = await fetch(`${apiBaseUrl()}/tasks/${encodeURIComponent(taskId)}/approve-prd`, {
@@ -247,8 +247,8 @@ export async function approveTaskPrd(taskId: string): Promise<Task> {
 }
 
 export async function fetchMemories(status: MemoryStatus): Promise<MemoryRecord[]> {
-  if (isDemoMode()) {
-    return demoFetchMemories(status);
+  if (isMockDataMode()) {
+    return mockFetchMemories(status);
   }
 
   const response = await fetch(`${apiBaseUrl()}/memories?status=${status}`, { cache: "no-store" });
@@ -262,8 +262,8 @@ export async function fetchMemories(status: MemoryStatus): Promise<MemoryRecord[
 }
 
 export async function updateMemoryStatus(input: { id: string; status: Extract<MemoryStatus, "approved" | "rejected"> }): Promise<MemoryRecord> {
-  if (isDemoMode()) {
-    return demoUpdateMemoryStatus(input);
+  if (isMockDataMode()) {
+    return mockUpdateMemoryStatus(input);
   }
 
   const response = await fetch(`${apiBaseUrl()}/memories/${input.id}/${input.status === "approved" ? "approve" : "reject"}`, {

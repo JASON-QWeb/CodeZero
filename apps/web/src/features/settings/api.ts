@@ -7,22 +7,22 @@ import type {
   RepositoryRuntimeSettingsInput,
   ValidationResponse,
 } from "./types";
-import { isDemoMode } from "../demo-mode";
+import { isMockDataMode } from "../mock-data-mode";
 import {
-  demoFetchConfig,
-  demoSaveConfig,
-  demoSaveProviderApiKey,
-  demoUpdateRepositoryRuntimeSettings,
-  demoValidateConfig,
-  demoValidateProviderConnection,
+  mockFetchConfig,
+  mockSaveConfig,
+  mockSaveProviderApiKey,
+  mockUpdateRepositoryRuntimeSettings,
+  mockValidateConfig,
+  mockValidateProviderConnection,
 } from "./mock-data";
 
 export const apiBaseUrl = () =>
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export async function fetchConfig(): Promise<ConfigResponse> {
-  if (isDemoMode()) {
-    return demoFetchConfig();
+  if (isMockDataMode()) {
+    return mockFetchConfig();
   }
 
   const response = await fetch(`${apiBaseUrl()}/settings/config`, {
@@ -40,8 +40,8 @@ export async function validateConfig(input: {
   section: ConfigSectionName;
   content: string;
 }): Promise<ValidationResponse> {
-  if (isDemoMode()) {
-    return demoValidateConfig(input);
+  if (isMockDataMode()) {
+    return mockValidateConfig(input);
   }
 
   const response = await fetch(
@@ -65,8 +65,8 @@ export async function saveConfig(input: {
   section: ConfigSectionName;
   content: string;
 }): Promise<ConfigSection> {
-  if (isDemoMode()) {
-    return demoSaveConfig(input);
+  if (isMockDataMode()) {
+    return mockSaveConfig(input);
   }
 
   const response = await fetch(
@@ -93,8 +93,8 @@ export async function validateProviderConnection(input: {
   providerId: string;
   apiKey?: string;
 }): Promise<ProviderValidationResponse> {
-  if (isDemoMode()) {
-    return demoValidateProviderConnection(input);
+  if (isMockDataMode()) {
+    return mockValidateProviderConnection(input);
   }
 
   const response = await fetch(`${apiBaseUrl()}/settings/providers/validate`, {
@@ -124,8 +124,8 @@ export async function saveProviderApiKey(input: {
   providerId: string;
   apiKey: string;
 }): Promise<ProviderApiKeySaveResponse> {
-  if (isDemoMode()) {
-    return demoSaveProviderApiKey(input);
+  if (isMockDataMode()) {
+    return mockSaveProviderApiKey(input);
   }
 
   const response = await fetch(`${apiBaseUrl()}/settings/providers/api-key`, {
@@ -153,8 +153,8 @@ export async function saveProviderApiKey(input: {
 export async function updateRepositoryRuntimeSettings(
   input: RepositoryRuntimeSettingsInput,
 ): Promise<ConfigSection> {
-  if (isDemoMode()) {
-    return demoUpdateRepositoryRuntimeSettings(input);
+  if (isMockDataMode()) {
+    return mockUpdateRepositoryRuntimeSettings(input);
   }
 
   const response = await fetch(

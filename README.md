@@ -29,22 +29,22 @@
 
 <br />
 
-## 🎬 Demo
+## 🎬 Showcase
 
 <!-- 
-  GIF Demo Placeholders — replace the comments below with your actual GIF paths or URLs.
-  Example: ![Description](./assets/demo-xxx.gif)
+  GIF placeholders — replace the comments below with your actual GIF paths or URLs.
+  Example: ![Description](./assets/showcase-xxx.gif)
 -->
 
 <div align="center">
 
-<!-- ![Create Issue → Auto PRD](./assets/demo-issue-to-prd.gif) -->
+<!-- ![Create Issue → Auto PRD](./assets/showcase-issue-to-prd.gif) -->
 > 🎥 **Issue → PRD Generation** — _GIF coming soon_
 
-<!-- ![Live Agent Progress](./assets/demo-live-progress.gif) -->
+<!-- ![Live Agent Progress](./assets/showcase-live-progress.gif) -->
 > 🎥 **Live Agent Coding Progress** — _GIF coming soon_
 
-<!-- ![Draft PR with Verification](./assets/demo-draft-pr.gif) -->
+<!-- ![Draft PR with Verification](./assets/showcase-draft-pr.gif) -->
 > 🎥 **Auto Draft PR with Verification Evidence** — _GIF coming soon_
 
 </div>
@@ -253,15 +253,15 @@ pnpm dev:web      # Web console
 
 Open the **Run Console** at [`http://localhost:3000`](http://localhost:3000) 🎉
 
-### Demo Mode
+### Mock Data Mode
 
 For screenshots or GIF capture, enable deterministic frontend mock data without starting the API, worker, GitHub sync, or local repository indexing:
 
 ```bash
-NEXT_PUBLIC_DEMO_MODE=1 pnpm dev:web
+NEXT_PUBLIC_MOCK_DATA=1 pnpm dev:web
 ```
 
-Demo mode uses fictional `demo-labs/*` repositories, fixed timestamps, sanitized settings, generated trace events, CodeGraph summaries, context files, and proposed memories. Runtime artifacts still write to local ignored folders such as `output/`.
+Mock data mode uses the configured project repositories, fixed timestamps, sanitized settings, generated trace events, CodeGraph summaries, context files, and proposed memories. Runtime artifacts still write to local ignored folders such as `output/`.
 
 ---
 

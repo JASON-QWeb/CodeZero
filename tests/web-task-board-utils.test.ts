@@ -23,7 +23,7 @@ describe("web task board utilities", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     delete process.env.NEXT_PUBLIC_API_URL;
-    delete process.env.NEXT_PUBLIC_DEMO_MODE;
+    delete process.env.NEXT_PUBLIC_MOCK_DATA;
   });
 
   it("summarizes sample tasks by repository status buckets", () => {
@@ -103,9 +103,9 @@ describe("web task board utilities", () => {
           files: [
             {
               kind: "skill",
-              path: ".agent/skills/refunds/SKILL.md",
-              name: "refunds",
-              content: "# Refunds\n"
+              path: ".agent/skills/repository-rules/SKILL.md",
+              name: "repository-rules",
+              content: "# Repository Rules\n"
             }
           ]
         });
@@ -133,8 +133,8 @@ describe("web task board utilities", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/tasks");
   });
 
-  it("serves deterministic task board demo data without network calls", async () => {
-    process.env.NEXT_PUBLIC_DEMO_MODE = "1";
+  it("serves deterministic task board mock data without network calls", async () => {
+    process.env.NEXT_PUBLIC_MOCK_DATA = "1";
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -144,7 +144,7 @@ describe("web task board utilities", () => {
     const memories = await fetchMemories("proposed");
 
     expect(tasks.length).toBeGreaterThan(3);
-    expect(repositories.map((repository) => repository.fullName)).toContain("demo-labs/nova-commerce");
+    expect(repositories.map((repository) => repository.fullName)).toContain("JASON-QWeb/CodeZero");
     expect(memories.length).toBeGreaterThan(0);
     await expect(fetchTrace(tasks[0]?.id ?? "")).resolves.toMatchObject({ taskId: tasks[0]?.id });
     await expect(fetchProjectKnowledgeGraph(repositoryId)).resolves.toMatchObject({ status: "ready" });
@@ -152,14 +152,14 @@ describe("web task board utilities", () => {
     await expect(fetchRepositoryContextFiles(repositoryId)).resolves.toHaveLength(2);
     await expect(triggerGitHubSync(repositoryId)).resolves.toMatchObject({ sync: { status: "finished" } });
     await expect(generateProjectKnowledgeGraph({ repositoryId })).resolves.toMatchObject({ graphAvailable: true });
-    await expect(openProjectKnowledgeGraphDashboard(repositoryId)).resolves.toMatchObject({ dashboardUrl: expect.stringContaining("/demo/") });
+    await expect(openProjectKnowledgeGraphDashboard(repositoryId)).resolves.toMatchObject({ dashboardUrl: expect.stringContaining("/snapshot/") });
     await expect(approveTaskPrd(tasks[1]?.id ?? "")).resolves.toMatchObject({ status: "PRD_APPROVED" });
     await expect(saveRepositoryContextFile({
       repositoryId,
       kind: "rule",
-      path: ".agent/rules/demo-recording.md",
-      content: "# Demo Recording\n"
-    })).resolves.toContainEqual(expect.objectContaining({ path: ".agent/rules/demo-recording.md" }));
+      path: ".agent/rules/screenshot-recording.md",
+      content: "# Screenshot Recording\n"
+    })).resolves.toContainEqual(expect.objectContaining({ path: ".agent/rules/screenshot-recording.md" }));
     await expect(updateMemoryStatus({ id: memories[0]?.id ?? "", status: "approved" })).resolves.toMatchObject({ status: "approved" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -204,14 +204,14 @@ const mockTasks: Task[] = [
       repo: "commerce",
       number: 128,
       url: "https://github.com/sample/commerce/issues/128",
-      title: "Fix refund status copy on order detail",
+      title: "Add project rule context to agent prompt",
       body: "",
       labels: ["frontend"],
       comments: [],
       baseBranch: "main"
     },
     status: "SUBAGENT_REVIEWING",
-    branchName: "agent/issue-128-fix-refund-status-copy",
+    branchName: "agent/issue-128-project-rule-context",
     prUrl: "https://github.com/sample/commerce/pull/129",
     createdAt: timestamp,
     updatedAt: timestamp
@@ -224,14 +224,14 @@ const mockTasks: Task[] = [
       repo: "commerce",
       number: 129,
       url: "https://github.com/sample/commerce/issues/129",
-      title: "Add checkout rate limit copy",
+      title: "Refresh repository settings summary after save",
       body: "",
       labels: ["backend"],
       comments: [],
       baseBranch: "main"
     },
     status: "QUEUED",
-    branchName: "agent/issue-129-add-checkout-rate-limit-copy",
+    branchName: "agent/issue-129-refresh-settings-summary",
     createdAt: timestamp,
     updatedAt: timestamp
   },

@@ -8,20 +8,20 @@ import type {
   ValidationResponse,
 } from "./types";
 
-type DemoSection = ConfigSection & {
+type MockSection = ConfigSection & {
   parsed: Record<string, unknown>;
 };
 
 let sectionsState = createSections();
 
-export async function demoFetchConfig(): Promise<ConfigResponse> {
+export async function mockFetchConfig(): Promise<ConfigResponse> {
   return {
-    rootDir: "/demo/codezero",
+    rootDir: "/workspace/codezero",
     sections: clone(sectionsState),
   };
 }
 
-export async function demoValidateConfig(input: {
+export async function mockValidateConfig(input: {
   section: ConfigSectionName;
   content: string;
 }): Promise<ValidationResponse> {
@@ -29,11 +29,11 @@ export async function demoValidateConfig(input: {
     section: input.section,
     valid: true,
     parsed: sectionFor(input.section).parsed,
-    message: "Demo mode: YAML validation simulated successfully.",
+    message: "Mock data mode: YAML validation simulated successfully.",
   };
 }
 
-export async function demoSaveConfig(input: {
+export async function mockSaveConfig(input: {
   section: ConfigSectionName;
   content: string;
 }): Promise<ConfigSection> {
@@ -49,33 +49,33 @@ export async function demoSaveConfig(input: {
   return clone(sectionFor(input.section));
 }
 
-export async function demoValidateProviderConnection(input: {
+export async function mockValidateProviderConnection(input: {
   providerId: string;
 }): Promise<ProviderValidationResponse> {
   return {
     providerId: input.providerId,
     valid: true,
-    message: "Demo mode: provider connection looks healthy.",
+    message: "Mock data mode: provider connection looks healthy.",
     baseUrl: "https://api.example.invalid/v1",
-    model: "demo-agent-pro",
+    model: "codezero-agent-pro",
     statusCode: 200,
     latencyMs: 184,
     usedApiKeySource: "request",
   };
 }
 
-export async function demoSaveProviderApiKey(input: {
+export async function mockSaveProviderApiKey(input: {
   providerId: string;
 }): Promise<ProviderApiKeySaveResponse> {
   return {
     providerId: input.providerId,
     apiKeyEnv: "OPENAI_API_KEY",
     saved: true,
-    message: "Demo mode: API key was not stored.",
+    message: "Mock data mode: API key was not stored.",
   };
 }
 
-export async function demoUpdateRepositoryRuntimeSettings(
+export async function mockUpdateRepositoryRuntimeSettings(
   input: RepositoryRuntimeSettingsInput,
 ): Promise<ConfigSection> {
   const repositoriesSection = sectionFor("repositories");
@@ -102,7 +102,7 @@ export async function demoUpdateRepositoryRuntimeSettings(
         }
       : repository,
   );
-  const nextSection: DemoSection = {
+  const nextSection: MockSection = {
     ...repositoriesSection,
     content: repositoriesYaml(parsed.repositories ?? []),
     parsed,
@@ -114,7 +114,7 @@ export async function demoUpdateRepositoryRuntimeSettings(
   return clone(nextSection);
 }
 
-function createSections(): DemoSection[] {
+function createSections(): MockSection[] {
   return [
     section("agents", agentsYaml(), {
       providers: {
@@ -122,7 +122,7 @@ function createSections(): DemoSection[] {
           type: "openai-compatible",
           base_url: "${OPENAI_BASE_URL}",
           api_key_env: "OPENAI_API_KEY",
-          model: "demo-agent-pro",
+          model: "codezero-agent-pro",
           supports_tools: true,
           supports_structured_output: true,
         },
@@ -139,14 +139,14 @@ function createSections(): DemoSection[] {
     section("sandbox", sandboxYaml(), {
       sandbox: {
         mode: "worktree",
-        image: "agent-sandbox-node:demo",
+        image: "agent-sandbox-node:local",
         root_dir: "./sandboxes",
       },
     }),
     section("policies", policiesYaml(), {
       policies: [
         { id: "block-secret-files", action: "block" },
-        { id: "require-demo-sanitization", action: "require_approval" },
+        { id: "require-screenshot-sanitization", action: "require_approval" },
       ],
     }),
     section("tools", toolsYaml(), {
@@ -163,9 +163,9 @@ function createSections(): DemoSection[] {
 function seedRepositories(): Array<Record<string, unknown>> {
   return [
     {
-      id: "demo-labs/nova-commerce",
-      github_owner: "demo-labs",
-      github_repo: "nova-commerce",
+      id: "JASON-QWeb/CodeZero",
+      github_owner: "JASON-QWeb",
+      github_repo: "CodeZero",
       default_branch: "main",
       project_skill_path: ".agent",
       project_rule_path: ".agent/rules",
@@ -177,9 +177,9 @@ function seedRepositories(): Array<Record<string, unknown>> {
       },
     },
     {
-      id: "demo-labs/atlas-crm",
-      github_owner: "demo-labs",
-      github_repo: "atlas-crm",
+      id: "JASON-QWeb/BeautySkillsHub",
+      github_owner: "JASON-QWeb",
+      github_repo: "BeautySkillsHub",
       default_branch: "main",
       project_skill_path: ".agent",
       project_rule_path: ".agent/rules",
@@ -190,20 +190,6 @@ function seedRepositories(): Array<Record<string, unknown>> {
         blocked_permissions: ["external_write", "dangerous"],
       },
     },
-    {
-      id: "demo-labs/docs-hub",
-      github_owner: "demo-labs",
-      github_repo: "docs-hub",
-      default_branch: "main",
-      project_skill_path: ".agent",
-      project_rule_path: ".agent/rules",
-      trigger: { mode: "manual", mention: "@agent-prd" },
-      queue: { max_concurrent_issues: 1 },
-      permissions: {
-        allowed_permissions: ["read", "safe_write"],
-        blocked_permissions: ["repo_write", "external_write", "dangerous"],
-      },
-    },
   ];
 }
 
@@ -211,11 +197,11 @@ function section(
   sectionName: ConfigSectionName,
   content: string,
   parsed: Record<string, unknown>,
-): DemoSection {
+): MockSection {
   return {
     section: sectionName,
-    path: `demo://config/${sectionName}.yaml`,
-    templatePath: `demo://config/${sectionName}.example.yaml`,
+    path: `mock://config/${sectionName}.yaml`,
+    templatePath: `mock://config/${sectionName}.example.yaml`,
     exists: true,
     content,
     parsed,
@@ -223,11 +209,11 @@ function section(
   };
 }
 
-function sectionFor(sectionName: ConfigSectionName): DemoSection {
+function sectionFor(sectionName: ConfigSectionName): MockSection {
   const section = sectionsState.find((item) => item.section === sectionName);
 
   if (!section) {
-    throw new Error(`Demo settings section '${sectionName}' is unavailable`);
+    throw new Error(`Mock settings section '${sectionName}' is unavailable`);
   }
 
   return section;
@@ -240,7 +226,7 @@ function agentsYaml(): string {
     "    type: openai-compatible",
     "    base_url: ${OPENAI_BASE_URL}",
     "    api_key_env: OPENAI_API_KEY",
-    "    model: demo-agent-pro",
+    "    model: codezero-agent-pro",
     "    supports_tools: true",
     "    supports_structured_output: true",
     "",
@@ -293,7 +279,7 @@ function sandboxYaml(): string {
   return [
     "sandbox:",
     "  mode: worktree",
-    "  image: agent-sandbox-node:demo",
+    "  image: agent-sandbox-node:local",
     "  root_dir: ./sandboxes",
     "  network:",
     "    allow:",
@@ -309,14 +295,14 @@ function policiesYaml(): string {
   return [
     "policies:",
     "  - id: block-secret-files",
-    "    description: Demo branch blocks secrets and private keys.",
+    "    description: Screenshot data blocks secrets and private keys.",
     "    match_paths:",
     "      - .env*",
     "      - '**/*.pem'",
     "      - '**/*.key'",
     "    action: block",
-    "  - id: require-demo-sanitization",
-    "    description: Demo screenshots must use sanitized sample data.",
+    "  - id: require-screenshot-sanitization",
+    "    description: Screenshots must use sanitized sample data.",
     "    match_paths:",
     "      - apps/web/**",
     "    action: require_approval",

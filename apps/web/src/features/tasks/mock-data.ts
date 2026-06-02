@@ -27,82 +27,82 @@ const yesterday = "2026-06-01T14:20:00.000Z";
 
 const seededTasks: Task[] = [
   createTask({
-    id: "demo-task-128",
-    owner: "demo-labs",
-    repo: "nova-commerce",
+    id: "mock-task-128",
+    owner: "JASON-QWeb",
+    repo: "CodeZero",
     number: 128,
-    title: "优化订单详情页的退款状态提示",
+    title: "将项目规则目录纳入 agent 上下文",
     status: "QUALITY_GATES_RUNNING",
-    branchName: "agent/issue-128-refund-status-copy",
-    prUrl: "https://github.com/demo-labs/nova-commerce/pull/136",
-    labels: ["frontend", "agent-ready", "checkout"],
+    branchName: "agent/issue-128-project-rule-context",
+    prUrl: "https://github.com/JASON-QWeb/CodeZero/pull/136",
+    labels: ["workflow", "agent-ready", "project-rules"],
     updatedAt: now,
-    taskType: "frontend",
+    taskType: "fullstack",
     riskLevel: "medium",
   }),
   createTask({
-    id: "demo-task-129",
-    owner: "demo-labs",
-    repo: "nova-commerce",
+    id: "mock-task-129",
+    owner: "JASON-QWeb",
+    repo: "CodeZero",
     number: 129,
-    title: "为结账失败增加风控限流说明",
+    title: "设置控制台保存仓库规则路径后刷新摘要",
     status: "PRD_REVIEW_REQUIRED",
-    branchName: "agent/issue-129-checkout-rate-limit-copy",
-    labels: ["fullstack", "prd-review"],
+    branchName: "agent/issue-129-refresh-rule-path-summary",
+    labels: ["frontend", "settings", "prd-review"],
     updatedAt: "2026-06-02T07:10:00.000Z",
     taskType: "fullstack",
     riskLevel: "medium",
   }),
   createTask({
-    id: "demo-task-130",
-    owner: "demo-labs",
-    repo: "nova-commerce",
+    id: "mock-task-130",
+    owner: "JASON-QWeb",
+    repo: "CodeZero",
     number: 130,
-    title: "补齐移动端支付失败页截图校验",
+    title: "PR 本地验证说明补充截图证据分组",
     status: "WAITING_MERGE",
-    branchName: "agent/issue-130-mobile-payment-screenshot",
-    prUrl: "https://github.com/demo-labs/nova-commerce/pull/139",
-    labels: ["frontend", "visual-qa"],
+    branchName: "agent/issue-130-pr-verification-screenshots",
+    prUrl: "https://github.com/JASON-QWeb/CodeZero/pull/139",
+    labels: ["workflow", "verification"],
     updatedAt: "2026-06-02T05:58:00.000Z",
-    taskType: "frontend",
+    taskType: "docs",
     riskLevel: "low",
   }),
   createTask({
-    id: "demo-task-204",
-    owner: "demo-labs",
-    repo: "atlas-crm",
+    id: "mock-task-204",
+    owner: "JASON-QWeb",
+    repo: "BeautySkillsHub",
     number: 204,
-    title: "修复客户详情页最近活动排序",
+    title: "仓库 onboarding 文档预览补充规则文件",
     status: "IMPLEMENTING",
-    branchName: "agent/issue-204-activity-order",
-    labels: ["backend", "data"],
+    branchName: "agent/issue-204-onboarding-rule-preview",
+    labels: ["codegraph", "docs"],
     updatedAt: earlier,
-    taskType: "backend",
+    taskType: "fullstack",
     riskLevel: "low",
   }),
   createTask({
-    id: "demo-task-205",
-    owner: "demo-labs",
-    repo: "atlas-crm",
+    id: "mock-task-205",
+    owner: "JASON-QWeb",
+    repo: "BeautySkillsHub",
     number: 205,
-    title: "导入销售线索时提示重复邮箱",
+    title: "同步 GitHub 评论时识别 Agent 自检回复",
     status: "QUEUED",
-    branchName: "agent/issue-205-lead-import-duplicates",
-    labels: ["fullstack"],
+    branchName: "agent/issue-205-agent-self-check-sync",
+    labels: ["github-sync", "feedback-loop"],
     updatedAt: "2026-06-02T04:33:00.000Z",
-    taskType: "fullstack",
+    taskType: "backend",
     riskLevel: "medium",
   }),
   createTask({
-    id: "demo-task-88",
-    owner: "demo-labs",
-    repo: "docs-hub",
+    id: "mock-task-88",
+    owner: "JASON-QWeb",
+    repo: "CodeZero",
     number: 88,
-    title: "更新新成员 onboarding 文档结构",
+    title: "中文 README 补齐设置控制台说明",
     status: "DONE",
-    branchName: "agent/issue-88-onboarding-docs",
-    prUrl: "https://github.com/demo-labs/docs-hub/pull/91",
-    labels: ["docs", "knowledge-base"],
+    branchName: "agent/issue-88-zh-readme-settings-console",
+    prUrl: "https://github.com/JASON-QWeb/CodeZero/pull/91",
+    labels: ["docs", "zh-CN"],
     updatedAt: yesterday,
     taskType: "docs",
     riskLevel: "low",
@@ -113,48 +113,48 @@ let tasksState = clone(seededTasks);
 
 const seededMemories: MemoryRecord[] = [
   {
-    id: "demo-memory-verification",
+    id: "mock-memory-verification",
     kind: "procedural",
     status: "proposed",
     scope: "repository",
-    owner: "demo-labs",
-    repo: "nova-commerce",
-    title: "前端任务的稳定验证顺序",
+    owner: "JASON-QWeb",
+    repo: "CodeZero",
+    title: "控制台改动的稳定验证顺序",
     content:
-      "类似结账和订单详情 UI 改动，先跑 pnpm lint、pnpm typecheck、pnpm test，再补桌面和移动端截图证据。",
-    tags: ["verification", "frontend", "screenshots"],
+      "涉及任务看板、设置控制台或截图证据的改动，先跑 pnpm lint、pnpm typecheck、pnpm test，再补桌面和移动端截图。",
+    tags: ["verification", "frontend", "screenshots", "settings-console"],
     confidence: 0.86,
-    sourceTaskId: "demo-task-128",
+    sourceTaskId: "mock-task-128",
     createdAt: earlier,
     updatedAt: now,
   },
   {
-    id: "demo-memory-policy",
+    id: "mock-memory-policy",
     kind: "policy",
     status: "proposed",
     scope: "repository",
-    owner: "demo-labs",
-    repo: "atlas-crm",
-    title: "客户数据字段不得出现在截图中",
+    owner: "JASON-QWeb",
+    repo: "CodeZero",
+    title: "截图素材不得暴露本地路径和凭据",
     content:
-      "演示录屏只展示脱敏公司名、模拟邮箱和固定时间戳；不要使用真实客户名称、合同编号或内部 owner。",
-    tags: ["privacy", "demo", "crm"],
+      "录屏和截图只展示公开仓库名、脱敏路径和固定时间戳；不要出现 API key、GitHub token、个人邮箱或 /Users 本地路径。",
+    tags: ["privacy", "screenshots", "local-data"],
     confidence: 0.91,
-    sourceTaskId: "demo-task-204",
+    sourceTaskId: "mock-task-204",
     createdAt: earlier,
     updatedAt: now,
   },
   {
-    id: "demo-memory-contextpack",
+    id: "mock-memory-contextpack",
     kind: "semantic",
     status: "proposed",
     scope: "global",
     title: "ContextPack 面板的讲解重点",
     content:
-      "录制 demo 时先展示 CodeGraph，再切到 ContextPack，说明 agent 只读取少量高相关文件来控制上下文成本。",
-    tags: ["demo", "context-pack", "knowledge-graph"],
+      "录制素材时先展示 CodeGraph，再切到 ContextPack，说明 agent 只读取少量高相关文件来控制上下文成本。",
+    tags: ["context-pack", "knowledge-graph", "recording"],
     confidence: 0.79,
-    sourceTaskId: "demo-task-128",
+    sourceTaskId: "mock-task-128",
     createdAt: yesterday,
     updatedAt: earlier,
   },
@@ -164,51 +164,51 @@ let memoriesState = clone(seededMemories);
 
 const seededContextFiles = new Map<string, RepositoryContextFile[]>([
   [
-    "demo-labs/nova-commerce",
+    "JASON-QWeb/CodeZero",
     [
       {
         kind: "skill",
-        path: ".agent/skills/checkout-copy/SKILL.md",
-        name: "checkout-copy",
+        path: ".agent/skills/settings-console/SKILL.md",
+        name: "settings-console",
         content:
-          "# Checkout Copy\n\nUse short, user-facing Chinese copy for checkout failures. Mention the next action before internal error details.\n",
+          "# Settings Console\n\nWhen changing runtime configuration, keep repository quick settings, YAML validation, and saved section summaries in sync.\n",
         updatedAt: now,
       },
       {
         kind: "rule",
-        path: ".agent/rules/privacy.md",
-        name: "privacy",
+        path: ".agent/rules/chinese-docs.md",
+        name: "chinese-docs",
         content:
-          "# Privacy Rule\n\nDemo screenshots must use masked customer names, test order ids, and fixed example timestamps.\n",
+          "# Chinese Docs\n\n文档默认使用中文；README 保持英文和中文两份，并且两边都要覆盖新增配置入口。\n",
         updatedAt: now,
       },
       {
         kind: "rule",
-        path: ".agent/rules/visual-qa.md",
-        name: "visual-qa",
+        path: ".agent/rules/screenshot-safety.md",
+        name: "screenshot-safety",
         content:
-          "# Visual QA\n\nCapture desktop and mobile screenshots for checkout, order detail, and payment failure flows before opening PRs.\n",
+          "# Screenshot Safety\n\nBefore publishing screenshots, remove local paths, personal account details, tokens, and raw runtime output.\n",
         updatedAt: earlier,
       },
     ],
   ],
   [
-    "demo-labs/atlas-crm",
+    "JASON-QWeb/BeautySkillsHub",
     [
       {
         kind: "skill",
-        path: ".agent/skills/crm-activity/SKILL.md",
-        name: "crm-activity",
+        path: ".agent/skills/repository-onboarding/SKILL.md",
+        name: "repository-onboarding",
         content:
-          "# CRM Activity\n\nSort recent activity by server event time, then use client display time only for rendering.\n",
+          "# Repository Onboarding\n\nUse generated project documents, rule files, and code graph summaries before planning implementation work.\n",
         updatedAt: earlier,
       },
       {
         kind: "rule",
-        path: ".agent/rules/demo-data.md",
-        name: "demo-data",
+        path: ".agent/rules/agent-review.md",
+        name: "agent-review",
         content:
-          "# Demo Data\n\nUse fictional company names and non-routable emails for demo recordings.\n",
+          "# Agent Review\n\nEvery agent-authored PR needs local verification notes, review risk, and a concise change scope.\n",
         updatedAt: earlier,
       },
     ],
@@ -217,23 +217,23 @@ const seededContextFiles = new Map<string, RepositoryContextFile[]>([
 
 const contextFilesState = cloneContextFiles(seededContextFiles);
 
-export async function demoFetchTasks(): Promise<Task[]> {
+export async function mockFetchTasks(): Promise<Task[]> {
   return clone(tasksState);
 }
 
-export async function demoFetchRepositoryQueues(): Promise<
+export async function mockFetchRepositoryQueues(): Promise<
   RepositoryQueueSummary[]
 > {
-  return buildDemoRepositorySummaries(tasksState);
+  return buildMockRepositorySummaries(tasksState);
 }
 
-export async function demoFetchGitHubSync(
+export async function mockFetchGitHubSync(
   repositoryId: string,
 ): Promise<GitHubSyncState> {
   return clone(githubSyncState(repositoryId, "finished"));
 }
 
-export async function demoTriggerGitHubSync(
+export async function mockTriggerGitHubSync(
   repositoryId: string,
 ): Promise<GitHubSyncResponse> {
   return {
@@ -242,40 +242,40 @@ export async function demoTriggerGitHubSync(
   };
 }
 
-export async function demoFetchProjectKnowledgeGraph(
+export async function mockFetchProjectKnowledgeGraph(
   repositoryId: string,
 ): Promise<ProjectKnowledgeGraph> {
   return clone(knowledgeGraphFor(repositoryId));
 }
 
-export async function demoGenerateProjectKnowledgeGraph(input: {
+export async function mockGenerateProjectKnowledgeGraph(input: {
   repositoryId: string;
 }): Promise<ProjectKnowledgeGraph> {
   return clone(knowledgeGraphFor(input.repositoryId));
 }
 
-export async function demoOpenProjectKnowledgeGraphDashboard(
+export async function mockOpenProjectKnowledgeGraphDashboard(
   repositoryId: string,
 ): Promise<ProjectKnowledgeGraph> {
   return clone({
     ...knowledgeGraphFor(repositoryId),
-    dashboardUrl: `http://localhost:8787/demo/${repositorySlug(repositoryId)}`,
+    dashboardUrl: `http://localhost:8787/snapshot/${repositorySlug(repositoryId)}`,
   });
 }
 
-export async function demoFetchRepositoryOnboarding(
+export async function mockFetchRepositoryOnboarding(
   repositoryId: string,
 ): Promise<RepositoryOnboarding> {
   return clone(onboardingFor(repositoryId));
 }
 
-export async function demoFetchRepositoryContextFiles(
+export async function mockFetchRepositoryContextFiles(
   repositoryId: string,
 ): Promise<RepositoryContextFile[]> {
   return clone(contextFilesState.get(repositoryId) ?? []);
 }
 
-export async function demoSaveRepositoryContextFile(input: {
+export async function mockSaveRepositoryContextFile(input: {
   repositoryId: string;
   kind: RepositoryContextFileKind;
   path: string;
@@ -297,17 +297,17 @@ export async function demoSaveRepositoryContextFile(input: {
   return clone(next);
 }
 
-export async function demoFetchTrace(taskId: string): Promise<TaskTrace> {
+export async function mockFetchTrace(taskId: string): Promise<TaskTrace> {
   const task = tasksState.find((item) => item.id === taskId) ?? tasksState[0];
 
   if (!task) {
-    throw new Error("Demo task trace is unavailable");
+    throw new Error("Mock task trace is unavailable");
   }
 
   return clone(traceFor(task));
 }
 
-export async function demoApproveTaskPrd(taskId: string): Promise<Task> {
+export async function mockApproveTaskPrd(taskId: string): Promise<Task> {
   tasksState = tasksState.map((task) =>
     task.id === taskId
       ? {
@@ -320,19 +320,19 @@ export async function demoApproveTaskPrd(taskId: string): Promise<Task> {
   const task = tasksState.find((item) => item.id === taskId);
 
   if (!task) {
-    throw new Error("Demo task is unavailable");
+    throw new Error("Mock task is unavailable");
   }
 
   return clone(task);
 }
 
-export async function demoFetchMemories(
+export async function mockFetchMemories(
   status: MemoryStatus,
 ): Promise<MemoryRecord[]> {
   return clone(memoriesState.filter((memory) => memory.status === status));
 }
 
-export async function demoUpdateMemoryStatus(input: {
+export async function mockUpdateMemoryStatus(input: {
   id: string;
   status: Extract<MemoryStatus, "approved" | "rejected">;
 }): Promise<MemoryRecord> {
@@ -351,7 +351,7 @@ export async function demoUpdateMemoryStatus(input: {
   });
 
   if (!updated) {
-    throw new Error("Demo memory is unavailable");
+    throw new Error("Mock memory is unavailable");
   }
 
   return clone(updated);
@@ -381,13 +381,13 @@ function createTask(input: {
       url: `https://github.com/${input.owner}/${input.repo}/issues/${input.number}`,
       title: input.title,
       body: [
-        "Demo issue generated for screenshots and GIF capture.",
-        "No customer data, real repository path, or personal account data is included.",
+        "Seeded issue generated for screenshots and GIF capture.",
+        "No token, personal account data, or local runtime file is included.",
       ].join("\n"),
       labels: input.labels,
       comments: [
         {
-          author: "product-demo",
+          author: "product-ops",
           body: "请按当前 PRD 流程产出计划，并补充可截图的验证证据。",
           createdAt: earlier,
         },
@@ -415,7 +415,7 @@ function createTask(input: {
         "Trace 面板展示从 Issue 到验证的关键步骤",
         "质量门禁列表展示命令、耗时和结果",
       ],
-      risks: ["真实数据不得进入 demo 截图", "图谱生成状态需要有可解释文案"],
+      risks: ["真实凭据不得进入截图", "图谱生成状态需要有可解释文案"],
       unknowns: ["是否需要单独录制移动端视口"],
       taskType: input.taskType,
       complexity: {
@@ -450,8 +450,8 @@ function createTask(input: {
       taskId: input.id,
       taskSummary: input.title,
       businessRules: [
-        "所有截图使用 demo-labs 虚构组织。",
-        "涉及订单、客户、邮箱的字段必须脱敏。",
+        "截图只展示公开仓库名和脱敏路径。",
+        "涉及 token、本地路径、个人邮箱的字段必须脱敏。",
       ],
       memories: [],
       relevantFiles: [
@@ -507,7 +507,7 @@ function createTask(input: {
       scopeViolations: [],
       riskLevel: input.riskLevel,
       prDescriptionNotes: [
-        "Demo 数据已脱敏。",
+        "截图数据已脱敏。",
         "建议录制主页、仓库详情、上下文文件和 trace 四段。",
       ],
     },
@@ -546,14 +546,13 @@ function qualityGatesFor(status: TaskStatus): Task["qualityGateResults"] {
   }));
 }
 
-function buildDemoRepositorySummaries(
+function buildMockRepositorySummaries(
   tasks: Task[],
 ): RepositoryQueueSummary[] {
   const byRepository = new Map<string, RepositoryQueueSummary>();
   const maxConcurrency = new Map([
-    ["demo-labs/nova-commerce", 3],
-    ["demo-labs/atlas-crm", 2],
-    ["demo-labs/docs-hub", 1],
+    ["JASON-QWeb/CodeZero", 3],
+    ["JASON-QWeb/BeautySkillsHub", 2],
   ]);
 
   for (const task of tasks) {
@@ -614,7 +613,7 @@ function githubSyncState(
   repositoryId: string,
   status: GitHubSyncState["status"],
 ): GitHubSyncState {
-  const [owner = "demo-labs", repo = "nova-commerce"] = repositoryId.split("/");
+  const [owner = "JASON-QWeb", repo = "CodeZero"] = repositoryId.split("/");
 
   return {
     repositoryId,
@@ -654,10 +653,10 @@ function knowledgeGraphFor(repositoryId: string): ProjectKnowledgeGraph {
     graph: {
       projectName: slug,
       analyzedAt: now,
-      nodes: slug === "nova-commerce" ? 1842 : 936,
-      edges: slug === "nova-commerce" ? 4210 : 1886,
+      nodes: slug === "CodeZero" ? 1842 : 936,
+      edges: slug === "CodeZero" ? 4210 : 1886,
     },
-    dashboardUrl: `http://localhost:8787/demo/${slug}`,
+    dashboardUrl: `http://localhost:8787/snapshot/${slug}`,
   };
 }
 
@@ -676,14 +675,14 @@ function onboardingFor(repositoryId: string): RepositoryOnboarding {
       changeDetection: "working-tree-sync",
       databaseFile: `data/codegraph/${slug}/codegraph.db`,
       indexDir: `data/codegraph/${slug}`,
-      durationMs: slug === "nova-commerce" ? 82_440 : 41_220,
-      displayCommand: "codegraph --index --demo",
+      durationMs: slug === "CodeZero" ? 82_440 : 41_220,
+      displayCommand: "codegraph --index --preview",
     },
     summary: {
-      files: slug === "nova-commerce" ? 1284 : 712,
-      symbols: slug === "nova-commerce" ? 6420 : 2915,
-      routes: slug === "docs-hub" ? 18 : 43,
-      tests: slug === "nova-commerce" ? 218 : 96,
+      files: slug === "CodeZero" ? 1284 : 712,
+      symbols: slug === "CodeZero" ? 6420 : 2915,
+      routes: slug === "BeautySkillsHub" ? 18 : 43,
+      tests: slug === "CodeZero" ? 218 : 96,
       packageManager: "pnpm",
     },
     documents: [
@@ -691,7 +690,7 @@ function onboardingFor(repositoryId: string): RepositoryOnboarding {
         path: "project.md",
         type: "project",
         content:
-          "# Demo Project\n\nThis repository is a fictional product surface used to demonstrate CodeZero task automation without private data.\n",
+          "# Project Context\n\nThis repository runs CodeZero issue-to-PR automation with project rules, memory, and local verification evidence.\n",
       },
       {
         path: "architecture.md",
@@ -703,7 +702,7 @@ function onboardingFor(repositoryId: string): RepositoryOnboarding {
         path: "testing-guide.md",
         type: "testing",
         content:
-          "# Testing Guide\n\nRun lint, typecheck, unit tests, and focused Playwright screenshots before publishing a demo PR.\n",
+          "# Testing Guide\n\nRun lint, typecheck, unit tests, and focused Playwright screenshots before publishing a screenshot-ready PR.\n",
       },
     ],
   };
@@ -797,7 +796,7 @@ function span(
 }
 
 function repositorySlug(repositoryId: string): string {
-  return repositoryId.split("/").at(-1) ?? "demo-repository";
+  return repositoryId.split("/").at(-1) ?? "CodeZero";
 }
 
 function fileNameFromPath(filePath: string): string {

@@ -29,22 +29,22 @@
 
 <br />
 
-## 🎬 演示
+## 🎬 展示素材
 
 <!-- 
-  GIF Demo 占位 — 请用实际的 GIF 路径或 URL 替换下方注释。
-  示例：![描述](./assets/demo-xxx.gif)
+  GIF 占位 — 请用实际的 GIF 路径或 URL 替换下方注释。
+  示例：![描述](./assets/showcase-xxx.gif)
 -->
 
 <div align="center">
 
-<!-- ![从 Issue 到 PRD 自动生成](./assets/demo-issue-to-prd.gif) -->
+<!-- ![从 Issue 到 PRD 自动生成](./assets/showcase-issue-to-prd.gif) -->
 > 🎥 **Issue → PRD 自动生成** — _GIF 即将放出_
 
-<!-- ![实时 Agent 编码进度](./assets/demo-live-progress.gif) -->
+<!-- ![实时 Agent 编码进度](./assets/showcase-live-progress.gif) -->
 > 🎥 **实时 Agent 编码进度** — _GIF 即将放出_
 
-<!-- ![带验证证据的 Draft PR](./assets/demo-draft-pr.gif) -->
+<!-- ![带验证证据的 Draft PR](./assets/showcase-draft-pr.gif) -->
 > 🎥 **带验证证据的 Draft PR 自动创建** — _GIF 即将放出_
 
 </div>
@@ -253,15 +253,15 @@ pnpm dev:web      # Web 控制台
 
 打开 **Web 控制台**：[`http://localhost:3000`](http://localhost:3000) 🎉
 
-### Demo 模式
+### 截图数据模式
 
 截图或录制 GIF 时，可以启用确定性的前端 mock 数据，不需要启动 API、worker、GitHub sync 或本地仓库索引：
 
 ```bash
-NEXT_PUBLIC_DEMO_MODE=1 pnpm dev:web
+NEXT_PUBLIC_MOCK_DATA=1 pnpm dev:web
 ```
 
-Demo 模式使用虚构的 `demo-labs/*` 仓库、固定时间戳、脱敏配置、生成的 trace 事件、CodeGraph 摘要、上下文文件和待审批记忆。本地运行产物仍写入 `output/` 等已忽略目录。
+截图数据模式使用已配置的项目仓库、固定时间戳、脱敏配置、生成的 trace 事件、CodeGraph 摘要、上下文文件和待审批记忆。本地运行产物仍写入 `output/` 等已忽略目录。
 
 ---
 
