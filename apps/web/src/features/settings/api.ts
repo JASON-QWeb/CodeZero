@@ -7,11 +7,24 @@ import type {
   RepositoryRuntimeSettingsInput,
   ValidationResponse,
 } from "./types";
+import { isDemoMode } from "../demo-mode";
+import {
+  demoFetchConfig,
+  demoSaveConfig,
+  demoSaveProviderApiKey,
+  demoUpdateRepositoryRuntimeSettings,
+  demoValidateConfig,
+  demoValidateProviderConnection,
+} from "./mock-data";
 
 export const apiBaseUrl = () =>
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export async function fetchConfig(): Promise<ConfigResponse> {
+  if (isDemoMode()) {
+    return demoFetchConfig();
+  }
+
   const response = await fetch(`${apiBaseUrl()}/settings/config`, {
     cache: "no-store",
   });
@@ -27,6 +40,10 @@ export async function validateConfig(input: {
   section: ConfigSectionName;
   content: string;
 }): Promise<ValidationResponse> {
+  if (isDemoMode()) {
+    return demoValidateConfig(input);
+  }
+
   const response = await fetch(
     `${apiBaseUrl()}/settings/config/${input.section}/validate`,
     {
@@ -48,6 +65,10 @@ export async function saveConfig(input: {
   section: ConfigSectionName;
   content: string;
 }): Promise<ConfigSection> {
+  if (isDemoMode()) {
+    return demoSaveConfig(input);
+  }
+
   const response = await fetch(
     `${apiBaseUrl()}/settings/config/${input.section}`,
     {
@@ -72,6 +93,10 @@ export async function validateProviderConnection(input: {
   providerId: string;
   apiKey?: string;
 }): Promise<ProviderValidationResponse> {
+  if (isDemoMode()) {
+    return demoValidateProviderConnection(input);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/settings/providers/validate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -99,6 +124,10 @@ export async function saveProviderApiKey(input: {
   providerId: string;
   apiKey: string;
 }): Promise<ProviderApiKeySaveResponse> {
+  if (isDemoMode()) {
+    return demoSaveProviderApiKey(input);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/settings/providers/api-key`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -124,6 +153,10 @@ export async function saveProviderApiKey(input: {
 export async function updateRepositoryRuntimeSettings(
   input: RepositoryRuntimeSettingsInput,
 ): Promise<ConfigSection> {
+  if (isDemoMode()) {
+    return demoUpdateRepositoryRuntimeSettings(input);
+  }
+
   const response = await fetch(
     `${apiBaseUrl()}/settings/repositories/${encodeURIComponent(input.repositoryId)}/runtime`,
     {

@@ -253,6 +253,16 @@ pnpm dev:web      # Web 控制台
 
 打开 **Web 控制台**：[`http://localhost:3000`](http://localhost:3000) 🎉
 
+### Demo 模式
+
+截图或录制 GIF 时，可以启用确定性的前端 mock 数据，不需要启动 API、worker、GitHub sync 或本地仓库索引：
+
+```bash
+NEXT_PUBLIC_DEMO_MODE=1 pnpm dev:web
+```
+
+Demo 模式使用虚构的 `demo-labs/*` 仓库、固定时间戳、脱敏配置、生成的 trace 事件、CodeGraph 摘要、上下文文件和待审批记忆。本地运行产物仍写入 `output/` 等已忽略目录。
+
 ---
 
 ## 🔧 OpenCode Executor

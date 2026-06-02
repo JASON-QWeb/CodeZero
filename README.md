@@ -253,6 +253,16 @@ pnpm dev:web      # Web console
 
 Open the **Run Console** at [`http://localhost:3000`](http://localhost:3000) 🎉
 
+### Demo Mode
+
+For screenshots or GIF capture, enable deterministic frontend mock data without starting the API, worker, GitHub sync, or local repository indexing:
+
+```bash
+NEXT_PUBLIC_DEMO_MODE=1 pnpm dev:web
+```
+
+Demo mode uses fictional `demo-labs/*` repositories, fixed timestamps, sanitized settings, generated trace events, CodeGraph summaries, context files, and proposed memories. Runtime artifacts still write to local ignored folders such as `output/`.
+
 ---
 
 ## 🔧 OpenCode Executor

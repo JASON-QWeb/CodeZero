@@ -10,7 +10,9 @@ import {
   fetchTrace,
   generateProjectKnowledgeGraph,
   openProjectKnowledgeGraphDashboard,
+  approveTaskPrd,
   saveRepositoryContextFile,
+  triggerGitHubSync,
   updateMemoryStatus
 } from "../apps/web/src/features/tasks/api";
 import { buildRepositorySummariesFromTasks, isQueuedStatus, isRunningStatus } from "../apps/web/src/features/tasks/repository-summary";
@@ -21,6 +23,7 @@ describe("web task board utilities", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     delete process.env.NEXT_PUBLIC_API_URL;
+    delete process.env.NEXT_PUBLIC_DEMO_MODE;
   });
 
   it("summarizes sample tasks by repository status buckets", () => {
@@ -128,6 +131,37 @@ describe("web task board utilities", () => {
     })).resolves.toHaveLength(1);
     await expect(updateMemoryStatus({ id: mockMemories[0]?.id ?? "", status: "approved" })).resolves.toMatchObject({ status: "approved" });
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/tasks");
+  });
+
+  it("serves deterministic task board demo data without network calls", async () => {
+    process.env.NEXT_PUBLIC_DEMO_MODE = "1";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tasks = await fetchTasks();
+    const repositories = await fetchRepositoryQueues();
+    const repositoryId = repositories[0]?.id ?? "";
+    const memories = await fetchMemories("proposed");
+
+    expect(tasks.length).toBeGreaterThan(3);
+    expect(repositories.map((repository) => repository.fullName)).toContain("demo-labs/nova-commerce");
+    expect(memories.length).toBeGreaterThan(0);
+    await expect(fetchTrace(tasks[0]?.id ?? "")).resolves.toMatchObject({ taskId: tasks[0]?.id });
+    await expect(fetchProjectKnowledgeGraph(repositoryId)).resolves.toMatchObject({ status: "ready" });
+    await expect(fetchRepositoryOnboarding(repositoryId)).resolves.toMatchObject({ codeGraphAvailable: true });
+    await expect(fetchRepositoryContextFiles(repositoryId)).resolves.toHaveLength(2);
+    await expect(triggerGitHubSync(repositoryId)).resolves.toMatchObject({ sync: { status: "finished" } });
+    await expect(generateProjectKnowledgeGraph({ repositoryId })).resolves.toMatchObject({ graphAvailable: true });
+    await expect(openProjectKnowledgeGraphDashboard(repositoryId)).resolves.toMatchObject({ dashboardUrl: expect.stringContaining("/demo/") });
+    await expect(approveTaskPrd(tasks[1]?.id ?? "")).resolves.toMatchObject({ status: "PRD_APPROVED" });
+    await expect(saveRepositoryContextFile({
+      repositoryId,
+      kind: "rule",
+      path: ".agent/rules/demo-recording.md",
+      content: "# Demo Recording\n"
+    })).resolves.toContainEqual(expect.objectContaining({ path: ".agent/rules/demo-recording.md" }));
+    await expect(updateMemoryStatus({ id: memories[0]?.id ?? "", status: "approved" })).resolves.toMatchObject({ status: "approved" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("raises clear errors for failed task board fetches", async () => {

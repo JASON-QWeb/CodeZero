@@ -14,13 +14,34 @@ import type {
   RepositoryQueueSummary,
   RepositoryQueuesResponse,
   TasksResponse,
-  TraceResponse
+  TraceResponse,
 } from "./types";
 import type { Task, TaskTrace } from "@agent/shared";
+import { isDemoMode } from "../demo-mode";
+import {
+  demoApproveTaskPrd,
+  demoFetchGitHubSync,
+  demoFetchMemories,
+  demoFetchProjectKnowledgeGraph,
+  demoFetchRepositoryContextFiles,
+  demoFetchRepositoryOnboarding,
+  demoFetchRepositoryQueues,
+  demoFetchTasks,
+  demoFetchTrace,
+  demoGenerateProjectKnowledgeGraph,
+  demoOpenProjectKnowledgeGraphDashboard,
+  demoSaveRepositoryContextFile,
+  demoTriggerGitHubSync,
+  demoUpdateMemoryStatus,
+} from "./mock-data";
 
 export const apiBaseUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export async function fetchTasks(): Promise<Task[]> {
+  if (isDemoMode()) {
+    return demoFetchTasks();
+  }
+
   const response = await fetch(`${apiBaseUrl()}/tasks`, { cache: "no-store" });
 
   if (!response.ok) {
@@ -32,6 +53,10 @@ export async function fetchTasks(): Promise<Task[]> {
 }
 
 export async function fetchRepositoryQueues(): Promise<RepositoryQueueSummary[]> {
+  if (isDemoMode()) {
+    return demoFetchRepositoryQueues();
+  }
+
   const response = await fetch(`${apiBaseUrl()}/tasks/repositories`, { cache: "no-store" });
 
   if (!response.ok) {
@@ -43,6 +68,10 @@ export async function fetchRepositoryQueues(): Promise<RepositoryQueueSummary[]>
 }
 
 export async function fetchGitHubSync(repositoryId: string): Promise<GitHubSyncState> {
+  if (isDemoMode()) {
+    return demoFetchGitHubSync(repositoryId);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`, { cache: "no-store" });
 
   if (!response.ok) {
@@ -53,6 +82,10 @@ export async function fetchGitHubSync(repositoryId: string): Promise<GitHubSyncS
 }
 
 export async function triggerGitHubSync(repositoryId: string): Promise<GitHubSyncResponse> {
+  if (isDemoMode()) {
+    return demoTriggerGitHubSync(repositoryId);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`, {
     method: "POST"
   });
@@ -68,6 +101,10 @@ export async function triggerGitHubSync(repositoryId: string): Promise<GitHubSyn
 }
 
 export async function fetchProjectKnowledgeGraph(repositoryId: string): Promise<ProjectKnowledgeGraph> {
+  if (isDemoMode()) {
+    return demoFetchProjectKnowledgeGraph(repositoryId);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph`, { cache: "no-store" });
 
   if (!response.ok) {
@@ -78,6 +115,10 @@ export async function fetchProjectKnowledgeGraph(repositoryId: string): Promise<
 }
 
 export async function fetchRepositoryOnboarding(repositoryId: string): Promise<RepositoryOnboarding> {
+  if (isDemoMode()) {
+    return demoFetchRepositoryOnboarding(repositoryId);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/onboarding`, { cache: "no-store" });
 
   if (!response.ok) {
@@ -88,6 +129,10 @@ export async function fetchRepositoryOnboarding(repositoryId: string): Promise<R
 }
 
 export async function fetchRepositoryContextFiles(repositoryId: string): Promise<RepositoryContextFile[]> {
+  if (isDemoMode()) {
+    return demoFetchRepositoryContextFiles(repositoryId);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/context-files`, { cache: "no-store" });
 
   if (!response.ok) {
@@ -103,6 +148,10 @@ export async function saveRepositoryContextFile(input: {
   path: string;
   content: string;
 }): Promise<RepositoryContextFile[]> {
+  if (isDemoMode()) {
+    return demoSaveRepositoryContextFile(input);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/context-files`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -124,6 +173,10 @@ export async function saveRepositoryContextFile(input: {
 }
 
 export async function generateProjectKnowledgeGraph(input: { repositoryId: string; full?: boolean }): Promise<ProjectKnowledgeGraph> {
+  if (isDemoMode()) {
+    return demoGenerateProjectKnowledgeGraph(input);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/knowledge-graph/generate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -141,6 +194,10 @@ export async function generateProjectKnowledgeGraph(input: { repositoryId: strin
 }
 
 export async function openProjectKnowledgeGraphDashboard(repositoryId: string): Promise<ProjectKnowledgeGraph> {
+  if (isDemoMode()) {
+    return demoOpenProjectKnowledgeGraphDashboard(repositoryId);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph/dashboard`, {
     method: "POST"
   });
@@ -156,6 +213,10 @@ export async function openProjectKnowledgeGraphDashboard(repositoryId: string): 
 }
 
 export async function fetchTrace(taskId: string): Promise<TaskTrace> {
+  if (isDemoMode()) {
+    return demoFetchTrace(taskId);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/tasks/${taskId}/trace`, { cache: "no-store" });
 
   if (!response.ok) {
@@ -167,6 +228,10 @@ export async function fetchTrace(taskId: string): Promise<TaskTrace> {
 }
 
 export async function approveTaskPrd(taskId: string): Promise<Task> {
+  if (isDemoMode()) {
+    return demoApproveTaskPrd(taskId);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/tasks/${encodeURIComponent(taskId)}/approve-prd`, {
     method: "POST"
   });
@@ -182,6 +247,10 @@ export async function approveTaskPrd(taskId: string): Promise<Task> {
 }
 
 export async function fetchMemories(status: MemoryStatus): Promise<MemoryRecord[]> {
+  if (isDemoMode()) {
+    return demoFetchMemories(status);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/memories?status=${status}`, { cache: "no-store" });
 
   if (!response.ok) {
@@ -193,6 +262,10 @@ export async function fetchMemories(status: MemoryStatus): Promise<MemoryRecord[
 }
 
 export async function updateMemoryStatus(input: { id: string; status: Extract<MemoryStatus, "approved" | "rejected"> }): Promise<MemoryRecord> {
+  if (isDemoMode()) {
+    return demoUpdateMemoryStatus(input);
+  }
+
   const response = await fetch(`${apiBaseUrl()}/memories/${input.id}/${input.status === "approved" ? "approve" : "reject"}`, {
     method: "POST"
   });
