@@ -239,7 +239,7 @@ const text = {
     review: "Review",
     running: "Running",
     selectedRun: "Selected Run",
-    apiUnavailable: "API unavailable, no demo data shown",
+    apiUnavailable: "API unavailable, no sample data shown",
     spansFromIssueToPr: (count: number) => `${count} spans from issue to PR`,
     starting: "Starting",
     taskMetrics: "Task metrics",
@@ -514,10 +514,10 @@ export function TaskBoard() {
         aria-label={locale === "zh" ? "主导航" : "Primary navigation"}
       >
         <div className="brandBlock">
-          <span className="brandMark">A</span>
+          <span className="brandMark">C</span>
           <div>
-            <strong>Agent PRD</strong>
-            <small>Automation</small>
+            <strong>CodeZero</strong>
+            <small>Issue-to-PR</small>
           </div>
         </div>
         <nav className="primaryNav">
@@ -803,6 +803,26 @@ function HomeOverview({
   const configuredRepositories = repositories.filter(
     (repository) => repository.configured,
   );
+  const hasCodeGraphRefresh = tasks.some(
+    (task) =>
+      ["CODEBASE_INDEXING", "AGENTIC_SEARCHING"].includes(task.status) ||
+      task.issue.labels.includes("codegraph"),
+  );
+  const hasMcpPermissionReview = tasks.some(
+    (task) =>
+      task.issue.repo === "Didicall" &&
+      (task.status === "BLOCKED" || task.issue.labels.includes("permissions")),
+  );
+  const hasScreenshotEvidencePending = tasks.some(
+    (task) =>
+      task.status === "QUALITY_GATES_RUNNING" ||
+      task.issue.labels.includes("verification"),
+  );
+  const hasGithubFeedbackQueued = tasks.some(
+    (task) =>
+      task.issue.labels.includes("github-sync") ||
+      task.issue.labels.includes("feedback-loop"),
+  );
   const alertItems = [
     isApiError
       ? locale === "zh"
@@ -828,6 +848,26 @@ function HomeOverview({
       ? locale === "zh"
         ? `${stats.review} 个任务等待人工审阅。`
         : `${stats.review} tasks are waiting for review.`
+      : undefined,
+    hasCodeGraphRefresh
+      ? locale === "zh"
+        ? "CodeGraph 索引正在刷新，ContextPack 会等待最新文件关系。"
+        : "CodeGraph indexing is refreshing before ContextPack selection."
+      : undefined,
+    hasMcpPermissionReview
+      ? locale === "zh"
+        ? "Didicall 的 MCP 工具权限需要确认后才能继续执行。"
+        : "Didicall MCP tool permissions need review before continuing."
+      : undefined,
+    hasScreenshotEvidencePending
+      ? locale === "zh"
+        ? "截图证据仍在质量门禁中，需要补齐桌面与移动端视图。"
+        : "Screenshot evidence is still in quality gates for desktop and mobile views."
+      : undefined,
+    hasGithubFeedbackQueued
+      ? locale === "zh"
+        ? "GitHub 评论同步发现新反馈，后续任务已进入队列。"
+        : "GitHub comment sync found new feedback and queued follow-up work."
       : undefined,
   ].filter((item): item is string => Boolean(item));
 
@@ -1207,7 +1247,12 @@ function buildDailyIssueBuckets(tasks: Task[], locale: Locale) {
     month: "2-digit",
     day: "2-digit",
   });
-  const today = new Date();
+  const taskTimestamps = tasks
+    .map((task) => Date.parse(task.updatedAt))
+    .filter(Number.isFinite);
+  const latestTimestamp =
+    taskTimestamps.length > 0 ? Math.max(...taskTimestamps) : Date.now();
+  const today = new Date(latestTimestamp);
   const buckets = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(today);
     date.setHours(0, 0, 0, 0);

@@ -5,7 +5,7 @@ import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AppConfig, RepositoryConfig } from "@agent/config";
-import { createGitHubRemoteUrl, redactRemoteUrl } from "@agent/github";
+import { createGitHubRemoteUrl, getGitHubAuthToken, redactRemoteUrl } from "@agent/github";
 import { runCommand, type CommandResult } from "@agent/sandbox";
 
 export const understandAnythingProjectUrl =
@@ -324,7 +324,7 @@ export async function prepareRepositoryCheckout(
   const remoteUrl = createGitHubRemoteUrl(
     repository.github_owner,
     repository.github_repo,
-    config.github.token,
+    await getGitHubAuthToken(config.github),
   );
   await mkdir(path.dirname(repoDir), { recursive: true });
 

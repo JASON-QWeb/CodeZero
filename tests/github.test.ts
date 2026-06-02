@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GitHubClient, createGitHubRemoteUrl, redactRemoteUrl, type GitHubApiClient } from "@agent/github";
+import { GitHubClient, createGitHubRemoteUrl, hasGitHubAuthConfig, redactRemoteUrl, type GitHubApiClient } from "@agent/github";
 
 const issuesGet = vi.fn();
 const listComments = vi.fn();
@@ -40,6 +40,20 @@ describe("github client", () => {
     expect(remote).toBe("https://x-access-token:ghp_token%2Fvalue@github.com/acme/shop.git");
     expect(redactRemoteUrl(remote)).toBe("https://x-access-token:***@github.com/acme/shop.git");
     expect(createGitHubRemoteUrl("acme", "shop")).toBe("https://github.com/acme/shop.git");
+  });
+
+  it("recognizes token and complete GitHub App auth configs", () => {
+    expect(hasGitHubAuthConfig({ token: "ghp_token" })).toBe(true);
+    expect(
+      hasGitHubAuthConfig({
+        app: {
+          appId: "123",
+          installationId: "456",
+          privateKeyPath: "/tmp/app.pem"
+        }
+      })
+    ).toBe(true);
+    expect(hasGitHubAuthConfig({ app: { appId: "123", installationId: "456" } })).toBe(false);
   });
 
   it("normalizes GitHub issue payloads into IssueContext", async () => {

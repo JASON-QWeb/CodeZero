@@ -34,6 +34,9 @@ import {
 import {
   createGitHubRemoteUrl,
   GitHubClient,
+  getGitHubAuthToken,
+  gitHubAuthRequiredMessage,
+  hasGitHubAuthConfig,
   redactRemoteUrl,
 } from "@agent/github";
 import {
@@ -383,17 +386,17 @@ export class IssueWorkflowRunner {
     planningDocument: PlanningDocument,
     requiresHumanReview: boolean,
   ): Promise<void> {
-    if (!this.config.github.token) {
+    if (!this.hasGitHubAuth()) {
       await this.event(
         task.id,
         "PRD_DRAFTED",
-        "PRD issue comment skipped because GITHUB_TOKEN is not configured",
+        `PRD issue comment skipped because ${gitHubAuthRequiredMessage}`,
         "warn",
       );
       return;
     }
 
-    const github = new GitHubClient({ token: this.config.github.token });
+    const github = this.githubClient();
     const locale = detectIssueLocale(task.issue);
     const body = createPrdIssueComment({
       task,
@@ -469,11 +472,7 @@ export class IssueWorkflowRunner {
         reused: Boolean(existingSandbox),
       },
     );
-    const remoteUrl = createGitHubRemoteUrl(
-      repositoryConfig.github_owner,
-      repositoryConfig.github_repo,
-      this.config.github.token,
-    );
+    const remoteUrl = await this.authenticatedRemoteUrl(repositoryConfig);
     const results = await cloneRepository({
       sandbox,
       remoteUrl,
@@ -569,11 +568,7 @@ export class IssueWorkflowRunner {
       existingSandbox ??
       (await manager.create({ taskId: task.id, issue: task.issue }));
     await ensureSandboxDirectories(sandbox);
-    const remoteUrl = createGitHubRemoteUrl(
-      repositoryConfig.github_owner,
-      repositoryConfig.github_repo,
-      this.config.github.token,
-    );
+    const remoteUrl = await this.authenticatedRemoteUrl(repositoryConfig);
     const results = await cloneRepositoryBranch({
       sandbox,
       remoteUrl,
@@ -1446,10 +1441,8 @@ export class IssueWorkflowRunner {
     sandbox: Sandbox,
     repositoryConfig: RepositoryConfig,
   ): Promise<string> {
-    if (!this.config.github.token) {
-      throw new Error(
-        "GITHUB_TOKEN is required to push branch and create draft PR",
-      );
+    if (!this.hasGitHubAuth()) {
+      throw new Error(`${gitHubAuthRequiredMessage} to push branch and create draft PR`);
     }
 
     await this.updateStatus(task.id, "PR_CREATING");
@@ -1500,13 +1493,14 @@ export class IssueWorkflowRunner {
       throw new Error("Commit failed");
     }
 
+    await this.refreshOriginRemote(task.id, sandbox.repoDir, repositoryConfig);
     const pushResult = await pushBranch(sandbox.repoDir, agentBranch);
 
     if (pushResult.exitCode !== 0) {
       throw new Error(`Push failed: ${pushResult.stderr || pushResult.stdout}`);
     }
 
-    const github = new GitHubClient({ token: this.config.github.token });
+    const github = this.githubClient();
     const locale = detectIssueLocale(task.issue);
     const body = createAgentPrBody({ task, verification, locale });
     assertAgentPrBodyComplete({ task, verification, locale, body });
@@ -1552,8 +1546,8 @@ export class IssueWorkflowRunner {
     repositoryConfig: RepositoryConfig,
     reviewerFeedback: string,
   ): Promise<void> {
-    if (!this.config.github.token) {
-      throw new Error("GITHUB_TOKEN is required to update the pull request");
+    if (!this.hasGitHubAuth()) {
+      throw new Error(`${gitHubAuthRequiredMessage} to update the pull request`);
     }
 
     const pullNumber = parseGitHubIssueNumber(task.prUrl ?? "");
@@ -1607,6 +1601,7 @@ export class IssueWorkflowRunner {
       throw new Error("Feedback commit failed");
     }
 
+    await this.refreshOriginRemote(task.id, sandbox.repoDir, repositoryConfig);
     const pushResult = await pushBranch(sandbox.repoDir, agentBranch);
 
     if (pushResult.exitCode !== 0) {
@@ -1615,7 +1610,7 @@ export class IssueWorkflowRunner {
       );
     }
 
-    const github = new GitHubClient({ token: this.config.github.token });
+    const github = this.githubClient();
     const locale = detectIssueLocale(task.issue);
     const body = createAgentPrBody({
       task,
@@ -1653,6 +1648,48 @@ export class IssueWorkflowRunner {
       "PR_UPDATED",
       `Draft PR updated after reviewer feedback: ${task.prUrl}`,
     );
+  }
+
+  private hasGitHubAuth(): boolean {
+    return hasGitHubAuthConfig(this.config.github);
+  }
+
+  private githubClient(): GitHubClient {
+    return new GitHubClient(this.config.github);
+  }
+
+  private async authenticatedRemoteUrl(
+    repositoryConfig: RepositoryConfig,
+  ): Promise<string> {
+    const token = await getGitHubAuthToken(this.config.github);
+    return createGitHubRemoteUrl(
+      repositoryConfig.github_owner,
+      repositoryConfig.github_repo,
+      token,
+    );
+  }
+
+  private async refreshOriginRemote(
+    taskId: string,
+    repoDir: string,
+    repositoryConfig: RepositoryConfig,
+  ): Promise<void> {
+    const remoteUrl = await this.authenticatedRemoteUrl(repositoryConfig);
+    const result = await runCommand({
+      cwd: repoDir,
+      command: `git remote set-url origin ${shellQuote(remoteUrl)}`,
+      timeoutMs: 60_000,
+    });
+    await this.event(
+      taskId,
+      "COMMAND_FINISHED",
+      `${redactRemoteUrl(result.command)} exited ${result.exitCode}`,
+      result.exitCode === 0 ? "info" : "error",
+    );
+
+    if (result.exitCode !== 0) {
+      throw new Error("Failed to refresh GitHub remote credentials");
+    }
   }
 
   private collectScreenshotArtifactsForPr(

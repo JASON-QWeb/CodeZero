@@ -1354,7 +1354,7 @@ p {
 
 .repositoryCards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -2004,7 +2004,7 @@ p {
 .graphModal {
   display: grid;
   grid-template-rows: max-content minmax(0, 1fr);
-  width: min(1120px, calc(100vw - 48px));
+  width: min(1440px, calc(100vw - 48px));
   max-height: min(880px, calc(100dvh - 48px));
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.42);
@@ -2710,6 +2710,7 @@ button:focus-visible {
   .homeMetricsStrip,
   .issueTrendLegend,
   .contextFileActions,
+  .repositoryCards,
   .homeRepositoryRow,
   .overviewRepositoryRow,
   .recentTaskRow,

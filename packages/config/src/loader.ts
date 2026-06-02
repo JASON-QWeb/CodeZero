@@ -31,6 +31,12 @@ export type AppConfig = {
   github: {
     token?: string;
     webhookSecret?: string;
+    app?: {
+      appId?: string;
+      installationId?: string;
+      privateKey?: string;
+      privateKeyPath?: string;
+    };
   };
 };
 
@@ -57,8 +63,9 @@ export async function loadAppConfig(rootDir?: string): Promise<AppConfig> {
       filePath: resolveFromRoot(resolvedRootDir, process.env.MEMORY_STORE_FILE ?? path.join("data", "memory.json"))
     },
     github: {
-      token: process.env.GITHUB_TOKEN,
-      webhookSecret: process.env.GITHUB_WEBHOOK_SECRET
+      token: optionalEnv("GITHUB_TOKEN"),
+      webhookSecret: optionalEnv("GITHUB_WEBHOOK_SECRET"),
+      app: githubAppConfig(resolvedRootDir)
     }
   };
 }
@@ -92,6 +99,22 @@ export async function readCodeZeroConfig(rootDir: string): Promise<CodeZeroFileC
 
 function resolveFromRoot(rootDir: string, value: string): string {
   return path.isAbsolute(value) ? value : path.join(rootDir, value);
+}
+
+function githubAppConfig(rootDir: string): AppConfig["github"]["app"] {
+  const privateKeyPath = optionalEnv("GITHUB_APP_PRIVATE_KEY_PATH");
+  const app = {
+    appId: optionalEnv("GITHUB_APP_ID"),
+    installationId: optionalEnv("GITHUB_APP_INSTALLATION_ID"),
+    privateKey: optionalEnv("GITHUB_APP_PRIVATE_KEY"),
+    privateKeyPath: privateKeyPath ? resolveFromRoot(rootDir, privateKeyPath) : undefined
+  };
+  return app.appId || app.installationId || app.privateKey || app.privateKeyPath ? app : undefined;
+}
+
+function optionalEnv(key: string): string | undefined {
+  const value = process.env[key]?.trim();
+  return value ? value : undefined;
 }
 
 export async function findWorkspaceRoot(startDir: string): Promise<string> {

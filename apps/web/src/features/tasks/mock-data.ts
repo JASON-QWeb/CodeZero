@@ -107,6 +107,164 @@ const seededTasks: Task[] = [
     taskType: "docs",
     riskLevel: "low",
   }),
+  createTask({
+    id: "mock-task-206",
+    owner: "JASON-QWeb",
+    repo: "BeautySkillsHub",
+    number: 206,
+    title: "主页滚动改成连续加载",
+    status: "PRD_REVIEW_REQUIRED",
+    branchName: "agent/issue-206-home-continuous-scroll",
+    labels: ["frontend", "agent-ready", "ux"],
+    updatedAt: "2026-06-01T09:30:00.000Z",
+    taskType: "frontend",
+    riskLevel: "medium",
+  }),
+  createTask({
+    id: "mock-task-42",
+    owner: "JASON-QWeb",
+    repo: "agent-prd-automation",
+    number: 42,
+    title: "自管理工作流补充仓库运行摘要",
+    status: "CODEBASE_INDEXING",
+    branchName: "agent/issue-42-self-managed-run-summary",
+    labels: ["codegraph", "workflow", "agent-ready"],
+    updatedAt: "2026-05-31T18:10:00.000Z",
+    taskType: "fullstack",
+    riskLevel: "medium",
+  }),
+  createTask({
+    id: "mock-task-43",
+    owner: "JASON-QWeb",
+    repo: "agent-prd-automation",
+    number: 43,
+    title: "PRD 审批后自动回填任务看板事件",
+    status: "PR_CREATING",
+    branchName: "agent/issue-43-prd-approval-board-events",
+    labels: ["workflow", "observability"],
+    updatedAt: "2026-06-01T12:10:00.000Z",
+    taskType: "backend",
+    riskLevel: "low",
+  }),
+  createTask({
+    id: "mock-task-61",
+    owner: "JASON-QWeb",
+    repo: "SeeMusic",
+    number: 61,
+    title: "Mac 播放列表支持长内容连续滚动",
+    status: "CONTEXT_PACK_CREATED",
+    branchName: "agent/issue-61-playlist-continuous-scroll",
+    labels: ["macos", "frontend", "agent-ready"],
+    updatedAt: "2026-06-01T22:40:00.000Z",
+    taskType: "frontend",
+    riskLevel: "medium",
+  }),
+  createTask({
+    id: "mock-task-62",
+    owner: "JASON-QWeb",
+    repo: "SeeMusic",
+    number: 62,
+    title: "本地播放状态截图补充键盘操作说明",
+    status: "HUMAN_REVIEW",
+    branchName: "agent/issue-62-local-playback-screenshot-notes",
+    labels: ["macos", "verification"],
+    updatedAt: "2026-05-30T10:15:00.000Z",
+    taskType: "docs",
+    riskLevel: "low",
+  }),
+  createTask({
+    id: "mock-task-63",
+    owner: "JASON-QWeb",
+    repo: "SeeMusic",
+    number: 63,
+    title: "窗口恢复后记住上次播放面板",
+    status: "DONE",
+    branchName: "agent/issue-63-restore-player-panel",
+    prUrl: "https://github.com/JASON-QWeb/SeeMusic/pull/64",
+    labels: ["macos", "state"],
+    updatedAt: "2026-05-29T15:25:00.000Z",
+    taskType: "frontend",
+    riskLevel: "low",
+  }),
+  createTask({
+    id: "mock-task-17",
+    owner: "JASON-QWeb",
+    repo: "Didicall",
+    number: 17,
+    title: "滴滴 MCP 工具权限校验失败后给出可读原因",
+    status: "BLOCKED",
+    branchName: "agent/issue-17-mcp-permission-readable-error",
+    labels: ["mcp", "permissions", "needs-review"],
+    updatedAt: "2026-06-02T03:20:00.000Z",
+    taskType: "backend",
+    riskLevel: "high",
+  }),
+  createTask({
+    id: "mock-task-18",
+    owner: "JASON-QWeb",
+    repo: "Didicall",
+    number: 18,
+    title: "浏览器联动调用前展示工具参数预览",
+    status: "QUEUED",
+    branchName: "agent/issue-18-browser-tool-argument-preview",
+    labels: ["mcp", "browser", "agent-ready"],
+    updatedAt: "2026-05-31T08:45:00.000Z",
+    taskType: "fullstack",
+    riskLevel: "medium",
+  }),
+  createTask({
+    id: "mock-task-19",
+    owner: "JASON-QWeb",
+    repo: "Didicall",
+    number: 19,
+    title: "MCP 服务健康检查写入任务 Trace",
+    status: "SUBAGENT_REVIEWING",
+    branchName: "agent/issue-19-mcp-health-trace",
+    labels: ["mcp", "observability"],
+    updatedAt: "2026-05-28T13:55:00.000Z",
+    taskType: "backend",
+    riskLevel: "low",
+  }),
+  createTask({
+    id: "mock-task-33",
+    owner: "JASON-QWeb",
+    repo: "mcp-tool-gateway",
+    number: 33,
+    title: "工具网关按仓库规则收敛可用 MCP 能力",
+    status: "AGENTIC_SEARCHING",
+    branchName: "agent/issue-33-repository-mcp-tool-scope",
+    labels: ["mcp", "rules", "agent-ready"],
+    updatedAt: "2026-06-01T16:05:00.000Z",
+    taskType: "backend",
+    riskLevel: "medium",
+  }),
+  createTask({
+    id: "mock-task-34",
+    owner: "JASON-QWeb",
+    repo: "mcp-tool-gateway",
+    number: 34,
+    title: "PR 验证里补充工具调用审计摘要",
+    status: "WAITING_MERGE",
+    branchName: "agent/issue-34-tool-call-audit-pr-notes",
+    prUrl: "https://github.com/JASON-QWeb/mcp-tool-gateway/pull/35",
+    labels: ["mcp", "verification"],
+    updatedAt: "2026-05-27T11:40:00.000Z",
+    taskType: "docs",
+    riskLevel: "low",
+  }),
+  createTask({
+    id: "mock-task-35",
+    owner: "JASON-QWeb",
+    repo: "mcp-tool-gateway",
+    number: 35,
+    title: "浏览器工具超时后自动降级为只读摘要",
+    status: "FAILED",
+    branchName: "agent/issue-35-browser-tool-timeout-summary",
+    labels: ["mcp", "browser", "resilience"],
+    updatedAt: "2026-05-27T09:20:00.000Z",
+    taskType: "backend",
+    riskLevel: "medium",
+  }),
 ];
 
 let tasksState = clone(seededTasks);
@@ -210,6 +368,90 @@ const seededContextFiles = new Map<string, RepositoryContextFile[]>([
         content:
           "# Agent Review\n\nEvery agent-authored PR needs local verification notes, review risk, and a concise change scope.\n",
         updatedAt: earlier,
+      },
+    ],
+  ],
+  [
+    "JASON-QWeb/agent-prd-automation",
+    [
+      {
+        kind: "skill",
+        path: ".agent/skills/self-managed-workflow/SKILL.md",
+        name: "self-managed-workflow",
+        content:
+          "# Self Managed Workflow\n\nWhen CodeZero updates its own workflow, preserve task state continuity, PRD approval history, and verification artifacts.\n",
+        updatedAt: earlier,
+      },
+      {
+        kind: "rule",
+        path: ".agent/rules/dashboard-screenshots.md",
+        name: "dashboard-screenshots",
+        content:
+          "# Dashboard Screenshots\n\n截图素材只展示公开仓库、固定时间戳、脱敏配置和可复现验证命令。\n",
+        updatedAt: now,
+      },
+    ],
+  ],
+  [
+    "JASON-QWeb/SeeMusic",
+    [
+      {
+        kind: "skill",
+        path: ".agent/skills/macos-playback-ui/SKILL.md",
+        name: "macos-playback-ui",
+        content:
+          "# macOS Playback UI\n\nFor SeeMusic, verify long lists, playback state, keyboard shortcuts, and window restoration before proposing UI changes.\n",
+        updatedAt: now,
+      },
+      {
+        kind: "rule",
+        path: ".agent/rules/local-media-privacy.md",
+        name: "local-media-privacy",
+        content:
+          "# Local Media Privacy\n\n截图和日志不得展示本地音乐文件路径、用户目录、播放历史或未公开曲库名称。\n",
+        updatedAt: earlier,
+      },
+    ],
+  ],
+  [
+    "JASON-QWeb/Didicall",
+    [
+      {
+        kind: "skill",
+        path: ".agent/skills/didicall-mcp/SKILL.md",
+        name: "didicall-mcp",
+        content:
+          "# Didicall MCP\n\nBefore changing MCP behavior, inspect tool schemas, permission gates, browser handoff, and timeout fallback paths.\n",
+        updatedAt: now,
+      },
+      {
+        kind: "rule",
+        path: ".agent/rules/mcp-permission-review.md",
+        name: "mcp-permission-review",
+        content:
+          "# MCP Permission Review\n\n涉及外部调用、浏览器联动或写入型工具时，PRD 必须说明权限边界、失败降级和审计记录。\n",
+        updatedAt: now,
+      },
+    ],
+  ],
+  [
+    "JASON-QWeb/mcp-tool-gateway",
+    [
+      {
+        kind: "skill",
+        path: ".agent/skills/tool-gateway-policy/SKILL.md",
+        name: "tool-gateway-policy",
+        content:
+          "# Tool Gateway Policy\n\nRoute MCP tools through repository policy, keep read-only fallbacks available, and summarize tool calls in PR verification.\n",
+        updatedAt: earlier,
+      },
+      {
+        kind: "rule",
+        path: ".agent/rules/tool-audit.md",
+        name: "tool-audit",
+        content:
+          "# Tool Audit\n\n工具调用审计摘要需要包含工具名、权限、触发原因、失败路径和用户可复现命令。\n",
+        updatedAt: now,
       },
     ],
   ],
@@ -381,8 +623,8 @@ function createTask(input: {
       url: `https://github.com/${input.owner}/${input.repo}/issues/${input.number}`,
       title: input.title,
       body: [
-        "Seeded issue generated for screenshots and GIF capture.",
-        "No token, personal account data, or local runtime file is included.",
+        "用于截图数据模式的固定 Issue 内容。",
+        "不包含 token、个人账号信息或本地运行路径。",
       ].join("\n"),
       labels: input.labels,
       comments: [
@@ -519,14 +761,15 @@ function createTask(input: {
 
 function qualityGatesFor(status: TaskStatus): Task["qualityGateResults"] {
   const running = status === "QUALITY_GATES_RUNNING";
+  const blocked = status === "BLOCKED" || status === "FAILED";
   const kinds: Array<[QualityGateKind, string, boolean, number]> = [
     ["lint", "pnpm lint", true, 18_420],
     ["typecheck", "pnpm typecheck", true, 31_870],
-    ["unit_test", "pnpm test", !running, running ? 0 : 25_110],
+    ["unit_test", "pnpm test", !running && !blocked, running ? 0 : 25_110],
     [
       "frontend_screenshot",
       "pnpm screenshot -- dashboard",
-      status !== "FAILED",
+      !blocked,
       running ? 0 : 12_450,
     ],
   ];
@@ -553,6 +796,10 @@ function buildMockRepositorySummaries(
   const maxConcurrency = new Map([
     ["JASON-QWeb/CodeZero", 3],
     ["JASON-QWeb/BeautySkillsHub", 2],
+    ["JASON-QWeb/agent-prd-automation", 2],
+    ["JASON-QWeb/SeeMusic", 2],
+    ["JASON-QWeb/Didicall", 1],
+    ["JASON-QWeb/mcp-tool-gateway", 2],
   ]);
 
   for (const task of tasks) {
@@ -637,6 +884,7 @@ function githubSyncState(
 
 function knowledgeGraphFor(repositoryId: string): ProjectKnowledgeGraph {
   const slug = repositorySlug(repositoryId);
+  const graphStats = graphStatsFor(slug);
 
   return {
     repositoryId,
@@ -653,8 +901,8 @@ function knowledgeGraphFor(repositoryId: string): ProjectKnowledgeGraph {
     graph: {
       projectName: slug,
       analyzedAt: now,
-      nodes: slug === "CodeZero" ? 1842 : 936,
-      edges: slug === "CodeZero" ? 4210 : 1886,
+      nodes: graphStats.nodes,
+      edges: graphStats.edges,
     },
     dashboardUrl: `http://localhost:8787/snapshot/${slug}`,
   };
@@ -662,6 +910,7 @@ function knowledgeGraphFor(repositoryId: string): ProjectKnowledgeGraph {
 
 function onboardingFor(repositoryId: string): RepositoryOnboarding {
   const slug = repositorySlug(repositoryId);
+  const graphStats = graphStatsFor(slug);
 
   return {
     repositoryId,
@@ -675,14 +924,14 @@ function onboardingFor(repositoryId: string): RepositoryOnboarding {
       changeDetection: "working-tree-sync",
       databaseFile: `data/codegraph/${slug}/codegraph.db`,
       indexDir: `data/codegraph/${slug}`,
-      durationMs: slug === "CodeZero" ? 82_440 : 41_220,
+      durationMs: graphStats.durationMs,
       displayCommand: "codegraph --index --preview",
     },
     summary: {
-      files: slug === "CodeZero" ? 1284 : 712,
-      symbols: slug === "CodeZero" ? 6420 : 2915,
-      routes: slug === "BeautySkillsHub" ? 18 : 43,
-      tests: slug === "CodeZero" ? 218 : 96,
+      files: graphStats.files,
+      symbols: graphStats.symbols,
+      routes: graphStats.routes,
+      tests: graphStats.tests,
       packageManager: "pnpm",
     },
     documents: [
@@ -706,6 +955,114 @@ function onboardingFor(repositoryId: string): RepositoryOnboarding {
       },
     ],
   };
+}
+
+function graphStatsFor(slug: string): {
+  durationMs: number;
+  edges: number;
+  files: number;
+  nodes: number;
+  routes: number;
+  symbols: number;
+  tests: number;
+} {
+  const stats = new Map<
+    string,
+    {
+      durationMs: number;
+      edges: number;
+      files: number;
+      nodes: number;
+      routes: number;
+      symbols: number;
+      tests: number;
+    }
+  >([
+    [
+      "CodeZero",
+      {
+        durationMs: 82_440,
+        edges: 4210,
+        files: 1284,
+        nodes: 1842,
+        routes: 43,
+        symbols: 6420,
+        tests: 218,
+      },
+    ],
+    [
+      "BeautySkillsHub",
+      {
+        durationMs: 64_800,
+        edges: 1886,
+        files: 712,
+        nodes: 936,
+        routes: 18,
+        symbols: 2915,
+        tests: 96,
+      },
+    ],
+    [
+      "agent-prd-automation",
+      {
+        durationMs: 58_340,
+        edges: 2540,
+        files: 684,
+        nodes: 1216,
+        routes: 21,
+        symbols: 3520,
+        tests: 141,
+      },
+    ],
+    [
+      "SeeMusic",
+      {
+        durationMs: 36_900,
+        edges: 1420,
+        files: 438,
+        nodes: 704,
+        routes: 9,
+        symbols: 2188,
+        tests: 74,
+      },
+    ],
+    [
+      "Didicall",
+      {
+        durationMs: 44_210,
+        edges: 1694,
+        files: 506,
+        nodes: 812,
+        routes: 14,
+        symbols: 2460,
+        tests: 83,
+      },
+    ],
+    [
+      "mcp-tool-gateway",
+      {
+        durationMs: 39_650,
+        edges: 1320,
+        files: 392,
+        nodes: 648,
+        routes: 11,
+        symbols: 1964,
+        tests: 69,
+      },
+    ],
+  ]);
+
+  return (
+    stats.get(slug) ?? {
+      durationMs: 41_220,
+      edges: 1886,
+      files: 712,
+      nodes: 936,
+      routes: 18,
+      symbols: 2915,
+      tests: 96,
+    }
+  );
 }
 
 function traceFor(task: Task): TaskTrace {

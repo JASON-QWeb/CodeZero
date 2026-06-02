@@ -113,6 +113,45 @@ describe("app config loading", () => {
     }
   });
 
+  it("loads GitHub App credentials from project .env", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-config-github-app-"));
+    await writeCodeZeroConfig(dir);
+    await writeFile(
+      path.join(dir, ".env"),
+      [
+        "GITHUB_APP_ID=12345",
+        "GITHUB_APP_INSTALLATION_ID=67890",
+        "GITHUB_APP_PRIVATE_KEY_PATH=secrets/codezero-app.pem",
+        "GITHUB_TOKEN=",
+        ""
+      ].join("\n")
+    );
+    const previousAppId = process.env.GITHUB_APP_ID;
+    const previousInstallationId = process.env.GITHUB_APP_INSTALLATION_ID;
+    const previousPrivateKeyPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+    const previousToken = process.env.GITHUB_TOKEN;
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_INSTALLATION_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY_PATH;
+    delete process.env.GITHUB_TOKEN;
+
+    try {
+      const config = await loadAppConfig(dir);
+
+      expect(config.github.token).toBeUndefined();
+      expect(config.github.app).toMatchObject({
+        appId: "12345",
+        installationId: "67890",
+        privateKeyPath: path.join(dir, "secrets", "codezero-app.pem")
+      });
+    } finally {
+      restoreEnv("GITHUB_APP_ID", previousAppId);
+      restoreEnv("GITHUB_APP_INSTALLATION_ID", previousInstallationId);
+      restoreEnv("GITHUB_APP_PRIVATE_KEY_PATH", previousPrivateKeyPath);
+      restoreEnv("GITHUB_TOKEN", previousToken);
+    }
+  });
+
   it("validates and writes editable config sections", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agent-config-"));
     await writeCodeZeroConfig(dir);

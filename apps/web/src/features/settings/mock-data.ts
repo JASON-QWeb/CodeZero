@@ -190,6 +190,62 @@ function seedRepositories(): Array<Record<string, unknown>> {
         blocked_permissions: ["external_write", "dangerous"],
       },
     },
+    {
+      id: "JASON-QWeb/agent-prd-automation",
+      github_owner: "JASON-QWeb",
+      github_repo: "agent-prd-automation",
+      default_branch: "main",
+      project_skill_path: ".agent",
+      project_rule_path: ".agent/rules",
+      trigger: { mode: "mention", mention: "@agent-prd" },
+      queue: { max_concurrent_issues: 2 },
+      permissions: {
+        allowed_permissions: ["read", "safe_write", "repo_write"],
+        blocked_permissions: ["dangerous"],
+      },
+    },
+    {
+      id: "JASON-QWeb/SeeMusic",
+      github_owner: "JASON-QWeb",
+      github_repo: "SeeMusic",
+      default_branch: "main",
+      project_skill_path: ".agent",
+      project_rule_path: ".agent/rules",
+      trigger: { mode: "mention", mention: "@agent-prd" },
+      queue: { max_concurrent_issues: 2 },
+      permissions: {
+        allowed_permissions: ["read", "safe_write", "repo_write"],
+        blocked_permissions: ["external_write", "dangerous"],
+      },
+    },
+    {
+      id: "JASON-QWeb/Didicall",
+      github_owner: "JASON-QWeb",
+      github_repo: "Didicall",
+      default_branch: "main",
+      project_skill_path: ".agent",
+      project_rule_path: ".agent/rules",
+      trigger: { mode: "mention", mention: "@agent-prd" },
+      queue: { max_concurrent_issues: 1 },
+      permissions: {
+        allowed_permissions: ["read", "safe_write"],
+        blocked_permissions: ["external_write", "dangerous"],
+      },
+    },
+    {
+      id: "JASON-QWeb/mcp-tool-gateway",
+      github_owner: "JASON-QWeb",
+      github_repo: "mcp-tool-gateway",
+      default_branch: "main",
+      project_skill_path: ".agent",
+      project_rule_path: ".agent/rules",
+      trigger: { mode: "mention", mention: "@agent-prd" },
+      queue: { max_concurrent_issues: 2 },
+      permissions: {
+        allowed_permissions: ["read", "safe_write", "repo_write"],
+        blocked_permissions: ["dangerous"],
+      },
+    },
   ];
 }
 
