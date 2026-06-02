@@ -4,48 +4,49 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/CodeZero-000000?style=for-the-badge&logo=github&logoColor=white&labelColor=000000">
-  <img alt="CodeZero" src="https://img.shields.io/badge/CodeZero-000000?style=for-the-badge&logo=github&logoColor=white&labelColor=000000">
 </picture>
 
 # CodeZero
 
-### GitHub Issues in. Verified Pull Requests out.
+### Automated workflow from requirements to code delivery, no manual coding required
 
-**The AI engineering agent that turns product intent into production-ready, reviewable PRs — autonomously.**
+**⚡ Write an Issue → Get a verified PR.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-Orchestrated-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Orchestration_Engine-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![AI SDK](https://img.shields.io/badge/Vercel_AI_SDK-Powered-000000?style=flat-square&logo=vercel&logoColor=white)](https://sdk.vercel.ai/)
-[![pnpm](https://img.shields.io/badge/pnpm-monorepo-F69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-**English** · [中文](README.zh-CN.md) · [Documentation](docs/README.md)
+**English** · [中文](README.zh-CN.md)
 
 ---
-
-**⚡ Write an Issue → Get a verified PR. That's it.**
 
 </div>
 
 <br />
 
-## 🎬 Demo
-
-<!-- 
-  GIF Demo Placeholders — replace the comments below with your actual GIF paths or URLs.
-  Example: ![Description](./assets/demo-xxx.gif)
--->
+## 🎬 Showcase
 
 <div align="center">
 
-<!-- ![Create Issue → Auto PRD](./assets/demo-issue-to-prd.gif) -->
-> 🎥 **Issue → PRD Generation** — _GIF coming soon_
+<table>
+<tr>
+<td width="50%" align="center">
 
-<!-- ![Live Agent Progress](./assets/demo-live-progress.gif) -->
-> 🎥 **Live Agent Coding Progress** — _GIF coming soon_
+### Issue to Plan
 
-<!-- ![Draft PR with Verification](./assets/demo-draft-pr.gif) -->
-> 🎥 **Auto Draft PR with Verification Evidence** — _GIF coming soon_
+![Issue Demo](./assets/issue-demo.gif)
+
+</td>
+<td width="50%" align="center">
+
+### Plan to PR
+
+![PRD Demo](./assets/PR-demo.gif)
+
+</td>
+</tr>
+</table>
 
 </div>
 
@@ -64,7 +65,6 @@ Most AI coding tools stop at **code generation**. CodeZero handles the **entire 
 - Context switch to IDE → figure out which files to edit
 - Write code → run tests → fix → repeat
 - Open PR → wait for review → fix → repeat
-- **Hours to days per feature**
 
 </td>
 <td width="50%" valign="top">
@@ -74,7 +74,6 @@ Most AI coding tools stop at **code generation**. CodeZero handles the **entire 
 - CodeZero reads your repo, drafts a PRD, gets approval
 - Agent codes in an isolated sandbox with live progress
 - Auto-runs verification, opens a draft PR with evidence
-- **Minutes to hours per feature**
 
 </td>
 </tr>
@@ -111,7 +110,6 @@ Most AI coding tools stop at **code generation**. CodeZero handles the **entire 
 | **LangGraph Orchestration** | Checkpointed graph nodes with approval interrupts and resumable repair loops |
 | **AI SDK Model Layer** | Unified provider registry for PRD, review, context, validation, and routing agents |
 | **Live Agent Progress** | Real-time streaming of coding agent output as board events |
-| **OpenCode-First Execution** | CLI-native code editing via OpenCode — no legacy JSON file-write hacks |
 | **Repository Intelligence** | CodeGraph + Navigation Graph + ContextPack narrow the edit surface before changes begin |
 | **Persistent Task Sandbox** | One sandbox per Issue — survives approval cycles, feedback iterations, and reruns |
 | **Human-in-the-Loop** | PRD approval, policy gates, review subagents, and memory proposals keep humans in control |
@@ -258,7 +256,7 @@ pnpm dev:worker   # Task worker
 pnpm dev:web      # Web console
 ```
 
-Open the **Run Console** at [`http://localhost:3000`](http://localhost:3000) 🎉
+Open the **Web Console** at [`http://localhost:3000`](http://localhost:3000)
 
 ---
 
@@ -323,14 +321,6 @@ Runtime configuration lives in `config/`:
 | `codezero.example.yaml` | Clean template for new installations |
 
 The **Settings Console** UI can edit and validate these files during local operation.
-
----
-
-## 📝 Operator Notes
-
-- Agent-generated PRDs, plans, reviews, and PR descriptions follow the Issue/comment language
-- Frontend screenshots are stored as task artifacts (not committed to the target branch)
-- Post-PR-creation, human comments in the same PR conversation trigger re-implementation on the same branch
 
 ---
 

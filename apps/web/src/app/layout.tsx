@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Agent PRD 自动化控制台",
-  description: "单用户 Agent 工作流控制台",
+  title: "CodeZero 控制台",
+  description: "单用户 issue-to-PR 工作流控制台",
 };
 
 export default function RootLayout({

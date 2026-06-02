@@ -21,6 +21,7 @@ describe("web settings utilities", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     delete process.env.NEXT_PUBLIC_API_URL;
+    delete process.env.NEXT_PUBLIC_MOCK_DATA;
   });
 
   it("builds compact summaries for each config section", () => {
@@ -181,6 +182,34 @@ describe("web settings utilities", () => {
       }),
     ).resolves.toMatchObject({ section: "repositories" });
     expect(fetchMock.mock.calls.at(-1)?.[0]).toContain("shop%20repo");
+  });
+
+  it("serves sanitized settings mock data without network calls", async () => {
+    process.env.NEXT_PUBLIC_MOCK_DATA = "1";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const config = await fetchConfig();
+
+    expect(config.rootDir).toBe("/workspace/codezero");
+    expect(config.sections.map((item) => item.section)).toContain("repositories");
+    await expect(validateConfig({ section: "agents", content: "providers: {}" })).resolves.toMatchObject({ valid: true });
+    await expect(saveConfig({ section: "tools", content: "tools: []" })).resolves.toMatchObject({ section: "tools" });
+    await expect(validateProviderConnection({ providerId: "default", content: "" })).resolves.toMatchObject({ valid: true });
+    await expect(saveProviderApiKey({ providerId: "default", apiKey: "snapshot-key" })).resolves.toMatchObject({ saved: true });
+    await expect(
+      updateRepositoryRuntimeSettings({
+        repositoryId: "JASON-QWeb/CodeZero",
+        triggerMode: "manual",
+        mention: "@agent-prd",
+        maxConcurrentIssues: 2,
+        projectSkillPath: ".agent",
+        projectRulePath: ".agent/rules",
+        allowedPermissions: ["read"],
+        blockedPermissions: ["dangerous"],
+      }),
+    ).resolves.toMatchObject({ section: "repositories" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("raises clear errors when settings API saves fail", async () => {

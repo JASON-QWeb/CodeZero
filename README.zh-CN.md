@@ -4,48 +4,49 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/CodeZero-000000?style=for-the-badge&logo=github&logoColor=white&labelColor=000000">
-  <img alt="CodeZero" src="https://img.shields.io/badge/CodeZero-000000?style=for-the-badge&logo=github&logoColor=white&labelColor=000000">
 </picture>
 
 # CodeZero
 
 ### 无需人工编码，从需求到代码落地的自动化工作流
 
-**把产品意图推进成可审核、可验证的 Pull Request —— 全程自主执行。**
+**⚡ 写一个 Issue → 拿到一个验证过的 PR。**
 
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-编排引擎-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![AI SDK](https://img.shields.io/badge/Vercel_AI_SDK-驱动-000000?style=flat-square&logo=vercel&logoColor=white)](https://sdk.vercel.ai/)
-[![pnpm](https://img.shields.io/badge/pnpm-monorepo-F69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-[English](README.md) · **中文** · [文档](docs/README.md)
+[English](README.md) · **中文**
 
 ---
-
-**⚡ 写一个 Issue → 拿到一个验证过的 PR。就这么简单。**
 
 </div>
 
 <br />
 
-## 🎬 演示
-
-<!-- 
-  GIF Demo 占位 — 请用实际的 GIF 路径或 URL 替换下方注释。
-  示例：![描述](./assets/demo-xxx.gif)
--->
+## 🎬 展示
 
 <div align="center">
 
-<!-- ![从 Issue 到 PRD 自动生成](./assets/demo-issue-to-prd.gif) -->
-> 🎥 **Issue → PRD 自动生成** — _GIF 即将放出_
+<table>
+<tr>
+<td width="50%" align="center">
 
-<!-- ![实时 Agent 编码进度](./assets/demo-live-progress.gif) -->
-> 🎥 **实时 Agent 编码进度** — _GIF 即将放出_
+### Issue to Plan
 
-<!-- ![带验证证据的 Draft PR](./assets/demo-draft-pr.gif) -->
-> 🎥 **带验证证据的 Draft PR 自动创建** — _GIF 即将放出_
+![Issue Demo](./assets/issue-demo.gif)
+
+</td>
+<td width="50%" align="center">
+
+### Plan to PR
+
+![PRD Demo](./assets/PR-demo.gif)
+
+</td>
+</tr>
+</table>
 
 </div>
 
@@ -64,7 +65,6 @@
 - 切换到 IDE → 翻找需要改哪些文件
 - 写代码 → 跑测试 → 修 bug → 反复
 - 开 PR → 等 review → 改 → 反复
-- **一个功能花几小时到几天**
 
 </td>
 <td width="50%" valign="top">
@@ -74,7 +74,6 @@
 - CodeZero 阅读仓库、生成 PRD、等待审批
 - Agent 在隔离沙箱里编码，进度实时可见
 - 自动跑验证、创建带证据的 draft PR
-- **一个功能只需几分钟到几小时**
 
 </td>
 </tr>
@@ -111,7 +110,6 @@
 | **LangGraph 编排** | 可 checkpoint 的图节点，支持审批中断和可恢复的修复循环 |
 | **AI SDK 模型层** | 统一 provider registry，处理 PRD、review、context、validation 和 routing 调用 |
 | **实时 Agent 进度** | OpenCode 输出实时捕获为看板事件，随时查看 coding executor 在做什么 |
-| **OpenCode-First 实现** | 主实现流程交给 CLI executor，不再依赖传统 JSON 文件写入 |
 | **仓库智能理解** | CodeGraph + Navigation Graph + ContextPack 在改代码前收敛修改范围 |
 | **持久 Task Sandbox** | 每个 Issue 一个沙箱 —— 跨审批、反馈迭代和重跑周期始终复用 |
 | **Human-in-the-Loop** | PRD 审批、Policy 门禁、Review subagent 和 memory proposal 保持人可控 |
@@ -258,7 +256,7 @@ pnpm dev:worker   # 任务 Worker
 pnpm dev:web      # Web 控制台
 ```
 
-打开 **Web 控制台**：[`http://localhost:3000`](http://localhost:3000) 🎉
+打开 **Web 控制台**：[`http://localhost:3000`](http://localhost:3000)
 
 ---
 
@@ -323,14 +321,6 @@ pnpm eval:golden    # 使用 golden issues 评估候选产物
 | `codezero.example.yaml` | 新安装可参考的干净模板 |
 
 本地运行时也可通过 **Settings Console** UI 编辑和校验这些配置。
-
----
-
-## 📝 操作说明
-
-- Agent 生成的 PRD、计划、review 说明和 PR 正文会跟随 Issue/PR 评论的语言
-- 前端截图保存为 task artifact（不会提交到目标仓库分支）
-- PR 创建后，人在同一个 PR conversation 中继续评论，Agent 会更新同一分支、重新验证并刷新原 PR
 
 ---
 
