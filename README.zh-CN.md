@@ -35,14 +35,14 @@
 
 ### Issue to Plan
 
-<video src="./assets/issue-demo.mp4" autoplay loop muted playsinline width="100%"></video>
+![Issue Demo](./assets/issue-demo.webp)
 
 </td>
 <td width="50%" align="center">
 
 ### Plan to PR
 
-<video src="./assets/PR-demo.mp4" autoplay loop muted playsinline width="100%"></video>
+![PRD Demo](./assets/PR-demo.webp)
 
 </td>
 </tr>
