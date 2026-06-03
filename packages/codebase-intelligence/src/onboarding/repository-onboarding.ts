@@ -15,7 +15,7 @@ export type RepositoryOnboardingInput = {
   qualityGates?: string[];
 };
 
-export type RepositoryOnboardingDocumentType = "project" | "module-map" | "route-map" | "testing-guide" | "repository-config" | "policy";
+export type RepositoryOnboardingDocumentType = "project" | "module-map" | "route-map" | "testing-guide" | "repository-config";
 
 export type RepositoryOnboardingDocument = {
   path: string;
@@ -82,11 +82,6 @@ export async function createRepositoryOnboarding(input: RepositoryOnboardingInpu
         path: "config/repositories.suggested.yaml",
         type: "repository-config",
         content: renderRepositoryConfigSuggestion(input, qualityGates)
-      },
-      {
-        path: "config/policies.suggested.yaml",
-        type: "policy",
-        content: renderPolicySuggestion()
       }
     ],
     summary: {
@@ -258,31 +253,6 @@ function renderRepositoryConfigSuggestion(input: RepositoryOnboardingInput, qual
     `      mention: ${input.mention ?? "@agent"}`,
     "    quality_gates:",
     ...qualityGates.map((command) => `      - ${JSON.stringify(command)}`),
-    ""
-  ].join("\n");
-}
-
-function renderPolicySuggestion(): string {
-  return [
-    "rules:",
-    "  - id: protect-secrets",
-    "    action: block",
-    "    paths:",
-    "      - .env",
-    "      - .env.*",
-    "      - '**/*.pem'",
-    "      - '**/id_rsa'",
-    "  - id: sensitive-code-review",
-    "    action: require_approval",
-    "    paths:",
-    "      - '**/auth/**'",
-    "      - '**/billing/**'",
-    "      - '**/migrations/**'",
-    "  - id: dangerous-shell",
-    "    action: block",
-    "    commands:",
-    "      - rm -rf",
-    "      - git reset --hard",
     ""
   ].join("\n");
 }

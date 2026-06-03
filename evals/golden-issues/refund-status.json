@@ -19,6 +19,6 @@
     "routeEntrypoints": ["/orders/:id"],
     "memoryKinds": ["episodic"],
     "prBodySections": ["## Local Verification", "## Quality Gates"],
-    "traceKinds": ["navigation", "memory", "tool"]
+    "traceKinds": ["navigation", "memory", "model"]
   }
 }

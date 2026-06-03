@@ -1,8 +1,7 @@
-import { permissionLevels, triggerModes } from "./constants";
+import { triggerModes } from "./constants";
 import type {
   ConfigSection,
   RepositoryQuickConfig,
-  ToolPermissionLevel,
   TriggerMode,
 } from "./types";
 
@@ -68,37 +67,24 @@ export function buildSummary(
           ).length,
         ),
       },
-      {
-        label: "仓库权限",
-        value: summarizeRepositoryPermissions(repositories),
-      },
     ];
   }
 
-  if (section.section === "tools") {
-    const tools = Array.isArray(parsed.tools) ? parsed.tools : [];
+  if (section.section === "memory") {
+    const memory = asRecord(parsed.memory);
     return [
-      { label: "工具", value: String(tools.length) },
-      {
-        label: "权限",
-        value:
-          Array.from(
-            new Set(tools.map((tool) => String(asRecord(tool).permission))),
-          ).join(", ") || "无",
-      },
+      { label: "记录上限", value: String(memory.max_records ?? "未知") },
+      { label: "总大小", value: String(memory.max_bytes ?? "未知") },
+      { label: "单条大小", value: String(memory.max_record_bytes ?? "未知") },
     ];
   }
 
-  if (section.section === "policies") {
-    const policies = Array.isArray(parsed.policies) ? parsed.policies : [];
+  if (section.section === "workflow_graph") {
+    const workflowGraph = asRecord(parsed.workflow_graph);
     return [
-      { label: "策略", value: String(policies.length) },
       {
-        label: "动作",
-        value:
-          Array.from(
-            new Set(policies.map((policy) => String(asRecord(policy).action))),
-          ).join(", ") || "无",
+        label: "Checkpoint",
+        value: String(workflowGraph.checkpoint_file ?? "未知"),
       },
     ];
   }
@@ -152,7 +138,6 @@ export function collectRepositoryQuickConfigs(
     const repository = asRecord(entry);
     const trigger = asRecord(repository.trigger);
     const queue = asRecord(repository.queue);
-    const permissions = asRecord(repository.permissions);
     return {
       id: String(repository.id ?? ""),
       owner: String(repository.github_owner ?? ""),
@@ -163,12 +148,6 @@ export function collectRepositoryQuickConfigs(
       mention: String(trigger.mention ?? "@agent-prd"),
       maxConcurrentIssues: normalizePositiveInteger(
         queue.max_concurrent_issues,
-      ),
-      allowedPermissions: normalizePermissionList(
-        permissions.allowed_permissions,
-      ),
-      blockedPermissions: normalizePermissionList(
-        permissions.blocked_permissions,
       ),
     };
   });
@@ -191,31 +170,4 @@ export function normalizePositiveInteger(value: unknown): number {
   return Number.isFinite(numberValue) && numberValue > 0
     ? Math.floor(numberValue)
     : 1;
-}
-
-export function normalizePermissionList(value: unknown): ToolPermissionLevel[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((item): item is ToolPermissionLevel =>
-    permissionLevels.includes(item as ToolPermissionLevel),
-  );
-}
-
-function summarizeRepositoryPermissions(repositories: unknown[]): string {
-  const scoped = repositories.filter((repo) => {
-    const permissions = asRecord(asRecord(repo).permissions);
-    return [
-      "allowed_tools",
-      "blocked_tools",
-      "allowed_permissions",
-      "blocked_permissions",
-    ].some((key) => {
-      const value = permissions[key];
-      return Array.isArray(value) && value.length > 0;
-    });
-  }).length;
-
-  return scoped > 0 ? `${scoped} 个独立配置` : "全局默认";
 }

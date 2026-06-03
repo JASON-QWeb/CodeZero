@@ -51,7 +51,7 @@
     "entrypoints": ["POST /github/webhook"],
     "tests": ["tests/github-webhook-rate-limit.test.ts"]
   },
-  "prBody": "## Local Verification\nRun pnpm test tests/github-webhook-rate-limit.test.ts.\n\n## Policy Decisions\nNo auth, billing or migration files were modified.\n\n## Quality Gates\nlint, typecheck and unit tests passed.",
+  "prBody": "## Local Verification\nRun pnpm test tests/github-webhook-rate-limit.test.ts.\n\n## Scope Notes\nNo auth, billing or migration files were modified.\n\n## Quality Gates\nlint, typecheck and unit tests passed.",
   "trace": {
     "taskId": "task-api-rate-limit",
     "status": "DONE",
@@ -70,10 +70,10 @@
         "durationMs": 0
       },
       {
-        "id": "span-policy",
+        "id": "span-scope",
         "taskId": "task-api-rate-limit",
-        "name": "Policy decision",
-        "kind": "policy",
+        "name": "Scope boundary checked",
+        "kind": "workflow",
         "status": "success",
         "level": "info",
         "message": "Sensitive modules untouched.",
@@ -82,13 +82,13 @@
         "durationMs": 0
       },
       {
-        "id": "span-tool",
+        "id": "span-model",
         "taskId": "task-api-rate-limit",
-        "name": "repo.apply_patch",
-        "kind": "tool",
+        "name": "OpenCode executor",
+        "kind": "model",
         "status": "success",
         "level": "info",
-        "message": "Patch applied.",
+        "message": "OpenCode applied the implementation diff.",
         "startedAt": "2026-05-12T00:00:02.000Z",
         "endedAt": "2026-05-12T00:00:02.000Z",
         "durationMs": 0
@@ -109,8 +109,6 @@
     "artifacts": [],
     "summary": {
       "totalSpans": 4,
-      "toolCalls": 1,
-      "policyDecisions": 1,
       "failedOrBlocked": 0
     }
   }

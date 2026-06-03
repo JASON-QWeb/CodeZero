@@ -123,12 +123,6 @@ function repositoryConfig(): RepositoryConfig {
     queue: {
       max_concurrent_issues: 2,
     },
-    permissions: {
-      allowed_tools: [],
-      blocked_tools: [],
-      allowed_permissions: [],
-      blocked_permissions: [],
-    },
     quality_gates: {},
     frontend: {
       screenshot_urls: [],

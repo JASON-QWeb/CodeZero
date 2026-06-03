@@ -2,8 +2,8 @@ export type ConfigSectionName =
   | "agents"
   | "repositories"
   | "sandbox"
-  | "policies"
-  | "tools";
+  | "memory"
+  | "workflow_graph";
 
 export type ConfigSection = {
   section: ConfigSectionName;
@@ -46,12 +46,6 @@ export type ProviderApiKeySaveResponse = {
 };
 
 export type TriggerMode = "auto" | "mention" | "label" | "manual" | "disabled";
-export type ToolPermissionLevel =
-  | "read"
-  | "safe_write"
-  | "repo_write"
-  | "external_write"
-  | "dangerous";
 
 export type RepositoryQuickConfig = {
   id: string;
@@ -62,8 +56,6 @@ export type RepositoryQuickConfig = {
   triggerMode: TriggerMode;
   mention: string;
   maxConcurrentIssues: number;
-  allowedPermissions: ToolPermissionLevel[];
-  blockedPermissions: ToolPermissionLevel[];
 };
 
 export type RepositoryRuntimeSettingsInput = {
@@ -73,6 +65,4 @@ export type RepositoryRuntimeSettingsInput = {
   maxConcurrentIssues: number;
   projectSkillPath: string;
   projectRulePath: string;
-  allowedPermissions: ToolPermissionLevel[];
-  blockedPermissions: ToolPermissionLevel[];
 };

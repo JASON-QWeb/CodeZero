@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AppConfig } from "@agent/config";
 import { createModelRuntimeAgentRunner, type AgentDefinition, type AgentRunner } from "@agent/model-runtime";
+import { loadPlatformSkills } from "@agent/skills";
 
 export async function createWorkflowAgentRunner(config: AppConfig, env: NodeJS.ProcessEnv = process.env): Promise<AgentRunner> {
   return createModelRuntimeAgentRunner(config, env);
@@ -31,16 +32,44 @@ export async function createWorkflowAgent(
 
   const promptPath = path.resolve(config.rootDir, agentConfig.system_prompt);
   const systemPrompt = await readFile(promptPath, "utf8");
+  const skillPrompt = await renderPlatformSkillPrompt(
+    config.rootDir,
+    agentConfig.skills,
+  );
 
   return {
     id: configKey,
     role,
     providerId: selectProviderForComplexity(agentConfig.provider, agentConfig.provider_by_complexity, complexityScore),
-    systemPrompt,
-    skillRefs: agentConfig.skills,
-    tools: config.tools.map((tool) => tool.name),
-    guardrails: config.policies.map((policy) => policy.id)
+    systemPrompt: [systemPrompt.trim(), skillPrompt].filter(Boolean).join("\n\n"),
+    skillRefs: agentConfig.skills
   };
+}
+
+async function renderPlatformSkillPrompt(
+  projectRoot: string,
+  skillRefs: string[],
+): Promise<string> {
+  if (skillRefs.length === 0) {
+    return "";
+  }
+
+  const platformSkills = await loadPlatformSkills(projectRoot).catch(() => []);
+  const skillsById = new Map(platformSkills.map((skill) => [skill.id, skill]));
+  const selectedSkills = skillRefs
+    .map((skillRef) => skillsById.get(skillRef))
+    .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+
+  if (selectedSkills.length === 0) {
+    return "";
+  }
+
+  return [
+    "# Enabled Platform Skills",
+    ...selectedSkills.map(
+      (skill) => `## ${skill.id}\n${skill.content.trim()}`,
+    ),
+  ].join("\n\n");
 }
 
 export function selectProviderForComplexity(

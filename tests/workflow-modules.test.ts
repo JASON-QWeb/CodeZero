@@ -2,11 +2,14 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { AppConfig, RepositoryConfig } from "@agent/config";
+import { loadAppConfig, type AppConfig, type RepositoryConfig } from "@agent/config";
 import { createTask } from "@agent/orchestrator";
 import type { TaskRepository } from "@agent/persistence";
 import { runCommand } from "@agent/sandbox";
-import { createIssueWorkflowGraphRunner } from "@agent/workflow-graph";
+import {
+  FileLangGraphCheckpointSaver,
+  createIssueWorkflowGraphRunner,
+} from "@agent/workflow-graph";
 import type {
   Artifact,
   ContextPack,
@@ -48,6 +51,33 @@ import {
 } from "@agent/workflows";
 
 describe("workflow modules", () => {
+  it("persists LangGraph checkpoints across saver instances", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-checkpoints-"));
+    const filePath = path.join(dir, "checkpoints.json");
+    const first = new FileLangGraphCheckpointSaver(filePath);
+    const config = { configurable: { thread_id: "task-1" } };
+
+    await first.put(
+      config,
+      {
+        v: 4,
+        id: "00000000-0000-6000-8000-000000000001",
+        ts: "2026-01-01T00:00:00.000Z",
+        channel_values: { taskId: "task-1" },
+        channel_versions: { taskId: 1 },
+        versions_seen: {},
+      },
+      { source: "loop", step: 1, parents: {} },
+      { taskId: 1 },
+    );
+
+    const second = new FileLangGraphCheckpointSaver(filePath);
+    const tuple = await second.getTuple(config);
+
+    expect(tuple?.checkpoint.channel_values.taskId).toBe("task-1");
+    expect(tuple?.metadata?.step).toBe(1);
+  });
+
   it("normalizes planning JSON variants from fast models", () => {
     const planningDocument = planningDocumentSchema.parse({
       title: "Make GitHub upload asynchronous",
@@ -114,8 +144,6 @@ describe("workflow modules", () => {
       providerId: "default",
       systemPrompt: "Implement.",
       skillRefs: [],
-      tools: [],
-      guardrails: [],
     };
 
     try {
@@ -151,7 +179,9 @@ describe("workflow modules", () => {
       expect(env.CODEZERO_OPENCODE_PROVIDER).toBe("codezero");
       expect(env.CODEZERO_OPENCODE_MODEL).toBe("codezero/model-default");
       expect(prompt).toContain("CodeZero Implementation Request");
-      expect(prompt).not.toContain("OpenCode");
+      expect(prompt).toContain("OpenCode implementation executor");
+      expect(prompt).toContain("Repository Rules And Skills");
+      expect(prompt).toContain("CodeGraph Guidance");
       expect(prompt).toContain(
         "Leave the working tree with the required code changes",
       );
@@ -190,8 +220,6 @@ describe("workflow modules", () => {
       providerId: "default",
       systemPrompt: "Implement.",
       skillRefs: [],
-      tools: [],
-      guardrails: [],
     };
 
     const env = buildCodingExecutorEnv({ config, agent, executor });
@@ -275,8 +303,6 @@ describe("workflow modules", () => {
       providerId: "default",
       systemPrompt: "Implement.",
       skillRefs: [],
-      tools: [],
-      guardrails: [],
     };
 
     try {
@@ -454,8 +480,6 @@ describe("workflow modules", () => {
       providerId: "default",
       systemPrompt: "Review.",
       skillRefs: [],
-      tools: [],
-      guardrails: [],
     };
     const workflow = new IssueWorkflowRunner(createAppConfig(repoDir), tasks);
 
@@ -561,8 +585,6 @@ describe("workflow modules", () => {
       providerId: "default",
       systemPrompt: "Implement.",
       skillRefs: [],
-      tools: [],
-      guardrails: [],
     };
 
     const result = await runCodingCliExecutor({
@@ -973,8 +995,23 @@ describe("workflow modules", () => {
 
     expect(agent.providerId).toBe("large");
     expect(agent.systemPrompt).toContain("implement safely");
-    expect(agent.tools).toEqual(["repo.read_file"]);
-    expect(agent.guardrails).toEqual(["block-dangerous-shell"]);
+    expect(agent.skillRefs).toEqual(["implementation"]);
+  });
+
+  it("injects configured platform skills into workflow agent prompts", async () => {
+    const config = await loadAppConfig(process.cwd());
+    const agent = await createWorkflowAgent(config, "review", "review");
+
+    expect(agent.skillRefs).toEqual(
+      expect.arrayContaining([
+        "pr-compliance-review",
+        "frontend-verification",
+        "backend-verification",
+      ]),
+    );
+    expect(agent.systemPrompt).toContain("# Enabled Platform Skills");
+    expect(agent.systemPrompt).toContain("# Frontend Verification");
+    expect(agent.systemPrompt).toContain("# Backend Verification");
   });
 
   it("validates workflow provider configuration before creating a runner", async () => {
@@ -1302,16 +1339,16 @@ function createAppConfig(
           base_url: "https://api.example.test",
           api_key_env: "TEST_API_KEY",
           model: "model-default",
-          supports_tools: true,
           supports_structured_output: true,
+          max_retries: 2,
         },
         large: {
           type: "openai-compatible",
           base_url: "https://api.example.test",
           api_key_env: "TEST_API_KEY",
           model: "model-large",
-          supports_tools: true,
           supports_structured_output: true,
+          max_retries: 2,
         },
       },
       agents: {
@@ -1341,37 +1378,27 @@ function createAppConfig(
       image: "agent-sandbox-node:latest",
       root_dir: "./sandboxes",
       network: { allow: [] },
+      filesystem: { allow_repo_only: true },
       limits: {
         max_runtime_minutes: 90,
         max_diff_files: 30,
         max_diff_lines: 1200,
         max_quality_gate_retries: 3,
       },
+      docker: { memory: "4g", cpus: 2, pids_limit: 512 },
     },
-    policies: [
-      {
-        id: "block-dangerous-shell",
-        tool_names: [],
-        permissions: [],
-        match_paths: [],
-        match_commands: ["rm -rf"],
-        action: "block",
-      },
-    ],
-    tools: [
-      {
-        name: "repo.read_file",
-        description: "Read",
-        permission: "read",
-        policy_refs: [],
-      },
-    ],
     storage: {
       driver: "file",
       filePath: path.join(rootDir, "data", "tasks.json"),
     },
     memory: {
       filePath: path.join(rootDir, "data", "memory.json"),
+      maxRecords: 500,
+      maxBytes: 2_000_000,
+      maxRecordBytes: 16_000,
+    },
+    workflowGraph: {
+      checkpointFilePath: path.join(rootDir, "data", "langgraph-checkpoints.json"),
     },
     github: {},
   };
@@ -1410,12 +1437,6 @@ function repositoryConfig(): RepositoryConfig {
     },
     queue: {
       max_concurrent_issues: 1,
-    },
-    permissions: {
-      allowed_tools: [],
-      blocked_tools: [],
-      allowed_permissions: [],
-      blocked_permissions: [],
     },
     quality_gates: {},
     frontend: {

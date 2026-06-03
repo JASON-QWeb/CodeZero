@@ -25,7 +25,7 @@ describe("golden issue eval harness", () => {
       contextPack: { ...contextPack(), memories: [], tests: [] },
       navigationRoute: { entrypoints: [] },
       prBody: "## Summary",
-      trace: { ...trace(), spans: trace().spans.filter((span) => span.kind !== "memory" && span.kind !== "tool") }
+      trace: { ...trace(), spans: trace().spans.filter((span) => span.kind !== "memory" && span.kind !== "model") }
     });
 
     expect(report.score).toBeLessThan(1);
@@ -41,7 +41,7 @@ describe("golden issue eval harness", () => {
     expect(report.fixtures).toHaveLength(3);
     expect(report.score).toBe(1);
     expect(markdown).toContain("Golden Issue Eval Report");
-    expect(markdown).toContain("API rate limit policy and tool gateway regression");
+    expect(markdown).toContain("API rate limit rule and OpenCode executor regression");
   });
 });
 
@@ -113,13 +113,11 @@ function trace(): TaskTrace {
     spans: [
       span("navigation", "NAVIGATION_ROUTE_CREATED"),
       span("memory", "MEMORY_RETRIEVED"),
-      span("tool", "TOOL_CALL_FINISHED")
+      span("model", "AGENT_RUN_FINISHED")
     ],
     artifacts: [],
     summary: {
       totalSpans: 3,
-      toolCalls: 1,
-      policyDecisions: 0,
       failedOrBlocked: 0
     }
   };

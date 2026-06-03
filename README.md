@@ -80,14 +80,29 @@ CodeZero 覆盖的是**整条工程链路** —— 从产品意图到一个经�
 | 能力 | 说明 |
 |:---|:---|
 | **Issue → PRD → PR** | GitHub Issue 自动转化为结构化执行文档、验证后的 diff 和 draft PR |
-| **LangGraph 编排** | 可 checkpoint 的图节点，支持审批中断和可恢复的修复循环 |
-| **AI SDK 模型层** | 统一 provider registry，处理 PRD、review、context、validation 和 routing 调用 |
+| **LangGraph 编排** | 持久化 checkpoint，支持审批中断、进程重启恢复和可恢复修复循环 |
+| **AI SDK 模型层** | 统一 provider registry，处理 PRD、review、context、validation 和 routing 调用，内置瞬时失败重试 |
 | **实时 Agent 进度** | OpenCode 输出实时捕获为看板事件，随时查看 coding executor 在做什么 |
 | **仓库智能理解** | CodeGraph + Navigation Graph + ContextPack 在改代码前收敛修改范围 |
-| **持久 Task Sandbox** | 每个 Issue 一个沙箱 —— 跨审批、反馈迭代和重跑周期始终复用 |
+| **持久 Task Sandbox** | 每个 Issue 一个 worktree 或 Docker 沙箱，跨审批、反馈迭代和重跑周期始终复用 |
 | **Human-in-the-Loop** | PRD 审批、Policy 门禁、Review subagent 和 memory proposal 保持人可控 |
 | **多供应商支持** | OpenAI、Anthropic、Gemini、xAI、Mistral、Groq —— 不同 agent 可路由到不同模型 |
 | **操作台完整** | Run Console、Settings Console、Memory Inbox、Trace Replay API、Golden Issue Eval CLI |
+
+---
+
+## 运行保障
+
+| 领域 | 当前实现 |
+|:---|:---|
+| Docker 隔离 | Docker 模式通过 `docker run` 执行命令，挂载 repo/artifacts/logs，默认 `--network none`，启用 `--cap-drop ALL`、`no-new-privileges`、memory、CPU 和 PID 限额；存在网络白名单时使用 bridge 并在命令层校验外联主机 |
+| Worktree 沙箱 | Worktree 模式使用镜像仓库缓存和 `git worktree add --force -B` 创建真实 issue 分支工作区，不再只是普通目录 |
+| Diff 限制 | 实现完成后按 `max_diff_files`、`max_diff_lines` 校验变更范围，超限会阻断进入 PR |
+| LangGraph Checkpoint | 文件存储默认写入 `data/langgraph-checkpoints.json`；Postgres 存储启用时写入 `langgraph_checkpoints` 与 `langgraph_checkpoint_writes` |
+| Trace Replay API | `GET /tasks/:id/trace/replay?cursor=&limit=` 返回步骤、失败点、分页游标和可用恢复动作 |
+| Memory 系统 | `GET/PATCH/DELETE /memories/:id`、`POST /memories/prune` 支持编辑、删除、裁剪、容量限制和损坏文件隔离 |
+| 稳定性 | Postgres DDL 每个 repository 实例只迁移一次；文件 JSON 损坏会隔离为 `.corrupt-*`；模型调用对超时、限流和网络瞬断进行重试 |
+| Agent 能力 | PRD、搜索规划、实现、Review agent 均有默认配置；Review agent 注入 PR 合规、前端截图验证和后端测试验证 skill |
 
 ---
 
@@ -164,7 +179,6 @@ packages/
   persistence/            文件/Postgres task 持久化
   sandbox/                Docker/worktree 沙箱抽象
   skills/                 平台 skill loader 与内置 skills
-  tool-gateway/           可审计的 read/search/shell 工具边界
   verification/           测试、截图与本地验证辅助能力
   workflow-graph/         LangGraph task graph、checkpoint 与 callbacks
   workflows/              Issue-to-PR workflow 编排
@@ -290,7 +304,7 @@ pnpm eval:golden    # 使用 golden issues 评估候选产物
 
 | 文件 | 用途 |
 |:---|:---|
-| `codezero.yaml` | 模型 provider、agent 角色、仓库、沙箱、policy 和 tool gateway 默认值 |
+| `codezero.yaml` | 模型 provider、agent 角色、仓库、沙箱、memory、workflow graph、policy 和 tool gateway 默认值 |
 | `codezero.example.yaml` | 新安装可参考的干净模板 |
 
 本地运行时也可通过 **Settings Console** UI 编辑和校验这些配置。

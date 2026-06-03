@@ -15,7 +15,7 @@ import {
 } from "@agent/config";
 
 describe("app config loading", () => {
-  it("loads repository, tool, and policy configuration from examples", async () => {
+  it("loads repository and runtime configuration from examples", async () => {
     const config = await loadAppConfig(process.cwd());
 
     expect(config.repositories[0]?.trigger.mode).toBe("mention");
@@ -23,13 +23,13 @@ describe("app config loading", () => {
     expect(config.repositories[0]?.codebase_intelligence.codegraph.init_args).toContain("--index");
     expect(config.repositories[0]?.queue.max_concurrent_issues).toBe(2);
     expect(config.repositories[0]?.workflow.require_prd_review).toBe(true);
-    expect(config.repositories[0]?.permissions.blocked_permissions).toContain("dangerous");
     expect(config.sandbox.implementation_executor?.mode).toBe("cli");
     expect(config.sandbox.implementation_executor?.name).toBe("codezero-coding-cli");
-    expect(config.tools.map((tool) => tool.name)).not.toContain("repo.write_file");
-    expect(config.tools.map((tool) => tool.name)).toContain("shell.run");
-    expect(config.policies.map((policy) => policy.id)).toContain("block-dangerous-shell");
+    expect(config.sandbox.filesystem.allow_repo_only).toBe(true);
+    expect(config.sandbox.docker.memory).toBe("4g");
     expect(config.memory.filePath).toContain("memory.json");
+    expect(config.memory.maxRecords).toBeGreaterThan(0);
+    expect(config.workflowGraph.checkpointFilePath).toContain("langgraph-checkpoints.json");
   });
 
   it("resolves relative file storage env paths from the project root", async () => {
@@ -37,14 +37,19 @@ describe("app config loading", () => {
     await writeCodeZeroConfig(dir);
     const previousTaskStore = process.env.TASK_STORE_FILE;
     const previousMemoryStore = process.env.MEMORY_STORE_FILE;
+    const previousCheckpointFile = process.env.LANGGRAPH_CHECKPOINT_FILE;
     process.env.TASK_STORE_FILE = "data/custom-tasks.json";
     process.env.MEMORY_STORE_FILE = "data/custom-memory.json";
+    process.env.LANGGRAPH_CHECKPOINT_FILE = "data/custom-checkpoints.json";
 
     try {
       const config = await loadAppConfig(dir);
 
       expect(config.storage.filePath).toBe(path.join(dir, "data", "custom-tasks.json"));
       expect(config.memory.filePath).toBe(path.join(dir, "data", "custom-memory.json"));
+      expect(config.workflowGraph.checkpointFilePath).toBe(
+        path.join(dir, "data", "custom-checkpoints.json"),
+      );
     } finally {
       if (previousTaskStore === undefined) {
         delete process.env.TASK_STORE_FILE;
@@ -55,6 +60,11 @@ describe("app config loading", () => {
         delete process.env.MEMORY_STORE_FILE;
       } else {
         process.env.MEMORY_STORE_FILE = previousMemoryStore;
+      }
+      if (previousCheckpointFile === undefined) {
+        delete process.env.LANGGRAPH_CHECKPOINT_FILE;
+      } else {
+        process.env.LANGGRAPH_CHECKPOINT_FILE = previousCheckpointFile;
       }
     }
   });
@@ -184,6 +194,14 @@ describe("app config loading", () => {
       }
     });
     expect(() => parseConfigSection("agents", "providers: []")).toThrow();
+
+    await writeConfigSection(
+      dir,
+      "workflow_graph",
+      "workflow_graph:\n  checkpoint_file: data/custom-checkpoints.json\n",
+    );
+    const workflowGraph = await readConfigSection(dir, "workflow_graph");
+    expect(workflowGraph.content).toContain("custom-checkpoints.json");
   });
 
   it("parses optional coding executor provider overrides", () => {
@@ -231,6 +249,7 @@ describe("app config loading", () => {
 
     expect(interpolateEnv("token=${AGENT_CONFIG_TEST_VALUE} missing=${NOT_DEFINED_FOR_TEST}")).toBe("token=resolved missing=${NOT_DEFINED_FOR_TEST}");
     expect(isConfigSectionName("repositories")).toBe(true);
+    expect(isConfigSectionName("workflow_graph")).toBe(true);
     expect(isConfigSectionName("nope")).toBe(false);
   });
 
@@ -258,9 +277,6 @@ describe("app config loading", () => {
         "    trigger:",
         "      mode: mention",
         "      mention: '@agent-prd'",
-        "    permissions:",
-        "      allowed_permissions:",
-        "        - read",
         ""
       ].join("\n")
     });
@@ -270,8 +286,6 @@ describe("app config loading", () => {
       triggerMode: "label",
       mention: "   ",
       maxConcurrentIssues: 3,
-      allowedPermissions: ["read", "repo_write"],
-      blockedPermissions: ["dangerous"]
     });
     const written = await readFile(path.join(dir, "config", "codezero.yaml"), "utf8");
 
@@ -279,8 +293,6 @@ describe("app config loading", () => {
     expect(updated.exists).toBe(true);
     expect(written).toContain("mode: label");
     expect(written).toContain("max_concurrent_issues: 3");
-    expect(written).toContain("repo_write");
-    expect(written).toContain("dangerous");
     expect((updated.parsed as { repositories: Array<{ trigger: { mention: string } }> }).repositories[0]?.trigger.mention).toBe("@agent-prd");
   });
 
@@ -326,8 +338,7 @@ async function writeCodeZeroConfig(
     agents?: string;
     repositories?: string;
     sandbox?: string;
-    policies?: string;
-    tools?: string;
+    workflowGraph?: string;
   } = {}
 ): Promise<void> {
   await mkdir(path.join(rootDir, "config"), { recursive: true });
@@ -350,8 +361,8 @@ async function writeCodeZeroConfig(
         ].join("\n"),
       sections.repositories ?? "repositories: []\n",
       sections.sandbox ?? "sandbox: {}\n",
-      sections.policies ?? "policies: []\n",
-      sections.tools ?? "tools: []\n"
+      sections.workflowGraph ??
+        "workflow_graph:\n  checkpoint_file: data/langgraph-checkpoints.json\n"
     ].join("\n")
   );
 }

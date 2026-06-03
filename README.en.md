@@ -80,14 +80,29 @@ CodeZero handles the **entire engineering workflow** — from product intent to 
 | Feature | Description |
 |:---|:---|
 | **Issue → PRD → PR** | Transforms GitHub Issues into structured planning documents, verified diffs, and draft PRs |
-| **LangGraph Orchestration** | Checkpointed graph nodes with approval interrupts and resumable repair loops |
-| **AI SDK Model Layer** | Unified provider registry for PRD, review, context, validation, and routing agents |
+| **LangGraph Orchestration** | Durable checkpoints with approval interrupts, process restart recovery, and resumable repair loops |
+| **AI SDK Model Layer** | Unified provider registry for PRD, review, context, validation, and routing agents with transient failure retries |
 | **Live Agent Progress** | Real-time streaming of coding agent output as board events |
 | **Repository Intelligence** | CodeGraph + Navigation Graph + ContextPack narrow the edit surface before changes begin |
-| **Persistent Task Sandbox** | One sandbox per Issue — survives approval cycles, feedback iterations, and reruns |
+| **Persistent Task Sandbox** | One worktree or Docker sandbox per Issue, reused across approval cycles, feedback iterations, and reruns |
 | **Human-in-the-Loop** | PRD approval, policy gates, review subagents, and memory proposals keep humans in control |
 | **Multi-Provider Support** | OpenAI, Anthropic, Gemini, xAI, Mistral, Groq — route different agents to different models |
 | **Operator Console** | Run Console, Settings Console, Memory Inbox, Trace Replay API, Golden Issue Eval CLI |
+
+---
+
+## Runtime Guarantees
+
+| Area | Current implementation |
+|:---|:---|
+| Docker isolation | Docker mode executes commands through `docker run`, mounts repo/artifacts/logs, defaults to `--network none`, and applies `--cap-drop ALL`, `no-new-privileges`, memory, CPU, and PID limits; with a network allowlist it uses bridge networking plus command-level host validation |
+| Worktree sandbox | Worktree mode uses a mirrored repository cache and `git worktree add --force -B` to create a real issue-branch workspace |
+| Diff limits | After implementation, `max_diff_files` and `max_diff_lines` block oversized diffs before PR creation |
+| LangGraph checkpoints | File storage writes to `data/langgraph-checkpoints.json` by default; Postgres storage writes to `langgraph_checkpoints` and `langgraph_checkpoint_writes` |
+| Trace Replay API | `GET /tasks/:id/trace/replay?cursor=&limit=` returns replay steps, failed step, pagination cursor, and available resume actions |
+| Memory system | `GET/PATCH/DELETE /memories/:id` and `POST /memories/prune` support editing, deletion, pruning, capacity limits, and corrupt-file quarantine |
+| Stability | Postgres DDL runs once per repository instance; corrupt JSON files are quarantined as `.corrupt-*`; model calls retry transient timeouts, rate limits, and network failures |
+| Agent capability | PRD, search planning, implementation, and review agents are configured by default; the review agent receives PR compliance, frontend screenshot verification, and backend test verification skills |
 
 ---
 
@@ -164,7 +179,6 @@ packages/
   persistence/            File/Postgres task persistence
   sandbox/                Docker/worktree sandbox abstraction
   skills/                 Platform skill loader and built-in skills
-  tool-gateway/           Audited read/search/shell tool boundary
   verification/           Test, screenshot, and local verification helpers
   workflow-graph/         LangGraph task graph, checkpoints, callbacks
   workflows/              Issue-to-PR workflow composition
@@ -290,7 +304,7 @@ Runtime configuration lives in `config/`:
 
 | File | Purpose |
 |:---|:---|
-| `codezero.yaml` | Model providers, agent roles, repositories, sandbox, policies, tool gateway |
+| `codezero.yaml` | Model providers, agent roles, repositories, sandbox, memory, workflow graph, policies, tool gateway |
 | `codezero.example.yaml` | Clean template for new installations |
 
 The **Settings Console** UI can edit and validate these files during local operation.

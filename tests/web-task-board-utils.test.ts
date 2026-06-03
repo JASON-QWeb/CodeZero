@@ -8,6 +8,7 @@ import {
   fetchRepositoryQueues,
   fetchTasks,
   fetchTrace,
+  fetchTraceReplay,
   generateProjectKnowledgeGraph,
   openProjectKnowledgeGraphDashboard,
   approveTaskPrd,
@@ -81,6 +82,18 @@ describe("web task board utilities", () => {
       if (url.endsWith(`/tasks/${mockTasks[0]?.id}/trace`)) {
         return ok({ trace: mockTrace(mockTasks[0] as Task) });
       }
+      if (url.includes(`/tasks/${mockTasks[0]?.id}/trace/replay`)) {
+        const trace = mockTrace(mockTasks[0] as Task);
+        return ok({
+          replay: {
+            taskId: trace.taskId,
+            status: trace.status,
+            steps: [],
+            resumeActions: [],
+            summary: { ...trace.summary, replayedSpans: 0, remainingSpans: trace.spans.length }
+          }
+        });
+      }
       if (url.endsWith("/memories?status=proposed")) {
         return ok({ memories: mockMemories });
       }
@@ -117,6 +130,7 @@ describe("web task board utilities", () => {
     await expect(fetchTasks()).resolves.toHaveLength(mockTasks.length);
     await expect(fetchRepositoryQueues()).resolves.toHaveLength(2);
     await expect(fetchTrace(mockTasks[0]?.id ?? "")).resolves.toMatchObject({ taskId: mockTasks[0]?.id });
+    await expect(fetchTraceReplay({ taskId: mockTasks[0]?.id ?? "", limit: 5 })).resolves.toMatchObject({ taskId: mockTasks[0]?.id });
     await expect(fetchMemories("proposed")).resolves.toEqual(mockMemories);
     await expect(fetchProjectKnowledgeGraph("commerce")).resolves.toMatchObject({ status: "ready" });
     await expect(fetchRepositoryOnboarding("commerce")).resolves.toMatchObject({ codeGraphAvailable: true });
@@ -293,8 +307,7 @@ function mockTrace(task: Task): TaskTrace {
     span("workflow", "Issue received", "Task created from GitHub issue"),
     span("navigation", "Navigation route", "Repo graph selected entrypoints and related tests"),
     span("memory", "Memory retrieved", "Approved procedural memory injected into ContextPack"),
-    span("tool", "Implementation updated", "CodeZero coding executor updated the sandbox worktree"),
-    span("policy", "Policy check", "Path and command policy allowed the change"),
+    span("model", "Implementation updated", "OpenCode executor updated the sandbox worktree"),
     span("quality_gate", "Quality gates", "lint, typecheck and tests passed")
   ];
 
@@ -307,8 +320,6 @@ function mockTrace(task: Task): TaskTrace {
     artifacts: [],
     summary: {
       totalSpans: spans.length,
-      toolCalls: 1,
-      policyDecisions: 1,
       failedOrBlocked: 0
     }
   };

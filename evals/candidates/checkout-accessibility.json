@@ -82,13 +82,13 @@
         "durationMs": 0
       },
       {
-        "id": "span-tool",
+        "id": "span-model",
         "taskId": "task-checkout-accessibility",
-        "name": "repo.apply_patch",
-        "kind": "tool",
+        "name": "OpenCode executor",
+        "kind": "model",
         "status": "success",
         "level": "info",
-        "message": "Patch applied.",
+        "message": "OpenCode applied the implementation diff.",
         "startedAt": "2026-05-12T00:00:02.000Z",
         "endedAt": "2026-05-12T00:00:02.000Z",
         "durationMs": 0
@@ -109,8 +109,6 @@
     "artifacts": [],
     "summary": {
       "totalSpans": 4,
-      "toolCalls": 1,
-      "policyDecisions": 0,
       "failedOrBlocked": 0
     }
   }

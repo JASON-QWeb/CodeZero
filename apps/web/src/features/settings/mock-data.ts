@@ -95,10 +95,6 @@ export async function mockUpdateRepositoryRuntimeSettings(
           queue: {
             max_concurrent_issues: input.maxConcurrentIssues,
           },
-          permissions: {
-            allowed_permissions: input.allowedPermissions,
-            blocked_permissions: input.blockedPermissions,
-          },
         }
       : repository,
   );
@@ -123,7 +119,6 @@ function createSections(): MockSection[] {
           base_url: "${OPENAI_BASE_URL}",
           api_key_env: "OPENAI_API_KEY",
           model: "codezero-agent-pro",
-          supports_tools: true,
           supports_structured_output: true,
         },
       },
@@ -143,19 +138,17 @@ function createSections(): MockSection[] {
         root_dir: "./sandboxes",
       },
     }),
-    section("policies", policiesYaml(), {
-      policies: [
-        { id: "block-secret-files", action: "block" },
-        { id: "require-screenshot-sanitization", action: "require_approval" },
-      ],
+    section("memory", memoryYaml(), {
+      memory: {
+        max_records: 500,
+        max_bytes: 2_000_000,
+        max_record_bytes: 16_000,
+      },
     }),
-    section("tools", toolsYaml(), {
-      tools: [
-        { name: "repo.search", permission: "read" },
-        { name: "repo.read_file", permission: "read" },
-        { name: "shell.run", permission: "repo_write" },
-        { name: "browser.screenshot", permission: "read" },
-      ],
+    section("workflow_graph", workflowGraphYaml(), {
+      workflow_graph: {
+        checkpoint_file: "data/langgraph-checkpoints.json",
+      },
     }),
   ];
 }
@@ -171,10 +164,6 @@ function seedRepositories(): Array<Record<string, unknown>> {
       project_rule_path: ".agent/rules",
       trigger: { mode: "mention", mention: "@agent-prd" },
       queue: { max_concurrent_issues: 3 },
-      permissions: {
-        allowed_permissions: ["read", "safe_write", "repo_write"],
-        blocked_permissions: ["dangerous"],
-      },
     },
     {
       id: "JASON-QWeb/BeautySkillsHub",
@@ -185,10 +174,6 @@ function seedRepositories(): Array<Record<string, unknown>> {
       project_rule_path: ".agent/rules",
       trigger: { mode: "label", mention: "@agent-prd" },
       queue: { max_concurrent_issues: 2 },
-      permissions: {
-        allowed_permissions: ["read", "safe_write"],
-        blocked_permissions: ["external_write", "dangerous"],
-      },
     },
   ];
 }
@@ -227,7 +212,6 @@ function agentsYaml(): string {
     "    base_url: ${OPENAI_BASE_URL}",
     "    api_key_env: OPENAI_API_KEY",
     "    model: codezero-agent-pro",
-    "    supports_tools: true",
     "    supports_structured_output: true",
     "",
     "agents:",
@@ -247,7 +231,6 @@ function repositoriesYaml(repositories: Array<Record<string, unknown>>): string 
   for (const repository of repositories) {
     const trigger = repository.trigger as Record<string, unknown>;
     const queue = repository.queue as Record<string, unknown>;
-    const permissions = repository.permissions as Record<string, unknown>;
     lines.push(
       `  - id: ${repository.id}`,
       `    github_owner: ${repository.github_owner}`,
@@ -260,15 +243,6 @@ function repositoriesYaml(repositories: Array<Record<string, unknown>>): string 
       `      mention: ${trigger.mention}`,
       "    queue:",
       `      max_concurrent_issues: ${queue.max_concurrent_issues}`,
-      "    permissions:",
-      "      allowed_permissions:",
-      ...((permissions.allowed_permissions as string[]) ?? []).map(
-        (permission) => `        - ${permission}`,
-      ),
-      "      blocked_permissions:",
-      ...((permissions.blocked_permissions as string[]) ?? []).map(
-        (permission) => `        - ${permission}`,
-      ),
     );
   }
 
@@ -291,36 +265,20 @@ function sandboxYaml(): string {
   ].join("\n");
 }
 
-function policiesYaml(): string {
+function memoryYaml(): string {
   return [
-    "policies:",
-    "  - id: block-secret-files",
-    "    description: Screenshot data blocks secrets and private keys.",
-    "    match_paths:",
-    "      - .env*",
-    "      - '**/*.pem'",
-    "      - '**/*.key'",
-    "    action: block",
-    "  - id: require-screenshot-sanitization",
-    "    description: Screenshots must use sanitized sample data.",
-    "    match_paths:",
-    "      - apps/web/**",
-    "    action: require_approval",
+    "memory:",
+    "  max_records: 500",
+    "  max_bytes: 2000000",
+    "  max_record_bytes: 16000",
     "",
   ].join("\n");
 }
 
-function toolsYaml(): string {
+function workflowGraphYaml(): string {
   return [
-    "tools:",
-    "  - name: repo.search",
-    "    permission: read",
-    "  - name: repo.read_file",
-    "    permission: read",
-    "  - name: shell.run",
-    "    permission: repo_write",
-    "  - name: browser.screenshot",
-    "    permission: read",
+    "workflow_graph:",
+    "  checkpoint_file: data/langgraph-checkpoints.json",
     "",
   ].join("\n");
 }

@@ -104,7 +104,6 @@ export function applyProviderPresetToAgentsYaml(
     ...(preset.baseUrl ? [`    base_url: "${preset.baseUrl}"`] : []),
     `    api_key_env: "${preset.apiKeyEnv}"`,
     `    model: "${preset.model}"`,
-    "    supports_tools: true",
     "    supports_structured_output: true",
     "    timeout_ms: 900000",
     "    coding_executor:",

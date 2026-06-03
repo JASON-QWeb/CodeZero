@@ -13,8 +13,10 @@ import {
 import {
   getGitDiff,
   runCommand,
+  runSandboxCommand,
   type CommandOutputChunk,
   type CommandResult,
+  type Sandbox,
 } from "@agent/sandbox";
 import type {
   JsonObject,
@@ -41,6 +43,7 @@ export type CodingExecutorRunInput = {
   executor: NormalizedImplementationExecutorConfig;
   agent: AgentDefinition;
   task: Task;
+  sandbox?: Sandbox;
   repoDir: string;
   artifactDir: string;
   prompt: string;
@@ -150,7 +153,7 @@ export function buildCodingExecutorPrompt(
   return [
     "# CodeZero Implementation Request",
     "",
-    "You are CodeZero's internal implementation executor running inside an isolated Git worktree.",
+    "You are the OpenCode implementation executor running inside an isolated Git worktree.",
     "Modify the repository files directly. Do not commit, push, create pull requests, or change branches.",
     "CodeZero will run the final quality gates, review the diff, record screenshot artifacts, and create or update the GitHub PR.",
     "Keep the diff focused on the approved PRD/Plan document and latest feedback. Do not include unrelated refactors.",
@@ -165,11 +168,21 @@ export function buildCodingExecutorPrompt(
     "## Approved PRD/Plan Document",
     JSON.stringify(input.planningDocument, null, 2),
     "",
+    "## Acceptance Criteria",
+    formatList(input.planningDocument.acceptanceCriteria),
+    "",
+    "## Implementation Plan",
+    JSON.stringify(input.planningDocument.implementationPlan, null, 2),
+    "",
+    "## Repository Rules And Skills",
+    formatRepositoryRulesAndSkills(input.implementationContext),
+    "",
     "## Repository Context",
     JSON.stringify(input.implementationContext, null, 2),
     "",
-    "## CodeGraph",
+    "## CodeGraph Guidance",
     "When CodeGraph MCP tools are available, use them for code discovery before broad filesystem search. They read the sandbox's prebuilt `.codegraph` index and stay current while you edit.",
+    formatCodeGraphContext(input.implementationContext),
     "",
     "## Current File Snippets",
     JSON.stringify(input.fileSnippets, null, 2),
@@ -192,10 +205,43 @@ export function buildCodingExecutorPrompt(
     "- Leave the working tree with the required code changes.",
     "- Add or update tests when the PRD or failure output requires it.",
     "- You may run targeted local commands if helpful, but CodeZero will run the authoritative self-checks after you finish.",
+    "- Do not commit, push, create pull requests, approve PRDs, or change workflow status.",
     "- Stop after the implementation is complete; do not ask the user for follow-up unless the repository is genuinely blocked.",
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function formatList(items: string[]): string {
+  return items.length > 0
+    ? items.map((item) => `- ${item}`).join("\n")
+    : "- No explicit acceptance criteria were provided.";
+}
+
+function formatRepositoryRulesAndSkills(context: JsonObject): string {
+  const businessRules = Array.isArray(context.businessRules)
+    ? context.businessRules.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+
+  if (businessRules.length === 0) {
+    return "No repository-specific rules or skills were found.";
+  }
+
+  return businessRules.join("\n\n");
+}
+
+function formatCodeGraphContext(context: JsonObject): string {
+  const codeGraphContext = context.codeGraphContext;
+
+  if (!isJsonObject(codeGraphContext)) {
+    return "No compact CodeGraph context is available in the prompt. Prefer the CodeGraph MCP when it is configured.";
+  }
+
+  return [
+    "",
+    "Compact CodeGraph context:",
+    JSON.stringify(codeGraphContext, null, 2),
+  ].join("\n");
 }
 
 export async function runCodingCliExecutor(
@@ -237,35 +283,47 @@ export async function runCodingCliExecutor(
   const progressReporter = createCodingExecutorProgressReporter(
     input.onProgress,
   );
-  const commandResult = await runCommand({
-    cwd: input.repoDir,
-    command: input.executor.command,
-    timeoutMs: input.executor.timeout_ms,
-    env: {
+  const executorEnv = {
       ...buildCodingExecutorEnv({
         config: input.config,
         agent: input.agent,
         executor: input.executor,
       }),
-      CODEZERO_PROMPT_FILE: promptPath,
+      CODEZERO_PROMPT_FILE: sandboxPath(input.sandbox, promptPath),
       CODEZERO_TASK_ID: input.task.id,
-      CODEZERO_REPO_DIR: input.repoDir,
-      CODEZERO_ARTIFACT_DIR: input.artifactDir,
+      CODEZERO_REPO_DIR: sandboxPath(input.sandbox, input.repoDir),
+      CODEZERO_ARTIFACT_DIR: sandboxPath(input.sandbox, input.artifactDir),
       CODEZERO_ISSUE_URL: input.task.issue.url,
       CODEZERO_EXECUTOR_NAME: input.executor.name,
-      HOME: openCodeHome,
-      XDG_DATA_HOME: openCodeDataHome,
-      XDG_CONFIG_HOME: openCodeConfigHome,
+      HOME: sandboxPath(input.sandbox, openCodeHome),
+      XDG_DATA_HOME: sandboxPath(input.sandbox, openCodeDataHome),
+      XDG_CONFIG_HOME: sandboxPath(input.sandbox, openCodeConfigHome),
       OPENCODE_DISABLE_AUTOUPDATE: "true",
       ...(openCodeConfig
         ? {
-            OPENCODE_CONFIG: openCodeConfigPath,
-            CODEZERO_OPENCODE_CONFIG_FILE: openCodeConfigPath,
+            OPENCODE_CONFIG: sandboxPath(input.sandbox, openCodeConfigPath),
+            CODEZERO_OPENCODE_CONFIG_FILE: sandboxPath(
+              input.sandbox,
+              openCodeConfigPath,
+            ),
           }
         : {}),
-    },
-    onOutput: (chunk) => progressReporter.accept(chunk),
-  });
+  };
+  const commandResult = input.sandbox
+    ? await runSandboxCommand({
+        sandbox: input.sandbox,
+        command: input.executor.command,
+        timeoutMs: input.executor.timeout_ms,
+        env: executorEnv,
+        onOutput: (chunk) => progressReporter.accept(chunk),
+      })
+    : await runCommand({
+        cwd: input.repoDir,
+        command: input.executor.command,
+        timeoutMs: input.executor.timeout_ms,
+        env: executorEnv,
+        onOutput: (chunk) => progressReporter.accept(chunk),
+      });
   await progressReporter.flush();
   const diff = await getGitDiff(input.repoDir);
 
@@ -295,6 +353,35 @@ export async function runCodingCliExecutor(
     logPath,
     diff,
   };
+}
+
+function sandboxPath(sandbox: Sandbox | undefined, filePath: string): string {
+  if (!sandbox || sandbox.mode !== "docker") {
+    return filePath;
+  }
+
+  if (filePath === sandbox.repoDir || filePath.startsWith(`${sandbox.repoDir}${path.sep}`)) {
+    return path.posix.join(
+      "/workspace/repo",
+      path.relative(sandbox.repoDir, filePath).split(path.sep).join("/"),
+    );
+  }
+
+  if (filePath === sandbox.artifactDir || filePath.startsWith(`${sandbox.artifactDir}${path.sep}`)) {
+    return path.posix.join(
+      "/workspace/artifacts",
+      path.relative(sandbox.artifactDir, filePath).split(path.sep).join("/"),
+    );
+  }
+
+  if (filePath === sandbox.logDir || filePath.startsWith(`${sandbox.logDir}${path.sep}`)) {
+    return path.posix.join(
+      "/workspace/logs",
+      path.relative(sandbox.logDir, filePath).split(path.sep).join("/"),
+    );
+  }
+
+  return filePath;
 }
 
 async function resetOpenCodeProjectMarker(repoDir: string): Promise<void> {

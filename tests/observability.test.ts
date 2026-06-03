@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTaskTrace } from "@agent/observability";
+import { buildTaskTrace, buildTaskTraceReplay } from "@agent/observability";
 import { createTask } from "@agent/orchestrator";
 import { createTaskEvent } from "@agent/persistence";
 import type { Artifact, IssueContext } from "@agent/shared";
@@ -24,15 +24,14 @@ describe("observability trace", () => {
       createTaskEvent({ taskId: task.id, type: "TASK_CREATED", message: "created" }),
       createTaskEvent({
         taskId: task.id,
-        type: "TOOL_CALL_FINISHED",
-        message: "Tool shell.run finished with success",
-        metadata: { toolName: "shell.run", status: "success" }
+        type: "AGENT_RUN_FINISHED",
+        message: "Implementation executor finished with success",
+        metadata: { executor: "opencode", status: "success" }
       }),
       createTaskEvent({
         taskId: task.id,
-        type: "POLICY_DECISION",
-        level: "warn",
-        message: "Policy audit-database-migrations returned require_approval"
+        type: "QUALITY_GATE_FINISHED",
+        message: "Quality gates passed"
       }),
       createTaskEvent({
         taskId: task.id,
@@ -51,10 +50,33 @@ describe("observability trace", () => {
     ];
     const trace = buildTaskTrace({ task, events, artifacts });
 
-    expect(trace.summary.toolCalls).toBe(1);
-    expect(trace.summary.policyDecisions).toBe(1);
     expect(trace.spans.map((span) => span.kind)).toContain("artifact");
+    expect(trace.spans.map((span) => span.kind)).toContain("model");
+    expect(trace.spans.map((span) => span.kind)).toContain("quality_gate");
     expect(trace.spans.map((span) => span.kind)).toContain("memory");
-    expect(trace.spans.find((span) => span.kind === "policy")?.status).toBe("blocked");
+    expect(trace.summary.failedOrBlocked).toBe(0);
+  });
+
+  it("builds a cursor-based trace replay with resume actions", () => {
+    const task = { ...createTask(issue), status: "PRD_REVIEW_REQUIRED" as const };
+    const trace = buildTaskTrace({
+      task,
+      events: [
+        createTaskEvent({ taskId: task.id, type: "TASK_CREATED", message: "created" }),
+        createTaskEvent({
+          taskId: task.id,
+          type: "HUMAN_REVIEW_REQUIRED",
+          level: "warn",
+          message: "PRD requires approval"
+        })
+      ],
+      artifacts: []
+    });
+    const replay = buildTaskTraceReplay(trace, { limit: 1 });
+
+    expect(replay.steps).toHaveLength(1);
+    expect(replay.nextCursor).toBe(replay.steps[0]?.spanId);
+    expect(replay.failedStep?.kind).toBe("human");
+    expect(replay.resumeActions.find((action) => action.type === "approve_prd")?.available).toBe(true);
   });
 });

@@ -5,6 +5,7 @@ const issuesGet = vi.fn();
 const listComments = vi.fn();
 const listForRepo = vi.fn();
 const issuesUpdate = vi.fn();
+const issuesCreate = vi.fn();
 const createComment = vi.fn();
 const pullsCreate = vi.fn();
 const pullsUpdate = vi.fn();
@@ -18,6 +19,7 @@ function fakeOctokit(): GitHubApiClient {
       listComments,
       listForRepo,
       update: issuesUpdate,
+      create: issuesCreate,
       createComment
     },
     pulls: {
@@ -218,6 +220,45 @@ describe("github client", () => {
       })
     ).resolves.toBe("https://github.com/acme/shop/pull/5");
     expect(pullsCreate).toHaveBeenCalledWith(expect.objectContaining({ draft: true, head: "agent/issue-1" }));
+  });
+
+  it("creates issues and normalizes the created issue payload", async () => {
+    issuesCreate.mockResolvedValue({
+      data: {
+        number: 42,
+        html_url: "https://github.com/acme/shop/issues/42",
+        title: "Implement checkout telemetry",
+        body: "Track the checkout funnel.",
+        labels: ["agent-ready", { name: "analytics" }]
+      }
+    });
+
+    const issue = await new GitHubClient({ token: "token" }, fakeOctokit()).createIssue({
+      owner: "acme",
+      repo: "shop",
+      title: "Implement checkout telemetry",
+      body: "Track the checkout funnel.",
+      labels: ["agent-ready"],
+      baseBranch: "develop"
+    });
+
+    expect(issuesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: "acme",
+        repo: "shop",
+        title: "Implement checkout telemetry",
+        labels: ["agent-ready"]
+      })
+    );
+    expect(issue).toMatchObject({
+      provider: "github",
+      owner: "acme",
+      repo: "shop",
+      number: 42,
+      labels: ["agent-ready", "analytics"],
+      comments: [],
+      baseBranch: "develop"
+    });
   });
 
   it("updates pull requests and comments on the PR conversation", async () => {

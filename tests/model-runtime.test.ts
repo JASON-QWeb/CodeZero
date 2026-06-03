@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+
 import {
   AgentRunner,
   createModelRuntimeProviders,
   parseJsonObject,
   runJsonAgent,
+  runWithTransientRetry,
   type AgentDefinition,
 } from "@agent/model-runtime";
 import type { AppConfig } from "@agent/config";
@@ -14,8 +16,6 @@ const agent: AgentDefinition = {
   providerId: "test-provider",
   systemPrompt: "You are a test agent.",
   skillRefs: [],
-  tools: [],
-  guardrails: [],
 };
 
 describe("model runtime", () => {
@@ -140,6 +140,24 @@ describe("model runtime", () => {
     );
   });
 
+  it("retries transient provider failures", async () => {
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error("fetch failed"), { code: "ECONNRESET" }),
+      )
+      .mockResolvedValueOnce("ok");
+
+    await expect(
+      runWithTransientRetry(operation, {
+        maxRetries: 1,
+        timeoutMs: 1_000,
+        timeoutMessage: () => new Error("timeout"),
+      }),
+    ).resolves.toEqual({ value: "ok", attempts: 2 });
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
   it("validates provider env and unresolved placeholders before creating providers", () => {
     const config = createConfig();
 
@@ -177,8 +195,8 @@ function createConfig(): AppConfig {
           base_url: "https://api.example.test/v1",
           api_key_env: "TEST_API_KEY",
           model: "test-model",
-          supports_tools: true,
           supports_structured_output: true,
+          max_retries: 2,
           coding_executor: {
             mode: "auto",
             options: {},
@@ -195,12 +213,14 @@ function createConfig(): AppConfig {
       image: "agent-sandbox-node:latest",
       root_dir: "./sandboxes",
       network: { allow: [] },
+      filesystem: { allow_repo_only: true },
       limits: {
         max_runtime_minutes: 90,
         max_diff_files: 30,
         max_diff_lines: 1200,
         max_quality_gate_retries: 6,
       },
+      docker: { memory: "4g", cpus: 2, pids_limit: 512 },
       implementation_executor: {
         mode: "cli",
         name: "codezero-coding-cli",
@@ -209,14 +229,18 @@ function createConfig(): AppConfig {
         env: {},
       },
     },
-    policies: [],
-    tools: [],
     storage: {
       driver: "file",
       filePath: "data/tasks.json",
     },
     memory: {
       filePath: "data/memory.json",
+      maxRecords: 500,
+      maxBytes: 2_000_000,
+      maxRecordBytes: 16_000,
+    },
+    workflowGraph: {
+      checkpointFilePath: "data/langgraph-checkpoints.json",
     },
     github: {},
   };

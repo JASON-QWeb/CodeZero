@@ -138,9 +138,6 @@ export type TaskEventType =
   | "AGENT_RUN_FINISHED"
   | "COMMAND_STARTED"
   | "COMMAND_FINISHED"
-  | "TOOL_CALL_STARTED"
-  | "TOOL_CALL_FINISHED"
-  | "POLICY_DECISION"
   | "FILE_CHANGED"
   | "QUALITY_GATE_STARTED"
   | "QUALITY_GATE_FINISHED"
@@ -282,8 +279,6 @@ export type ReviewResult = {
 export type TraceSpanKind =
   | "workflow"
   | "model"
-  | "tool"
-  | "policy"
   | "artifact"
   | "quality_gate"
   | "navigation"
@@ -323,8 +318,41 @@ export type TaskTrace = {
   artifacts: Artifact[];
   summary: {
     totalSpans: number;
-    toolCalls: number;
-    policyDecisions: number;
     failedOrBlocked: number;
+  };
+};
+
+export type TraceReplayStep = {
+  cursor: string;
+  spanId: string;
+  parentId?: string;
+  index: number;
+  name: string;
+  kind: TraceSpanKind;
+  status: TraceSpanStatus;
+  message: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  metadata?: JsonObject;
+  canResumeFromHere: boolean;
+};
+
+export type TaskTraceReplay = {
+  taskId: string;
+  status: TaskStatus;
+  cursor?: string;
+  nextCursor?: string;
+  previousCursor?: string;
+  steps: TraceReplayStep[];
+  failedStep?: TraceReplayStep;
+  resumeActions: Array<{
+    type: "approve_prd" | "retry_workflow" | "inspect_failure" | "open_pr";
+    label: string;
+    available: boolean;
+  }>;
+  summary: TaskTrace["summary"] & {
+    replayedSpans: number;
+    remainingSpans: number;
   };
 };

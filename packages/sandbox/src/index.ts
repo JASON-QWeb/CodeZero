@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { IssueContext } from "@agent/shared";
 
@@ -11,6 +12,16 @@ export type SandboxConfig = {
   dockerImage?: string;
   networkAllowlist: string[];
   maxRuntimeMinutes: number;
+  maxDiffFiles?: number;
+  maxDiffLines?: number;
+  filesystemAllowRepoOnly?: boolean;
+  docker?: DockerResourceLimits;
+};
+
+export type DockerResourceLimits = {
+  memory?: string;
+  cpus?: number;
+  pidsLimit?: number;
 };
 
 export type Sandbox = {
@@ -19,6 +30,11 @@ export type Sandbox = {
   artifactDir: string;
   logDir: string;
   mode: SandboxMode;
+  rootDir?: string;
+  dockerImage?: string;
+  networkAllowlist?: string[];
+  filesystemAllowRepoOnly?: boolean;
+  docker?: DockerResourceLimits;
 };
 
 export type SandboxCreateInput = {
@@ -45,6 +61,11 @@ export type CommandOutputChunk = {
   text: string;
 };
 
+export type DiffLimits = {
+  maxFiles?: number;
+  maxLines?: number;
+};
+
 const generatedPathspecExcludes = [
   "package-lock.json",
   "pnpm-lock.yaml",
@@ -63,7 +84,12 @@ export class DockerSandboxManager implements SandboxManager {
       repoDir: path.join(base, "repo"),
       artifactDir: path.join(base, "artifacts"),
       logDir: path.join(base, "logs"),
-      mode: this.config.mode
+      mode: this.config.mode,
+      rootDir: this.config.rootDir,
+      dockerImage: this.config.dockerImage,
+      networkAllowlist: this.config.networkAllowlist,
+      filesystemAllowRepoOnly: this.config.filesystemAllowRepoOnly,
+      docker: this.config.docker
     };
 
     await Promise.all([mkdir(sandbox.repoDir, { recursive: true }), mkdir(sandbox.artifactDir, { recursive: true }), mkdir(sandbox.logDir, { recursive: true })]);
@@ -80,9 +106,11 @@ export class DockerSandboxManager implements SandboxManager {
     ];
   }
 
-  dockerRunCommand(sandbox: Sandbox): string {
-    const image = this.config.dockerImage ?? "agent-sandbox-node:latest";
-    return `docker run --rm -v ${sandbox.repoDir}:/workspace/repo -v ${sandbox.artifactDir}:/workspace/artifacts ${image}`;
+  dockerRunCommand(sandbox: Sandbox, command = "pwd"): string {
+    return formatDockerCommand({
+      sandbox: { ...sandbox, dockerImage: sandbox.dockerImage ?? this.config.dockerImage },
+      command
+    });
   }
 }
 
@@ -91,6 +119,12 @@ export class WorktreeSandboxManager extends DockerSandboxManager {
     const sandbox = await super.create(input);
     return { ...sandbox, mode: "worktree" };
   }
+}
+
+export function createSandboxManager(config: SandboxConfig): SandboxManager {
+  return config.mode === "worktree"
+    ? new WorktreeSandboxManager(config)
+    : new DockerSandboxManager(config);
 }
 
 export async function runCommand(input: {
@@ -203,6 +237,43 @@ export async function runCommand(input: {
   };
 }
 
+export async function runSandboxCommand(input: {
+  sandbox: Sandbox;
+  command: string;
+  timeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
+  stdin?: string;
+  onOutput?: (chunk: CommandOutputChunk) => void | Promise<void>;
+}): Promise<CommandResult> {
+  if (input.sandbox.mode !== "docker") {
+    return runCommand({
+      cwd: input.sandbox.repoDir,
+      command: input.command,
+      timeoutMs: input.timeoutMs,
+      env: input.env,
+      stdin: input.stdin,
+      onOutput: input.onOutput
+    });
+  }
+
+  assertCommandReferencesAllowedHosts(
+    input.command,
+    input.sandbox.networkAllowlist ?? []
+  );
+  const command = await buildDockerCommand({
+    sandbox: input.sandbox,
+    command: input.command,
+    env: input.env
+  });
+  return runCommand({
+    cwd: input.sandbox.repoDir,
+    command,
+    timeoutMs: input.timeoutMs,
+    stdin: input.stdin,
+    onOutput: input.onOutput
+  });
+}
+
 export async function cloneRepository(input: {
   sandbox: Sandbox;
   remoteUrl: string;
@@ -210,15 +281,27 @@ export async function cloneRepository(input: {
   issueBranch: string;
   timeoutMs?: number;
 }): Promise<CommandResult[]> {
+  if (input.sandbox.mode === "worktree") {
+    return prepareWorktreeRepository({
+      sandbox: input.sandbox,
+      remoteUrl: input.remoteUrl,
+      baseRef: input.baseBranch,
+      worktreeBranch: input.issueBranch,
+      timeoutMs: input.timeoutMs
+    });
+  }
+
   await resetCloneTarget(input.sandbox.repoDir);
+  const cloneTarget =
+    input.sandbox.mode === "docker" ? "/workspace/repo" : input.sandbox.repoDir;
   const commands = [
-    `git clone --depth 1 --branch ${shellQuote(input.baseBranch)} ${shellQuote(input.remoteUrl)} ${shellQuote(input.sandbox.repoDir)}`,
+    `git clone --depth 1 --branch ${shellQuote(input.baseBranch)} ${shellQuote(input.remoteUrl)} ${shellQuote(cloneTarget)}`,
     `git checkout -b ${shellQuote(input.issueBranch)}`
   ];
   const results: CommandResult[] = [];
 
-  const cloneResult = await runCommand({
-    cwd: path.dirname(input.sandbox.repoDir),
+  const cloneResult = await runCloneCommand({
+    sandbox: input.sandbox,
     command: commands[0] ?? "",
     timeoutMs: input.timeoutMs
   });
@@ -229,8 +312,8 @@ export async function cloneRepository(input: {
   }
 
   results.push(
-    await runCommand({
-      cwd: input.sandbox.repoDir,
+    await runCloneCommand({
+      sandbox: input.sandbox,
       command: commands[1] ?? "",
       timeoutMs: input.timeoutMs
     })
@@ -245,10 +328,20 @@ export async function cloneRepositoryBranch(input: {
   branch: string;
   timeoutMs?: number;
 }): Promise<CommandResult[]> {
+  if (input.sandbox.mode === "worktree") {
+    return prepareWorktreeRepository({
+      sandbox: input.sandbox,
+      remoteUrl: input.remoteUrl,
+      baseRef: input.branch,
+      worktreeBranch: input.branch,
+      timeoutMs: input.timeoutMs
+    });
+  }
+
   await resetCloneTarget(input.sandbox.repoDir);
-  const result = await runCommand({
-    cwd: path.dirname(input.sandbox.repoDir),
-    command: `git clone --depth 1 --branch ${shellQuote(input.branch)} ${shellQuote(input.remoteUrl)} ${shellQuote(input.sandbox.repoDir)}`,
+  const result = await runCloneCommand({
+    sandbox: input.sandbox,
+    command: `git clone --depth 1 --branch ${shellQuote(input.branch)} ${shellQuote(input.remoteUrl)} ${shellQuote(input.sandbox.mode === "docker" ? "/workspace/repo" : input.sandbox.repoDir)}`,
     timeoutMs: input.timeoutMs
   });
 
@@ -274,6 +367,37 @@ export async function listChangedFiles(repoDir: string): Promise<string[]> {
     .split("\n")
     .map((line) => line.slice(3).trim())
     .filter(Boolean);
+}
+
+export async function enforceDiffLimits(
+  repoDir: string,
+  limits: DiffLimits,
+): Promise<void> {
+  const [changedFiles, diff] = await Promise.all([
+    listChangedFiles(repoDir),
+    getGitDiff(repoDir)
+  ]);
+  const changedLineCount = diff
+    .split("\n")
+    .filter((line) =>
+      (line.startsWith("+") && !line.startsWith("+++")) ||
+      (line.startsWith("-") && !line.startsWith("---"))
+    ).length;
+
+  if (
+    limits.maxFiles !== undefined &&
+    changedFiles.length > limits.maxFiles
+  ) {
+    throw new Error(
+      `Diff changed ${changedFiles.length} files, exceeding sandbox limit ${limits.maxFiles}`,
+    );
+  }
+
+  if (limits.maxLines !== undefined && changedLineCount > limits.maxLines) {
+    throw new Error(
+      `Diff changed ${changedLineCount} lines, exceeding sandbox limit ${limits.maxLines}`,
+    );
+  }
 }
 
 export async function getCurrentCommitSha(repoDir: string, ref = "HEAD"): Promise<string> {
@@ -304,6 +428,223 @@ export async function pushBranch(repoDir: string, branchName: string): Promise<C
 async function resetCloneTarget(repoDir: string): Promise<void> {
   await rm(repoDir, { recursive: true, force: true });
   await mkdir(path.dirname(repoDir), { recursive: true });
+}
+
+async function runCloneCommand(input: {
+  sandbox: Sandbox;
+  command: string;
+  timeoutMs?: number;
+}): Promise<CommandResult> {
+  if (input.sandbox.mode === "docker") {
+    return runSandboxCommand(input);
+  }
+
+  return runCommand({
+    cwd: path.dirname(input.sandbox.repoDir),
+    command: input.command,
+    timeoutMs: input.timeoutMs
+  });
+}
+
+async function prepareWorktreeRepository(input: {
+  sandbox: Sandbox;
+  remoteUrl: string;
+  baseRef: string;
+  worktreeBranch: string;
+  timeoutMs?: number;
+}): Promise<CommandResult[]> {
+  await resetCloneTarget(input.sandbox.repoDir);
+  const cacheDir = path.join(sandboxRootDir(input.sandbox), "_git-cache");
+  await mkdir(cacheDir, { recursive: true });
+  const mirrorDir = path.join(cacheDir, `${hashRemote(input.remoteUrl)}.git`);
+  const results: CommandResult[] = [];
+  const mirrorExists = await pathExists(path.join(mirrorDir, "HEAD"));
+
+  if (!mirrorExists) {
+    const cloneMirror = await runCommand({
+      cwd: cacheDir,
+      command: `git clone --mirror ${shellQuote(input.remoteUrl)} ${shellQuote(mirrorDir)}`,
+      timeoutMs: input.timeoutMs
+    });
+    results.push(cloneMirror);
+
+    if (cloneMirror.exitCode !== 0) {
+      return results;
+    }
+  } else {
+    const setUrl = await runCommand({
+      cwd: mirrorDir,
+      command: `git remote set-url origin ${shellQuote(input.remoteUrl)}`,
+      timeoutMs: 60_000
+    });
+    results.push(setUrl);
+
+    if (setUrl.exitCode !== 0) {
+      return results;
+    }
+  }
+
+  const fetch = await runCommand({
+    cwd: mirrorDir,
+    command: "git fetch --prune origin '+refs/heads/*:refs/heads/*'",
+    timeoutMs: input.timeoutMs
+  });
+  results.push(fetch);
+
+  if (fetch.exitCode !== 0) {
+    return results;
+  }
+
+  const prune = await runCommand({
+    cwd: mirrorDir,
+    command: "git worktree prune",
+    timeoutMs: 60_000
+  });
+  results.push(prune);
+
+  if (prune.exitCode !== 0) {
+    return results;
+  }
+
+  const addWorktree = await runCommand({
+    cwd: mirrorDir,
+    command: [
+      "git worktree add --force",
+      "-B",
+      shellQuote(input.worktreeBranch),
+      shellQuote(input.sandbox.repoDir),
+      shellQuote(input.baseRef)
+    ].join(" "),
+    timeoutMs: input.timeoutMs
+  });
+  results.push(addWorktree);
+  return results;
+}
+
+async function buildDockerCommand(input: {
+  sandbox: Sandbox;
+  command: string;
+  env?: NodeJS.ProcessEnv;
+}): Promise<string> {
+  const sandbox = input.sandbox;
+  await Promise.all([
+    mkdir(sandbox.repoDir, { recursive: true }),
+    mkdir(sandbox.artifactDir, { recursive: true }),
+    mkdir(sandbox.logDir, { recursive: true })
+  ]);
+  const envFile = await writeDockerEnvFile(sandbox, input.env);
+  return formatDockerCommand({ ...input, envFile });
+}
+
+function formatDockerCommand(input: {
+  sandbox: Sandbox;
+  command: string;
+  envFile?: string;
+}): string {
+  const sandbox = input.sandbox;
+  const dockerArgs = [
+    "docker run --rm --init",
+    "--cap-drop ALL",
+    "--security-opt no-new-privileges",
+    sandbox.networkAllowlist?.length ? "--network bridge" : "--network none",
+    sandbox.docker?.memory ? `--memory ${shellQuote(sandbox.docker.memory)}` : "",
+    sandbox.docker?.cpus ? `--cpus ${shellQuote(String(sandbox.docker.cpus))}` : "",
+    sandbox.docker?.pidsLimit ? `--pids-limit ${shellQuote(String(sandbox.docker.pidsLimit))}` : "",
+    `-v ${shellQuote(sandbox.repoDir)}:/workspace/repo`,
+    `-v ${shellQuote(sandbox.artifactDir)}:/workspace/artifacts`,
+    `-v ${shellQuote(sandbox.logDir)}:/workspace/logs`,
+    input.envFile ? `--env-file ${shellQuote(input.envFile)}` : "",
+    `-e CODEZERO_NETWORK_ALLOWLIST=${shellQuote((sandbox.networkAllowlist ?? []).join(","))}`,
+    "-w /workspace/repo",
+    shellQuote(sandbox.dockerImage ?? "agent-sandbox-node:latest"),
+    "/bin/sh -lc",
+    shellQuote(input.command)
+  ].filter(Boolean);
+  return dockerArgs.join(" ");
+}
+
+async function writeDockerEnvFile(
+  sandbox: Sandbox,
+  env: NodeJS.ProcessEnv | undefined,
+): Promise<string | undefined> {
+  const entries = Object.entries(env ?? {}).filter(
+    (entry): entry is [string, string] =>
+      Boolean(entry[0]) && entry[1] !== undefined,
+  );
+
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const filePath = path.join(
+    sandbox.logDir,
+    `docker-env-${Date.now()}-${Math.random().toString(16).slice(2)}.env`,
+  );
+  const content = entries
+    .map(([key, value]) => `${key}=${String(value).replace(/\r?\n/g, " ")}`)
+    .join("\n");
+  await writeFile(filePath, `${content}\n`, { mode: 0o600 });
+  return filePath;
+}
+
+function assertCommandReferencesAllowedHosts(
+  command: string,
+  allowlist: string[],
+): void {
+  const allowed = new Set(allowlist.map((host) => host.toLowerCase()));
+  const hosts = commandHosts(command);
+
+  if (allowed.size === 0 && hosts.length > 0) {
+    throw new Error(
+      `Sandbox command references network hosts but network allowlist is empty: ${hosts.join(", ")}`,
+    );
+  }
+
+  const blocked = hosts.filter((host) => !allowed.has(host.toLowerCase()));
+
+  if (blocked.length > 0) {
+    throw new Error(
+      `Sandbox command references hosts outside network allowlist: ${blocked.join(", ")}`,
+    );
+  }
+}
+
+function commandHosts(command: string): string[] {
+  const hosts = new Set<string>();
+  const urlPattern = /\b(?:https?|ssh|git):\/\/([^/\s'"]+)/gi;
+
+  for (const match of command.matchAll(urlPattern)) {
+    const host = (match[1] ?? "").replace(/^.*@/, "").replace(/:\d+$/, "");
+
+    if (host) {
+      hosts.add(host);
+    }
+  }
+
+  for (const match of command.matchAll(/\bgit@([^:\s'"]+):/g)) {
+    const host = match[1];
+
+    if (host) {
+      hosts.add(host);
+    }
+  }
+
+  return [...hosts];
+}
+
+function sandboxRootDir(sandbox: Sandbox): string {
+  return sandbox.rootDir ?? path.dirname(path.dirname(sandbox.repoDir));
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  return access(filePath).then(
+    () => true,
+    () => false
+  );
+}
+
+function hashRemote(remoteUrl: string): string {
+  return createHash("sha256").update(remoteUrl).digest("hex").slice(0, 24);
 }
 
 function shellQuote(value: string): string {

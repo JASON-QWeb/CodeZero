@@ -37,8 +37,6 @@ export type AgentDefinition = {
   providerId: string;
   systemPrompt: string;
   skillRefs: string[];
-  tools: string[];
-  guardrails: string[];
 };
 
 export type AgentRunInput = {
@@ -62,42 +60,39 @@ export class AiSdkModelProvider implements ModelProvider {
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
-    const abortController = new AbortController();
     const timeoutMs = this.config.timeout_ms ?? 120_000;
-    const timeout = setTimeout(() => abortController.abort(), timeoutMs);
-
-    try {
-      const result = await generateText({
-        model: this.model,
-        messages: request.messages.map((message) => ({
-          role: message.role === "tool" ? "user" : message.role,
-          content: message.content,
-        })),
-        temperature: this.config.temperature,
-        maxOutputTokens: this.config.max_tokens,
-        abortSignal: abortController.signal,
-      });
-
-      return {
-        content: result.text,
-        raw: asJsonValue({
-          finishReason: result.finishReason,
-          usage: result.usage,
-          response: result.response,
-          metadata: request.metadata,
+    const result = await runWithTransientRetry(
+      (abortSignal) =>
+        generateText({
+          model: this.model,
+          messages: request.messages.map((message) => ({
+            role: message.role === "tool" ? "user" : message.role,
+            content: message.content,
+          })),
+          temperature: this.config.temperature,
+          maxOutputTokens: this.config.max_tokens,
+          abortSignal,
         }),
-      };
-    } catch (error) {
-      if (isAbortError(error)) {
-        throw new Error(
-          `Provider ${this.id} timed out after ${timeoutMs}ms while calling model ${this.config.model}`,
-        );
-      }
+      {
+        maxRetries: this.config.max_retries ?? 2,
+        timeoutMs,
+        timeoutMessage: () =>
+          new Error(
+            `Provider ${this.id} timed out after ${timeoutMs}ms while calling model ${this.config.model}`,
+          ),
+      },
+    );
 
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
+    return {
+      content: result.value.text,
+      raw: asJsonValue({
+        finishReason: result.value.finishReason,
+        usage: result.value.usage,
+        response: result.value.response,
+        metadata: request.metadata,
+        attempts: result.attempts,
+      }),
+    };
   }
 }
 
@@ -133,6 +128,113 @@ function createConfiguredLanguageModel(
     case "groq":
       return createGroq(providerOptions)(modelId);
   }
+}
+
+export async function runWithTransientRetry<T>(
+  operation: (abortSignal: AbortSignal, attempt: number) => Promise<T>,
+  options: {
+    maxRetries?: number;
+    timeoutMs: number;
+    timeoutMessage: () => Error;
+  },
+): Promise<{ value: T; attempts: number }> {
+  const maxAttempts = Math.max(1, (options.maxRetries ?? 2) + 1);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), options.timeoutMs);
+
+    try {
+      return {
+        value: await operation(abortController.signal, attempt),
+        attempts: attempt,
+      };
+    } catch (error) {
+      lastError = isAbortError(error) ? options.timeoutMessage() : error;
+
+      if (attempt >= maxAttempts || !isTransientModelError(lastError)) {
+        throw lastError;
+      }
+
+      await delay(retryDelayMs(attempt));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw lastError;
+}
+
+function isTransientModelError(error: unknown): boolean {
+  const message = errorMessage(error).toLowerCase();
+  const status = errorStatus(error);
+  const code = errorCode(error);
+
+  return (
+    status === 408 ||
+    status === 409 ||
+    status === 425 ||
+    status === 429 ||
+    (status !== undefined && status >= 500) ||
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "UND_ERR_HEADERS_TIMEOUT" ||
+    message.includes("fetch failed") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("rate limit") ||
+    message.includes("temporarily unavailable")
+  );
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const cause =
+      isObject(error.cause) && typeof error.cause.message === "string"
+        ? `: ${error.cause.message}`
+        : "";
+    return `${error.message}${cause}`;
+  }
+
+  return String(error);
+}
+
+function errorStatus(error: unknown): number | undefined {
+  if (isObject(error) && typeof error.status === "number") {
+    return error.status;
+  }
+
+  if (isObject(error) && typeof error.statusCode === "number") {
+    return error.statusCode;
+  }
+
+  if (error instanceof Error && isObject(error.cause)) {
+    return errorStatus(error.cause);
+  }
+
+  return undefined;
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (isObject(error) && typeof error.code === "string") {
+    return error.code;
+  }
+
+  if (error instanceof Error && isObject(error.cause)) {
+    return errorCode(error.cause);
+  }
+
+  return undefined;
+}
+
+function retryDelayMs(attempt: number): number {
+  return Math.min(2_000, 250 * 2 ** Math.max(0, attempt - 1));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class AgentRunner {

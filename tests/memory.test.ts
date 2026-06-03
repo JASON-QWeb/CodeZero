@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -98,6 +98,40 @@ describe("memory", () => {
 
     expect(results[0]?.record.kind).toBe("episodic");
     expect(results[0]?.reasons.length).toBeGreaterThan(0);
+  });
+
+  it("updates, deletes, prunes, and quarantines corrupt memory files", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-memory-"));
+    const filePath = path.join(dir, "memory.json");
+    const store = new FileMemoryStore(filePath, {
+      maxRecords: 1,
+      maxBytes: 2_000,
+      maxRecordBytes: 32,
+    });
+    const proposal = createTaskMemoryProposal({ task: createTask(issue) });
+    await store.propose(proposal.records);
+
+    const updated = await store.update(proposal.records[0]?.id ?? "", {
+      title: "Updated memory",
+      content: "x".repeat(200),
+      confidence: 2,
+      tags: ["a", "a", "b"],
+    });
+
+    expect(updated.title).toBe("Updated memory");
+    expect(updated.content.length).toBeLessThanOrEqual(32);
+    expect(updated.confidence).toBe(1);
+    expect(updated.tags).toEqual(["a", "b"]);
+
+    const pruned = await store.prune();
+    expect(pruned).toHaveLength(1);
+
+    await store.delete(pruned[0]?.id ?? "");
+    expect(await store.list()).toHaveLength(0);
+
+    await writeFile(filePath, "{not-json");
+    expect(await store.list()).toEqual([]);
+    expect((await readdir(dir)).some((file) => file.includes(".corrupt-"))).toBe(true);
   });
 
   it("injects approved memory search results into ContextPack", async () => {

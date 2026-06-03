@@ -122,7 +122,6 @@ const text = {
     nodes: "节点",
     officialDashboardViewer: "官方 dashboard 视图",
     nextPage: "下一页",
-    policies: "策略",
     previousPage: "上一页",
     project: "项目",
     queued: "排队",
@@ -138,7 +137,6 @@ const text = {
     starting: "启动中",
     taskMetrics: "任务指标",
     tasks: "任务",
-    tools: "工具",
     traceReplay: "Trace 回放",
     traceRecords: "执行记录",
     tracePage: (page: number, pageCount: number) =>
@@ -228,7 +226,6 @@ const text = {
     nodes: "Nodes",
     officialDashboardViewer: "Official dashboard viewer",
     nextPage: "Next",
-    policies: "Policies",
     previousPage: "Previous",
     project: "Project",
     queued: "Queued",
@@ -244,7 +241,6 @@ const text = {
     starting: "Starting",
     taskMetrics: "Task metrics",
     tasks: "Tasks",
-    tools: "Tools",
     traceReplay: "Trace Replay",
     traceRecords: "Trace records",
     tracePage: (page: number, pageCount: number) =>
@@ -692,11 +688,11 @@ export function TaskBoard() {
 
         {activeView === "repositoryConfig" ? (
           <SettingsConsole
-            description="配置仓库触发、队列、权限、沙箱、工具和策略。"
+            description="配置仓库触发、队列、Skill/Rule 路径和沙箱运行时。"
             initialSection="repositories"
             showTopline={false}
             title="仓库配置"
-            visibleSections={["repositories", "tools", "policies", "sandbox"]}
+            visibleSections={["repositories", "sandbox"]}
           />
         ) : null}
 
@@ -808,11 +804,6 @@ function HomeOverview({
       ["CODEBASE_INDEXING", "AGENTIC_SEARCHING"].includes(task.status) ||
       task.issue.labels.includes("codegraph"),
   );
-  const hasMcpPermissionReview = tasks.some(
-    (task) =>
-      task.issue.repo === "Didicall" &&
-      (task.status === "BLOCKED" || task.issue.labels.includes("permissions")),
-  );
   const hasScreenshotEvidencePending = tasks.some(
     (task) =>
       task.status === "QUALITY_GATES_RUNNING" ||
@@ -853,11 +844,6 @@ function HomeOverview({
       ? locale === "zh"
         ? "CodeGraph 索引正在刷新，ContextPack 会等待最新文件关系。"
         : "CodeGraph indexing is refreshing before ContextPack selection."
-      : undefined,
-    hasMcpPermissionReview
-      ? locale === "zh"
-        ? "Didicall 的 MCP 工具权限需要确认后才能继续执行。"
-        : "Didicall MCP tool permissions need review before continuing."
       : undefined,
     hasScreenshotEvidencePending
       ? locale === "zh"
@@ -2878,8 +2864,6 @@ function TaskDetail({
 
       <div className="traceSummary" aria-label="Trace summary">
         <TraceMetric label="Spans" value={trace.summary.totalSpans} />
-        <TraceMetric label={t.tools} value={trace.summary.toolCalls} />
-        <TraceMetric label={t.policies} value={trace.summary.policyDecisions} />
         <TraceMetric label={t.blocked} value={trace.summary.failedOrBlocked} />
       </div>
 
@@ -3174,8 +3158,6 @@ function emptyTrace(task: Task): TaskTrace {
     artifacts: [],
     summary: {
       totalSpans: 0,
-      toolCalls: 0,
-      policyDecisions: 0,
       failedOrBlocked: 0,
     },
   };

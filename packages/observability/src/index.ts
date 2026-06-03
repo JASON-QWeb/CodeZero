@@ -4,6 +4,7 @@ import type {
   TaskEvent,
   TaskEventType,
   TaskTrace,
+  TaskTraceReplay,
   TraceSpan,
   TraceSpanKind,
   TraceSpanStatus,
@@ -56,11 +57,106 @@ export function buildTaskTrace(input: BuildTaskTraceInput): TaskTrace {
     artifacts: input.artifacts,
     summary: {
       totalSpans: spans.length,
-      toolCalls: spans.filter((span) => span.kind === "tool").length,
-      policyDecisions: spans.filter((span) => span.kind === "policy").length,
       failedOrBlocked,
     },
   };
+}
+
+export function buildTaskTraceReplay(
+  trace: TaskTrace,
+  input: { cursor?: string; limit?: number } = {},
+): TaskTraceReplay {
+  const limit = Math.max(1, Math.min(input.limit ?? 25, 100));
+  const startIndex = input.cursor
+    ? Math.max(
+        0,
+        trace.spans.findIndex((span) => span.id === input.cursor) + 1,
+      )
+    : 0;
+  const selectedSpans = trace.spans.slice(startIndex, startIndex + limit);
+  const steps = selectedSpans.map((span, offset) =>
+    spanToReplayStep(span, startIndex + offset),
+  );
+  const failedStep =
+    [...trace.spans.slice(1), trace.spans[0]].filter(
+      (span): span is TraceSpan => Boolean(span),
+    )
+      .map((span, index) => spanToReplayStep(span, index))
+      .find((step) => step.status === "failed" || step.status === "blocked");
+  const nextSpan = trace.spans[startIndex + selectedSpans.length];
+  const previousSpan = startIndex > 0 ? trace.spans[startIndex - 1] : undefined;
+
+  return {
+    taskId: trace.taskId,
+    status: trace.status,
+    cursor: input.cursor,
+    nextCursor: nextSpan ? selectedSpans.at(-1)?.id : undefined,
+    previousCursor: previousSpan?.id,
+    steps,
+    failedStep,
+    resumeActions: replayResumeActions(trace, failedStep),
+    summary: {
+      ...trace.summary,
+      replayedSpans: startIndex + selectedSpans.length,
+      remainingSpans: Math.max(
+        0,
+        trace.spans.length - startIndex - selectedSpans.length,
+      ),
+    },
+  };
+}
+
+function spanToReplayStep(span: TraceSpan, index: number): TaskTraceReplay["steps"][number] {
+  return {
+    cursor: span.id,
+    spanId: span.id,
+    parentId: span.parentId,
+    index,
+    name: span.name,
+    kind: span.kind,
+    status: span.status,
+    message: span.message,
+    startedAt: span.startedAt,
+    endedAt: span.endedAt,
+    durationMs: span.durationMs,
+    metadata: span.metadata,
+    canResumeFromHere:
+      span.kind === "human" ||
+      span.kind === "error" ||
+      span.status === "failed" ||
+      span.status === "blocked",
+  };
+}
+
+function replayResumeActions(
+  trace: TaskTrace,
+  failedStep: TaskTraceReplay["failedStep"],
+): TaskTraceReplay["resumeActions"] {
+  return [
+    {
+      type: "approve_prd",
+      label: "Approve pending PRD and resume graph",
+      available: trace.status === "PRD_REVIEW_REQUIRED",
+    },
+    {
+      type: "retry_workflow",
+      label: "Retry workflow from latest durable checkpoint",
+      available:
+        trace.status === "FAILED" ||
+        trace.status === "BLOCKED" ||
+        Boolean(failedStep),
+    },
+    {
+      type: "inspect_failure",
+      label: "Inspect failed or blocked replay step",
+      available: Boolean(failedStep),
+    },
+    {
+      type: "open_pr",
+      label: "Open draft pull request",
+      available: Boolean(trace.prUrl),
+    },
+  ];
 }
 
 function eventToSpan(event: TaskEvent, parentId: string): TraceSpan {
@@ -102,20 +198,12 @@ function artifactToSpan(
 }
 
 function eventKind(type: TaskEventType): TraceSpanKind {
-  if (type.startsWith("TOOL_CALL")) {
-    return "tool";
-  }
-
   if (
     type.startsWith("AGENT_RUN") ||
     type === "PRD_DRAFTED" ||
     type === "SUBAGENT_REVIEW_FINISHED"
   ) {
     return "model";
-  }
-
-  if (type === "POLICY_DECISION") {
-    return "policy";
   }
 
   if (type.startsWith("QUALITY_GATE") || type === "SCREENSHOT_CAPTURED") {

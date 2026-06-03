@@ -14,7 +14,9 @@ import type {
   RepositoryQueueSummary,
   RepositoryQueuesResponse,
   TasksResponse,
+  TaskTraceReplay,
   TraceResponse,
+  TraceReplayResponse,
 } from "./types";
 import type { Task, TaskTrace } from "@agent/shared";
 import { isMockDataMode } from "../mock-data-mode";
@@ -225,6 +227,61 @@ export async function fetchTrace(taskId: string): Promise<TaskTrace> {
 
   const data = (await response.json()) as TraceResponse;
   return data.trace;
+}
+
+export async function fetchTraceReplay(input: {
+  taskId: string;
+  cursor?: string;
+  limit?: number;
+}): Promise<TaskTraceReplay> {
+  if (isMockDataMode()) {
+    const trace = await mockFetchTrace(input.taskId);
+    return {
+      taskId: trace.taskId,
+      status: trace.status,
+      cursor: input.cursor,
+      steps: trace.spans.slice(0, input.limit ?? 25).map((span, index) => ({
+        cursor: span.id,
+        spanId: span.id,
+        parentId: span.parentId,
+        index,
+        name: span.name,
+        kind: span.kind,
+        status: span.status,
+        message: span.message,
+        startedAt: span.startedAt,
+        endedAt: span.endedAt,
+        durationMs: span.durationMs,
+        metadata: span.metadata,
+        canResumeFromHere: span.status === "failed" || span.status === "blocked",
+      })),
+      resumeActions: [],
+      summary: { ...trace.summary, replayedSpans: trace.spans.length, remainingSpans: 0 },
+    };
+  }
+
+  const params = new URLSearchParams();
+
+  if (input.cursor) {
+    params.set("cursor", input.cursor);
+  }
+
+  if (input.limit) {
+    params.set("limit", String(input.limit));
+  }
+
+  const query = params.toString();
+  const response = await fetch(
+    `${apiBaseUrl()}/tasks/${encodeURIComponent(input.taskId)}/trace/replay${query ? `?${query}` : ""}`,
+    { cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to load task trace replay");
+  }
+
+  const data = (await response.json()) as TraceReplayResponse;
+  return data.replay;
 }
 
 export async function approveTaskPrd(taskId: string): Promise<Task> {

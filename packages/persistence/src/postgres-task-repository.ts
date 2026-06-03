@@ -4,13 +4,14 @@ import type { TaskPatch, TaskRepository } from "./types.js";
 
 export class PostgresTaskRepository implements TaskRepository {
   private readonly pool: Pool;
+  private migration?: Promise<void>;
 
   constructor(databaseUrl: string) {
     this.pool = new Pool({ connectionString: databaseUrl });
   }
 
   async migrate(): Promise<void> {
-    await this.pool.query(`
+    this.migration ??= this.pool.query(`
       create table if not exists tasks (
         id text primary key,
         status text not null,
@@ -38,7 +39,8 @@ export class PostgresTaskRepository implements TaskRepository {
         metadata jsonb,
         created_at timestamptz not null
       );
-    `);
+    `).then(() => undefined);
+    await this.migration;
   }
 
   async createTask(task: Task): Promise<Task> {

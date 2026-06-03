@@ -27,7 +27,6 @@
     "@agent/sandbox": "workspace:*",
     "@agent/shared": "workspace:*",
     "@agent/skills": "workspace:*",
-    "@agent/tool-gateway": "workspace:*",
     "@agent/verification": "workspace:*",
     "zod": "^4.1.13"
   },

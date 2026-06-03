@@ -49,6 +49,8 @@ describe("sandbox command runner", () => {
     expect(sandbox.repoDir).toBe(path.join(rootDir, "task-1", "repo"));
     expect(manager.cloneCommands(sandbox, "https://example.test/repo.git", "agent/issue-1")).toContain("git fetch origin");
     expect(manager.dockerRunCommand(sandbox)).toContain("agent-sandbox-node:test");
+    expect(manager.dockerRunCommand(sandbox)).toContain("--network none");
+    expect(manager.dockerRunCommand(sandbox)).toContain("--cap-drop ALL");
     expect(worktree.mode).toBe("worktree");
   });
 
@@ -93,8 +95,8 @@ describe("sandbox command runner", () => {
   it("clears stale clone targets before cloning a repository", async () => {
     const sourceRepo = await createGitRepo();
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "agent-sandbox-root-"));
-    const manager = new DockerSandboxManager({
-      mode: "docker",
+    const manager = new WorktreeSandboxManager({
+      mode: "worktree",
       rootDir,
       dockerImage: "agent-sandbox-node:test",
       networkAllowlist: [],

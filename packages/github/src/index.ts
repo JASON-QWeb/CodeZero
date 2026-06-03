@@ -222,6 +222,37 @@ export class GitHubClient {
     return data.html_url;
   }
 
+  async createIssue(input: {
+    owner: string;
+    repo: string;
+    title: string;
+    body: string;
+    labels?: string[];
+    baseBranch?: string;
+  }): Promise<IssueContext> {
+    const octokit = await this.octokit();
+    const { data } = await octokit.issues.create({
+      owner: input.owner,
+      repo: input.repo,
+      title: input.title,
+      body: input.body,
+      labels: input.labels
+    });
+
+    return {
+      provider: "github",
+      owner: input.owner,
+      repo: input.repo,
+      number: data.number,
+      url: data.html_url,
+      title: data.title,
+      body: data.body ?? "",
+      labels: normalizeLabels(data.labels),
+      comments: [],
+      baseBranch: input.baseBranch ?? "main"
+    };
+  }
+
   async closeIssue(input: { owner: string; repo: string; issueNumber: number; stateReason?: "completed" | "not_planned" }): Promise<string> {
     const octokit = await this.octokit();
     const { data } = await octokit.issues.update({

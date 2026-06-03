@@ -11,7 +11,6 @@ import {
   buildSummary,
   collectProviderIds,
   collectRepositoryQuickConfigs,
-  normalizePermissionList,
   normalizePositiveInteger,
   normalizeTriggerMode,
 } from "../apps/web/src/features/settings/summary";
@@ -40,26 +39,6 @@ describe("web settings utilities", () => {
     ]);
     expect(
       buildSummary(
-        section("tools", {
-          tools: [{ permission: "read" }, { permission: "repo_write" }],
-        }),
-      ),
-    ).toContainEqual({
-      label: "权限",
-      value: "read, repo_write",
-    });
-    expect(
-      buildSummary(
-        section("policies", {
-          policies: [{ action: "block" }, { action: "audit" }],
-        }),
-      ),
-    ).toContainEqual({
-      label: "动作",
-      value: "block, audit",
-    });
-    expect(
-      buildSummary(
         section("sandbox", {
           sandbox: { mode: "worktree", image: "node", root_dir: "sandboxes" },
         }),
@@ -67,6 +46,32 @@ describe("web settings utilities", () => {
     ).toContainEqual({
       label: "模式",
       value: "worktree",
+    });
+    expect(
+      buildSummary(
+        section("memory", {
+          memory: {
+            max_records: 500,
+            max_bytes: 2_000_000,
+            max_record_bytes: 16_000,
+          },
+        }),
+      ),
+    ).toContainEqual({
+      label: "记录上限",
+      value: "500",
+    });
+    expect(
+      buildSummary(
+        section("workflow_graph", {
+          workflow_graph: {
+            checkpoint_file: "data/langgraph-checkpoints.json",
+          },
+        }),
+      ),
+    ).toContainEqual({
+      label: "Checkpoint",
+      value: "data/langgraph-checkpoints.json",
     });
   });
 
@@ -95,10 +100,6 @@ describe("web settings utilities", () => {
           github_repo: "shop",
           trigger: { mode: "auto", mention: "@agent" },
           queue: { max_concurrent_issues: "3" },
-          permissions: {
-            allowed_permissions: ["read", "bad"],
-            blocked_permissions: ["dangerous"],
-          },
         },
         {
           id: "broken",
@@ -106,7 +107,6 @@ describe("web settings utilities", () => {
           github_repo: "broken",
           trigger: { mode: "unknown" },
           queue: { max_concurrent_issues: -1 },
-          permissions: {},
         },
       ],
     });
@@ -116,8 +116,6 @@ describe("web settings utilities", () => {
       projectRulePath: ".agent/rules",
       triggerMode: "auto",
       maxConcurrentIssues: 3,
-      allowedPermissions: ["read"],
-      blockedPermissions: ["dangerous"],
     });
     expect(repositories[1]).toMatchObject({
       triggerMode: "manual",
@@ -126,7 +124,6 @@ describe("web settings utilities", () => {
     });
     expect(normalizeTriggerMode("label")).toBe("label");
     expect(normalizePositiveInteger("2.9")).toBe(2);
-    expect(normalizePermissionList("read")).toEqual([]);
   });
 
   it("calls settings API endpoints and handles validation failures", async () => {
@@ -177,8 +174,6 @@ describe("web settings utilities", () => {
         maxConcurrentIssues: 2,
         projectSkillPath: ".agent",
         projectRulePath: ".agent/rules",
-        allowedPermissions: ["read"],
-        blockedPermissions: [],
       }),
     ).resolves.toMatchObject({ section: "repositories" });
     expect(fetchMock.mock.calls.at(-1)?.[0]).toContain("shop%20repo");
@@ -194,7 +189,7 @@ describe("web settings utilities", () => {
     expect(config.rootDir).toBe("/workspace/codezero");
     expect(config.sections.map((item) => item.section)).toContain("repositories");
     await expect(validateConfig({ section: "agents", content: "providers: {}" })).resolves.toMatchObject({ valid: true });
-    await expect(saveConfig({ section: "tools", content: "tools: []" })).resolves.toMatchObject({ section: "tools" });
+    await expect(saveConfig({ section: "memory", content: "memory: {}" })).resolves.toMatchObject({ section: "memory" });
     await expect(validateProviderConnection({ providerId: "default", content: "" })).resolves.toMatchObject({ valid: true });
     await expect(saveProviderApiKey({ providerId: "default", apiKey: "snapshot-key" })).resolves.toMatchObject({ saved: true });
     await expect(
@@ -205,8 +200,6 @@ describe("web settings utilities", () => {
         maxConcurrentIssues: 2,
         projectSkillPath: ".agent",
         projectRulePath: ".agent/rules",
-        allowedPermissions: ["read"],
-        blockedPermissions: ["dangerous"],
       }),
     ).resolves.toMatchObject({ section: "repositories" });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -223,7 +216,7 @@ describe("web settings utilities", () => {
 
     await expect(fetchConfig()).rejects.toThrow("设置加载失败");
     await expect(
-      saveConfig({ section: "tools", content: "tools: []" }),
+      saveConfig({ section: "memory", content: "memory: {}" }),
     ).rejects.toThrow("nope");
     await expect(
       validateProviderConnection({ providerId: "qwen", content: "" }),
@@ -239,8 +232,6 @@ describe("web settings utilities", () => {
         maxConcurrentIssues: 1,
         projectSkillPath: ".agent",
         projectRulePath: ".agent/rules",
-        allowedPermissions: [],
-        blockedPermissions: [],
       }),
     ).rejects.toThrow("nope");
   });

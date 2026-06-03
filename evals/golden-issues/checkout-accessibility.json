@@ -19,6 +19,6 @@
     "routeEntrypoints": ["/checkout"],
     "memoryKinds": ["episodic", "procedural"],
     "prBodySections": ["## Local Verification", "## Screenshots", "## Quality Gates"],
-    "traceKinds": ["navigation", "memory", "tool", "quality_gate"]
+    "traceKinds": ["navigation", "memory", "model", "quality_gate"]
   }
 }

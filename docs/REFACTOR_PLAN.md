@@ -219,7 +219,6 @@ Before calling the refactor done:
 packages/model-runtime/       AI SDK registry, model router, OpenCode config compiler
 packages/workflow-graph/      LangGraph state, nodes, edges, checkpointer, callbacks
 packages/workflows/           reusable workflow step helpers and OpenCode executor integration
-packages/tool-gateway/        controlled platform tools only
 packages/sandbox/             sandbox and process execution primitives
 packages/verification/        quality gates and screenshots
 apps/worker/                  graph start/resume trigger

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -104,6 +104,16 @@ describe("file task repository", () => {
       events: unknown[];
     };
     expect(parsed.events).toHaveLength(40);
+  });
+
+  it("quarantines corrupt task store files instead of throwing on read", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-store-corrupt-"));
+    const storePath = path.join(dir, "tasks.json");
+    await writeFile(storePath, "{not-json");
+    const repository = new FileTaskRepository(storePath);
+
+    await expect(repository.listTasks()).resolves.toEqual([]);
+    expect((await readdir(dir)).some((file) => file.includes(".corrupt-"))).toBe(true);
   });
 
   it("creates task events with default level and metadata", () => {

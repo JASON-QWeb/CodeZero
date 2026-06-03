@@ -1,4 +1,4 @@
-import { Annotation, END, MemorySaver, START, StateGraph, interrupt } from "@langchain/langgraph";
+import { Annotation, Command, END, START, StateGraph, interrupt } from "@langchain/langgraph";
 import type { AppConfig, RepositoryConfig } from "@agent/config";
 import { shouldRequirePrdReview } from "@agent/orchestrator";
 import { createTaskEvent, type TaskRepository } from "@agent/persistence";
@@ -10,6 +10,13 @@ import {
   IssueWorkflowRunner,
   type IssueWorkflowResult,
 } from "@agent/workflows";
+import { createDurableCheckpointer } from "./checkpointer.js";
+
+export {
+  FileLangGraphCheckpointSaver,
+  PostgresLangGraphCheckpointSaver,
+  createDurableCheckpointer,
+} from "./checkpointer.js";
 
 type PreparedSandbox = Awaited<ReturnType<IssueWorkflowRunner["prepareSandbox"]>>["sandbox"];
 type GraphRoute =
@@ -56,7 +63,7 @@ export function createIssueWorkflowGraphRunner(
   config: AppConfig,
   tasks: TaskRepository,
 ): IssueWorkflowGraphRunner {
-  const checkpointer = new MemorySaver();
+  const checkpointer = createDurableCheckpointer(config);
   const workflow = new IssueWorkflowRunner(config, tasks);
   const graph = new StateGraph(GraphState)
     .addNode("load_task", async (state) => {
@@ -382,9 +389,22 @@ export function createIssueWorkflowGraphRunner(
       );
 
       try {
-        const result = await graph.invoke(
-          { taskId },
-          { configurable: { thread_id: taskId } },
+        const task = await tasks.getTask(taskId);
+        const checkpoint = await checkpointer.getTuple({
+          configurable: { thread_id: taskId },
+        });
+        const input =
+          task?.status === "PRD_APPROVED" && checkpoint
+            ? new Command({ resume: { approved: true, by: "human" } })
+            : { taskId };
+        const timeoutMs = config.sandbox.limits.max_runtime_minutes * 60_000;
+        const result = await withWorkflowTimeout(
+          graph.invoke(
+            input as Parameters<typeof graph.invoke>[0],
+            { configurable: { thread_id: taskId } },
+          ),
+          timeoutMs,
+          taskId,
         );
         if (hasInterrupts(result)) {
           const interruptedTask = await tasks.getTask(taskId);
@@ -438,6 +458,32 @@ export function createIssueWorkflowGraphRunner(
       }
     },
   };
+}
+
+async function withWorkflowTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  taskId: string,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new Error(
+          `LangGraph issue workflow ${taskId} timed out after ${timeoutMs}ms`,
+        ),
+      );
+    }, timeoutMs);
+    timer.unref();
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function requireState<T>(value: T | undefined, name: string): T {

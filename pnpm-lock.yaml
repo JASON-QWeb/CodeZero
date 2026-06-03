@@ -368,19 +368,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  packages/tool-gateway:
-    dependencies:
-      '@agent/shared':
-        specifier: workspace:*
-        version: link:../shared
-    devDependencies:
-      tsup:
-        specifier: ^8.5.0
-        version: 8.5.1(postcss@8.5.14)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
   packages/verification:
     dependencies:
       '@agent/shared':
@@ -417,7 +404,16 @@ importers:
       '@langchain/langgraph':
         specifier: ^1.3.2
         version: 1.3.2(@langchain/core@1.1.48(@opentelemetry/api@1.9.1))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(zod@4.4.3)
+      '@langchain/langgraph-checkpoint':
+        specifier: ^1.0.2
+        version: 1.0.2(@langchain/core@1.1.48(@opentelemetry/api@1.9.1))
+      pg:
+        specifier: ^8.16.3
+        version: 8.20.0
     devDependencies:
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.20.0
       tsup:
         specifier: ^8.5.0
         version: 8.5.1(postcss@8.5.14)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
@@ -460,9 +456,6 @@ importers:
       '@agent/skills':
         specifier: workspace:*
         version: link:../skills
-      '@agent/tool-gateway':
-        specifier: workspace:*
-        version: link:../tool-gateway
       '@agent/verification':
         specifier: workspace:*
         version: link:../verification

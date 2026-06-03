@@ -59,7 +59,8 @@ import {
   cloneRepository,
   cloneRepositoryBranch,
   commitAll,
-  DockerSandboxManager,
+  createSandboxManager,
+  enforceDiffLimits,
   getCurrentCommitSha,
   getGitDiff,
   listChangedFiles,
@@ -356,6 +357,8 @@ export class IssueWorkflowRunner {
           content: skill.content,
         })),
         contextPack: task.contextPack as unknown as JsonObject,
+        projectRulesAndSkills: task.contextPack?.businessRules ?? [],
+        codeGraphContext: task.contextPack?.codeGraphContext ?? null,
         repository: {
           owner: repositoryConfig.github_owner,
           repo: repositoryConfig.github_repo,
@@ -432,30 +435,39 @@ export class IssueWorkflowRunner {
       existingSandbox &&
       (await pathExists(path.join(existingSandbox.repoDir, ".git")))
     ) {
+      const restoredSandbox = hydrateSandboxConfig(existingSandbox, this.config);
       await this.event(
         task.id,
         "SANDBOX_CREATED",
-        `Reusing persistent task sandbox at ${existingSandbox.repoDir}`,
+        `Reusing persistent task sandbox at ${restoredSandbox.repoDir}`,
         "info",
         {
-          repoDir: existingSandbox.repoDir,
-          artifactDir: existingSandbox.artifactDir,
+          repoDir: restoredSandbox.repoDir,
+          artifactDir: restoredSandbox.artifactDir,
           reused: true,
         },
       );
-      return { task, sandbox: existingSandbox };
+      return { task, sandbox: restoredSandbox };
     }
 
     const updated =
       task.status === "SANDBOX_PREPARING"
         ? task
         : await this.updateStatus(task.id, "SANDBOX_PREPARING");
-    const manager = new DockerSandboxManager({
+    const manager = createSandboxManager({
       mode: this.config.sandbox.mode,
       rootDir: path.resolve(this.config.rootDir, this.config.sandbox.root_dir),
       dockerImage: this.config.sandbox.image,
       networkAllowlist: this.config.sandbox.network.allow,
       maxRuntimeMinutes: this.config.sandbox.limits.max_runtime_minutes,
+      maxDiffFiles: this.config.sandbox.limits.max_diff_files,
+      maxDiffLines: this.config.sandbox.limits.max_diff_lines,
+      filesystemAllowRepoOnly: this.config.sandbox.filesystem.allow_repo_only,
+      docker: {
+        memory: this.config.sandbox.docker.memory,
+        cpus: this.config.sandbox.docker.cpus,
+        pidsLimit: this.config.sandbox.docker.pids_limit,
+      },
     });
     const sandbox =
       existingSandbox ??
@@ -521,12 +533,20 @@ export class IssueWorkflowRunner {
         branchName: task.branchName ?? null,
       },
     );
-    const manager = new DockerSandboxManager({
+    const manager = createSandboxManager({
       mode: this.config.sandbox.mode,
       rootDir: path.resolve(this.config.rootDir, this.config.sandbox.root_dir),
       dockerImage: this.config.sandbox.image,
       networkAllowlist: this.config.sandbox.network.allow,
       maxRuntimeMinutes: this.config.sandbox.limits.max_runtime_minutes,
+      maxDiffFiles: this.config.sandbox.limits.max_diff_files,
+      maxDiffLines: this.config.sandbox.limits.max_diff_lines,
+      filesystemAllowRepoOnly: this.config.sandbox.filesystem.allow_repo_only,
+      docker: {
+        memory: this.config.sandbox.docker.memory,
+        cpus: this.config.sandbox.docker.cpus,
+        pidsLimit: this.config.sandbox.docker.pids_limit,
+      },
     });
     const existingSandbox = taskSandbox(task);
     const branch = task.branchName ?? `agent/issue-${task.issue.number}`;
@@ -534,8 +554,9 @@ export class IssueWorkflowRunner {
       existingSandbox &&
       (await pathExists(path.join(existingSandbox.repoDir, ".git")))
     ) {
+      const restoredSandbox = hydrateSandboxConfig(existingSandbox, this.config);
       const checkout = await runCommand({
-        cwd: existingSandbox.repoDir,
+        cwd: restoredSandbox.repoDir,
         command: `git checkout ${shellQuote(branch)}`,
         timeoutMs: 60_000,
       });
@@ -556,12 +577,12 @@ export class IssueWorkflowRunner {
         "Persistent PR sandbox reused for feedback iteration",
         "info",
         {
-          repoDir: existingSandbox.repoDir,
+          repoDir: restoredSandbox.repoDir,
           branchName: branch,
           reused: true,
         },
       );
-      return existingSandbox;
+      return restoredSandbox;
     }
 
     const sandbox =
@@ -622,7 +643,7 @@ export class IssueWorkflowRunner {
     const businessRules = [summarizeProjectContext(projectContext)].filter(
       (entry): entry is string => Boolean(entry),
     );
-    const memoryStore = new FileMemoryStore(this.config.memory.filePath);
+    const memoryStore = createConfiguredMemoryStore(this.config);
     const memoryResults = await memoryStore.search(task.issue, 8);
     const memories = toContextMemories(memoryResults);
     await this.event(
@@ -1037,6 +1058,7 @@ export class IssueWorkflowRunner {
           executor,
           agent,
           task,
+          sandbox,
           repoDir: sandbox.repoDir,
           artifactDir: sandbox.artifactDir,
           prompt,
@@ -1083,6 +1105,10 @@ export class IssueWorkflowRunner {
         );
       }
 
+      await enforceDiffLimits(sandbox.repoDir, {
+        maxFiles: this.config.sandbox.limits.max_diff_files,
+        maxLines: this.config.sandbox.limits.max_diff_lines,
+      });
       await this.writeArtifact(
         task.id,
         "tool-call",
@@ -1522,7 +1548,7 @@ export class IssueWorkflowRunner {
       task: { ...task, prUrl },
       artifacts: await this.tasks.listArtifacts(task.id),
     });
-    await new FileMemoryStore(this.config.memory.filePath).propose(
+    await createConfiguredMemoryStore(this.config).propose(
       memoryProposal.records,
     );
     await this.writeArtifact(
@@ -2325,6 +2351,29 @@ function taskSandboxPatch(sandbox: Sandbox): NonNullable<Task["sandbox"]> {
     logDir: sandbox.logDir,
     mode: sandbox.mode,
   };
+}
+
+function hydrateSandboxConfig(sandbox: Sandbox, config: AppConfig): Sandbox {
+  return {
+    ...sandbox,
+    rootDir: path.resolve(config.rootDir, config.sandbox.root_dir),
+    dockerImage: config.sandbox.image,
+    networkAllowlist: config.sandbox.network.allow,
+    filesystemAllowRepoOnly: config.sandbox.filesystem.allow_repo_only,
+    docker: {
+      memory: config.sandbox.docker.memory,
+      cpus: config.sandbox.docker.cpus,
+      pidsLimit: config.sandbox.docker.pids_limit,
+    },
+  };
+}
+
+function createConfiguredMemoryStore(config: AppConfig): FileMemoryStore {
+  return new FileMemoryStore(config.memory.filePath, {
+    maxRecords: config.memory.maxRecords,
+    maxBytes: config.memory.maxBytes,
+    maxRecordBytes: config.memory.maxRecordBytes,
+  });
 }
 
 async function ensureSandboxDirectories(sandbox: Sandbox): Promise<void> {

@@ -1,4 +1,4 @@
-import type { Task, TaskTrace } from "@agent/shared";
+import type { Task, TaskTrace, TraceSpan, TraceSpanKind } from "@agent/shared";
 
 export type TasksResponse = {
   tasks: Task[];
@@ -143,6 +143,45 @@ export type RepositoryContextFilesResponse = {
 
 export type TraceResponse = {
   trace: TaskTrace;
+};
+
+export type TraceReplayStep = {
+  cursor: string;
+  spanId: string;
+  parentId?: string;
+  index: number;
+  name: string;
+  kind: TraceSpanKind;
+  status: TraceSpan["status"];
+  message: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  metadata?: Record<string, unknown>;
+  canResumeFromHere: boolean;
+};
+
+export type TaskTraceReplay = {
+  taskId: string;
+  status: Task["status"];
+  cursor?: string;
+  nextCursor?: string;
+  previousCursor?: string;
+  steps: TraceReplayStep[];
+  failedStep?: TraceReplayStep;
+  resumeActions: Array<{
+    type: "approve_prd" | "retry_workflow" | "inspect_failure" | "open_pr";
+    label: string;
+    available: boolean;
+  }>;
+  summary: TaskTrace["summary"] & {
+    replayedSpans: number;
+    remainingSpans: number;
+  };
+};
+
+export type TraceReplayResponse = {
+  replay: TaskTraceReplay;
 };
 
 export type MemoryStatus = "proposed" | "approved" | "rejected";

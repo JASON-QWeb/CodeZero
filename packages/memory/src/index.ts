@@ -42,6 +42,29 @@ export type MemorySearchResult = {
   reasons: string[];
 };
 
+export type MemoryStoreOptions = {
+  maxRecords?: number;
+  maxBytes?: number;
+  maxRecordBytes?: number;
+};
+
+export type MemoryRecordPatch = Partial<
+  Pick<
+    MemoryRecord,
+    | "kind"
+    | "scope"
+    | "owner"
+    | "repo"
+    | "title"
+    | "content"
+    | "tags"
+    | "confidence"
+    | "evidence"
+  >
+> & {
+  status?: MemoryStatus;
+};
+
 export type MemoryStore = {
   list(input?: {
     owner?: string;
@@ -49,6 +72,9 @@ export type MemoryStore = {
     status?: MemoryStatus;
   }): Promise<MemoryRecord[]>;
   propose(records: MemoryRecord[]): Promise<MemoryRecord[]>;
+  update(id: string, patch: MemoryRecordPatch): Promise<MemoryRecord>;
+  delete(id: string): Promise<void>;
+  prune(input?: { maxRecords?: number; maxBytes?: number }): Promise<MemoryRecord[]>;
   approve(id: string): Promise<MemoryRecord>;
   reject(id: string): Promise<MemoryRecord>;
   search(issue: IssueContext, limit?: number): Promise<MemorySearchResult[]>;
@@ -59,7 +85,15 @@ type MemoryFile = {
 };
 
 export class FileMemoryStore implements MemoryStore {
-  constructor(private readonly filePath: string) {}
+  private readonly options: Required<MemoryStoreOptions>;
+
+  constructor(private readonly filePath: string, options: MemoryStoreOptions = {}) {
+    this.options = {
+      maxRecords: options.maxRecords ?? 500,
+      maxBytes: options.maxBytes ?? 2_000_000,
+      maxRecordBytes: options.maxRecordBytes ?? 16_000,
+    };
+  }
 
   async list(
     input: { owner?: string; repo?: string; status?: MemoryStatus } = {},
@@ -85,10 +119,10 @@ export class FileMemoryStore implements MemoryStore {
   async propose(records: MemoryRecord[]): Promise<MemoryRecord[]> {
     const store = await this.read();
     const existingIds = new Set(store.records.map((record) => record.id));
-    const nextRecords = records.map((record) => ({
+    const nextRecords = records.map((record) => normalizeRecord({
       ...record,
       status: "proposed" as const,
-    }));
+    }, this.options.maxRecordBytes));
 
     for (const record of nextRecords) {
       if (!existingIds.has(record.id)) {
@@ -96,8 +130,45 @@ export class FileMemoryStore implements MemoryStore {
       }
     }
 
-    await this.write(store);
+    await this.write(this.trim(store));
     return nextRecords;
+  }
+
+  async update(id: string, patch: MemoryRecordPatch): Promise<MemoryRecord> {
+    const store = await this.read();
+    const index = store.records.findIndex((record) => record.id === id);
+
+    if (index < 0 || !store.records[index]) {
+      throw new Error(`Memory record not found: ${id}`);
+    }
+
+    const next = normalizeRecord({
+      ...store.records[index],
+      ...patch,
+      id,
+      updatedAt: new Date().toISOString(),
+    }, this.options.maxRecordBytes);
+    store.records[index] = next;
+    await this.write(this.trim(store));
+    return next;
+  }
+
+  async delete(id: string): Promise<void> {
+    const store = await this.read();
+    const nextRecords = store.records.filter((record) => record.id !== id);
+
+    if (nextRecords.length === store.records.length) {
+      throw new Error(`Memory record not found: ${id}`);
+    }
+
+    await this.write({ records: nextRecords });
+  }
+
+  async prune(input: { maxRecords?: number; maxBytes?: number } = {}): Promise<MemoryRecord[]> {
+    const store = await this.read();
+    const next = this.trim(store, input);
+    await this.write(next);
+    return next.records;
   }
 
   async approve(id: string): Promise<MemoryRecord> {
@@ -121,28 +192,23 @@ export class FileMemoryStore implements MemoryStore {
     id: string,
     status: MemoryStatus,
   ): Promise<MemoryRecord> {
-    const store = await this.read();
-    const index = store.records.findIndex((record) => record.id === id);
-
-    if (index < 0) {
-      throw new Error(`Memory record not found: ${id}`);
-    }
-
-    const current = store.records[index];
-
-    if (!current) {
-      throw new Error(`Memory record not found: ${id}`);
-    }
-
-    const next = { ...current, status, updatedAt: new Date().toISOString() };
-    store.records[index] = next;
-    await this.write(store);
-    return next;
+    return this.update(id, { status });
   }
 
   private async read(): Promise<MemoryFile> {
     const content = await readFile(this.filePath, "utf8").catch(() => "");
-    return content ? (JSON.parse(content) as MemoryFile) : { records: [] };
+
+    if (!content) {
+      return { records: [] };
+    }
+
+    try {
+      const parsed = JSON.parse(content) as MemoryFile;
+      return { records: Array.isArray(parsed.records) ? parsed.records : [] };
+    } catch {
+      await quarantineCorruptFile(this.filePath);
+      return { records: [] };
+    }
   }
 
   private async write(store: MemoryFile): Promise<void> {
@@ -151,6 +217,52 @@ export class FileMemoryStore implements MemoryStore {
     await writeFile(tempPath, JSON.stringify(store, null, 2));
     await rename(tempPath, this.filePath);
   }
+
+  private trim(
+    store: MemoryFile,
+    override: { maxRecords?: number; maxBytes?: number } = {},
+  ): MemoryFile {
+    const maxRecords = override.maxRecords ?? this.options.maxRecords;
+    const maxBytes = override.maxBytes ?? this.options.maxBytes;
+    const records = [...store.records]
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, maxRecords);
+    const next: MemoryFile = { records };
+
+    while (
+      next.records.length > 0 &&
+      Buffer.byteLength(JSON.stringify(next), "utf8") > maxBytes
+    ) {
+      next.records.pop();
+    }
+
+    return next;
+  }
+}
+
+async function quarantineCorruptFile(filePath: string): Promise<void> {
+  const corruptPath = `${filePath}.corrupt-${Date.now()}`;
+  await rename(filePath, corruptPath).catch(() => undefined);
+}
+
+function normalizeRecord(
+  record: MemoryRecord,
+  maxRecordBytes: number,
+): MemoryRecord {
+  const content =
+    Buffer.byteLength(record.content, "utf8") <= maxRecordBytes
+      ? record.content
+      : Buffer.from(record.content, "utf8")
+          .subarray(0, maxRecordBytes)
+          .toString("utf8");
+
+  return {
+    ...record,
+    title: record.title.trim(),
+    content,
+    tags: unique(record.tags).slice(0, 20),
+    confidence: Math.max(0, Math.min(1, record.confidence)),
+  };
 }
 
 export function createTaskMemoryProposal(input: {

@@ -8,7 +8,6 @@ import {
   parseConfigSection,
   readConfigSection,
   repositoryTriggerModes,
-  toolPermissionLevels,
   updateRepositoryRuntimeSettings,
   upsertProjectEnv,
   writeConfigSection,
@@ -45,8 +44,6 @@ const repositoryRuntimeSettingsSchema = z
     maxConcurrentIssues: z.number().int().positive().max(50).optional(),
     projectSkillPath: z.string().min(1).optional(),
     projectRulePath: z.string().min(1).optional(),
-    allowedPermissions: z.array(z.enum(toolPermissionLevels)).optional(),
-    blockedPermissions: z.array(z.enum(toolPermissionLevels)).optional(),
   })
   .refine(
     (value) => Object.values(value).some((entry) => entry !== undefined),
@@ -159,8 +156,6 @@ export async function registerSettingsRoutes(
       maxConcurrentIssues?: number;
       projectSkillPath?: string;
       projectRulePath?: string;
-      allowedPermissions?: string[];
-      blockedPermissions?: string[];
     };
   }>("/settings/repositories/:repositoryId/runtime", async (request, reply) => {
     const parsed = repositoryRuntimeSettingsSchema.safeParse(request.body);

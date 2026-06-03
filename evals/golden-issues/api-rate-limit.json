@@ -1,6 +1,6 @@
 {
   "id": "api-rate-limit-policy",
-  "title": "API rate limit policy and tool gateway regression",
+  "title": "API rate limit rule and OpenCode executor regression",
   "issue": {
     "provider": "github",
     "owner": "acme",
@@ -18,7 +18,7 @@
     "tests": ["tests/github-webhook-rate-limit.test.ts"],
     "routeEntrypoints": ["POST /github/webhook"],
     "memoryKinds": ["procedural", "policy"],
-    "prBodySections": ["## Local Verification", "## Policy Decisions", "## Quality Gates"],
-    "traceKinds": ["navigation", "policy", "tool", "quality_gate"]
+    "prBodySections": ["## Local Verification", "## Scope Notes", "## Quality Gates"],
+    "traceKinds": ["navigation", "model", "quality_gate"]
   }
 }

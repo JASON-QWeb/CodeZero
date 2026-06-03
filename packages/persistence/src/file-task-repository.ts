@@ -100,7 +100,17 @@ export class FileTaskRepository implements TaskRepository {
       return emptyStore();
     }
 
-    return JSON.parse(content) as StoreFile;
+    try {
+      const parsed = JSON.parse(content) as StoreFile;
+      return {
+        tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+        events: Array.isArray(parsed.events) ? parsed.events : [],
+        artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : []
+      };
+    } catch {
+      await quarantineCorruptFile(this.filePath);
+      return emptyStore();
+    }
   }
 
   private async mutate<T>(operation: (store: StoreFile) => T | Promise<T>): Promise<T> {
@@ -135,4 +145,9 @@ export class FileTaskRepository implements TaskRepository {
       throw error;
     }
   }
+}
+
+async function quarantineCorruptFile(filePath: string): Promise<void> {
+  const corruptPath = `${filePath}.corrupt-${Date.now()}`;
+  await rename(filePath, corruptPath).catch(() => undefined);
 }

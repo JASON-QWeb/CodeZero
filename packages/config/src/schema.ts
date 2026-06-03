@@ -40,11 +40,11 @@ export const providerSchema = z
     base_url: z.string().min(1).optional(),
     api_key_env: z.string().min(1),
     model: z.string().min(1),
-    supports_tools: z.boolean().default(true),
     supports_structured_output: z.boolean().default(true),
     temperature: z.number().optional(),
     max_tokens: z.number().optional(),
     timeout_ms: z.number().optional(),
+    max_retries: z.number().int().min(0).default(2),
     coding_executor: codingExecutorProviderSchema.optional(),
   })
   .superRefine((provider, context) => {
@@ -113,10 +113,12 @@ export const agentsFileSchema = agentsFileBaseSchema.superRefine(
 export const codezeroFileSchema = agentsFileBaseSchema
   .merge(z.object({ repositories: z.array(z.lazy(() => repositorySchema)) }))
   .merge(z.object({ sandbox: z.lazy(() => sandboxFileSchema.shape.sandbox) }))
+  .merge(z.object({ memory: z.lazy(() => memoryFileSchema.shape.memory) }))
   .merge(
-    z.object({ policies: z.array(z.lazy(() => policySchema)).default([]) }),
+    z.object({
+      workflow_graph: z.lazy(() => workflowGraphFileSchema.shape.workflow_graph),
+    }),
   )
-  .merge(z.object({ tools: z.array(z.lazy(() => toolSchema)).default([]) }))
   .superRefine(validateAgentProviderRefs);
 
 export const repositoryTriggerModes = [
@@ -126,17 +128,9 @@ export const repositoryTriggerModes = [
   "manual",
   "disabled",
 ] as const;
-export const toolPermissionLevels = [
-  "read",
-  "safe_write",
-  "repo_write",
-  "external_write",
-  "dangerous",
-] as const;
 export const implementationExecutorModes = ["cli"] as const;
 
 const triggerModeSchema = z.enum(repositoryTriggerModes);
-const toolPermissionSchema = z.enum(toolPermissionLevels);
 const implementationExecutorModeSchema = z.enum(implementationExecutorModes);
 
 const repositoryTriggerSchema = z
@@ -210,20 +204,6 @@ const repositoryCodebaseIntelligenceSchema = z
     },
   });
 
-const repositoryPermissionsSchema = z
-  .object({
-    allowed_tools: z.array(z.string()).default([]),
-    blocked_tools: z.array(z.string()).default([]),
-    allowed_permissions: z.array(toolPermissionSchema).default([]),
-    blocked_permissions: z.array(toolPermissionSchema).default([]),
-  })
-  .default({
-    allowed_tools: [],
-    blocked_tools: [],
-    allowed_permissions: [],
-    blocked_permissions: [],
-  });
-
 const repositoryWorkflowSchema = z
   .object({
     require_prd_review: z.boolean().default(true),
@@ -247,9 +227,8 @@ export const repositorySchema = z.object({
     })
     .default({
       max_concurrent_issues: 1,
-    }),
+  }),
   workflow: repositoryWorkflowSchema,
-  permissions: repositoryPermissionsSchema,
   quality_gates: z
     .object({
       setup: z.string().optional(),
@@ -312,6 +291,11 @@ export const sandboxFileSchema = z.object({
         allow: z.array(z.string()).default([]),
       })
       .default({ allow: [] }),
+    filesystem: z
+      .object({
+        allow_repo_only: z.boolean().default(true),
+      })
+      .default({ allow_repo_only: true }),
     limits: z
       .object({
         max_runtime_minutes: z.number().default(90),
@@ -325,49 +309,51 @@ export const sandboxFileSchema = z.object({
         max_diff_lines: 1200,
         max_quality_gate_retries: 6,
       }),
+    docker: z
+      .object({
+        memory: z.string().min(1).default("4g"),
+        cpus: z.number().positive().default(2),
+        pids_limit: z.number().int().positive().default(512),
+      })
+      .default({
+        memory: "4g",
+        cpus: 2,
+        pids_limit: 512,
+      }),
     implementation_executor: implementationExecutorSchema.optional(),
   }),
 });
 
-const policyActionSchema = z.enum([
-  "allow",
-  "audit",
-  "require_approval",
-  "block",
-]);
-
-export const policySchema = z.object({
-  id: z.string().min(1),
-  description: z.string().optional(),
-  tool_names: z.array(z.string()).default([]),
-  permissions: z.array(toolPermissionSchema).default([]),
-  match_paths: z.array(z.string()).default([]),
-  match_commands: z.array(z.string()).default([]),
-  action: policyActionSchema,
+export const memoryFileSchema = z.object({
+  memory: z
+    .object({
+      max_records: z.number().int().positive().default(500),
+      max_bytes: z.number().int().positive().default(2_000_000),
+      max_record_bytes: z.number().int().positive().default(16_000),
+    })
+    .default({
+      max_records: 500,
+      max_bytes: 2_000_000,
+      max_record_bytes: 16_000,
+    }),
 });
 
-export const policiesFileSchema = z.object({
-  policies: z.array(policySchema).default([]),
-});
-
-export const toolSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().default(""),
-  permission: toolPermissionSchema,
-  timeout_ms: z.number().int().positive().optional(),
-  policy_refs: z.array(z.string()).default([]),
-});
-
-export const toolsFileSchema = z.object({
-  tools: z.array(toolSchema).default([]),
+export const workflowGraphFileSchema = z.object({
+  workflow_graph: z
+    .object({
+      checkpoint_file: z.string().min(1).default("data/langgraph-checkpoints.json"),
+    })
+    .default({
+      checkpoint_file: "data/langgraph-checkpoints.json",
+    }),
 });
 
 export const configSectionNames = [
   "agents",
   "repositories",
+  "memory",
   "sandbox",
-  "policies",
-  "tools",
+  "workflow_graph",
 ] as const;
 
 export type AgentsFileConfig = z.infer<typeof agentsFileSchema>;
@@ -382,21 +368,16 @@ export type ModelProviderType = z.infer<typeof modelProviderTypeSchema>;
 export type RepositoryConfig = z.infer<typeof repositorySchema>;
 export type RepositoryTriggerConfig = RepositoryConfig["trigger"];
 export type RepositoryTriggerMode = RepositoryTriggerConfig["mode"];
-export type ToolPermissionLevel = z.infer<typeof toolPermissionSchema>;
 export type RepositoryRuntimeSettingsPatch = {
   triggerMode?: RepositoryTriggerMode;
   mention?: string;
   maxConcurrentIssues?: number;
   projectSkillPath?: string;
   projectRulePath?: string;
-  allowedPermissions?: ToolPermissionLevel[];
-  blockedPermissions?: ToolPermissionLevel[];
 };
 export type SandboxFileConfig = z.infer<typeof sandboxFileSchema>;
-export type PoliciesFileConfig = z.infer<typeof policiesFileSchema>;
-export type PolicyConfig = z.infer<typeof policySchema>;
-export type ToolsFileConfig = z.infer<typeof toolsFileSchema>;
-export type ToolConfig = z.infer<typeof toolSchema>;
+export type MemoryFileConfig = z.infer<typeof memoryFileSchema>;
+export type WorkflowGraphFileConfig = z.infer<typeof workflowGraphFileSchema>;
 export type ConfigSectionName = (typeof configSectionNames)[number];
 
 export function schemaForSection(
@@ -409,10 +390,10 @@ export function schemaForSection(
       return repositoriesFileSchema;
     case "sandbox":
       return sandboxFileSchema;
-    case "policies":
-      return policiesFileSchema;
-    case "tools":
-      return toolsFileSchema;
+    case "memory":
+      return memoryFileSchema;
+    case "workflow_graph":
+      return workflowGraphFileSchema;
   }
 }
 

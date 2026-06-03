@@ -1,4 +1,10 @@
-import { Bot, GitBranch, Server, Shield, Wrench } from "lucide-react";
+import {
+  Bot,
+  Database,
+  GitBranch,
+  Server,
+  Waypoints,
+} from "lucide-react";
 import type { ConfigSectionName } from "./types";
 
 export const sectionMeta: Record<
@@ -17,19 +23,19 @@ export const sectionMeta: Record<
     description:
       "配置仓库触发方式、Skill/Rule 路径、质量门禁、前端截图和 PR 行为。",
   },
-  tools: {
-    title: "工具权限",
-    icon: <Wrench size={18} aria-hidden />,
-    description: "配置 Tool Gateway 使用的工具权限与超时边界。",
-  },
-  policies: {
-    title: "策略护栏",
-    icon: <Shield size={18} aria-hidden />,
-    description: "配置路径、命令、工具和权限策略，用于阻止或审批决策。",
-  },
   sandbox: {
     title: "沙箱运行时",
     icon: <Server size={18} aria-hidden />,
     description: "配置 Docker/worktree 沙箱模式、镜像、网络白名单和运行限制。",
+  },
+  memory: {
+    title: "记忆系统",
+    icon: <Database size={18} aria-hidden />,
+    description: "配置记忆记录容量、单条大小和持久化裁剪策略。",
+  },
+  workflow_graph: {
+    title: "工作流图",
+    icon: <Waypoints size={18} aria-hidden />,
+    description: "配置 LangGraph checkpoint 文件与恢复路径。",
   },
 };

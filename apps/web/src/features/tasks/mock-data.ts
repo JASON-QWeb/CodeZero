@@ -716,7 +716,7 @@ function traceFor(task: Task): TaskTrace {
     span(task, "navigation", "Repo graph route", "Selected task-board, API routes and focused tests."),
     span(task, "memory", "Memory search", "Matched 3 approved memories and 2 proposed memories."),
     span(task, "model", "PRD drafted", "Generated goals, non-goals, risks and implementation plan."),
-    span(task, "tool", "ContextPack created", "Packed 2 source files, 1 test file and project rules."),
+    span(task, "workflow", "ContextPack created", "Packed 2 source files, 1 test file and project rules."),
     span(
       task,
       "quality_gate",
@@ -765,8 +765,6 @@ function traceFor(task: Task): TaskTrace {
     artifacts,
     summary: {
       totalSpans: spans.length,
-      toolCalls: spans.filter((item) => item.kind === "tool").length,
-      policyDecisions: spans.filter((item) => item.kind === "policy").length,
       failedOrBlocked: spans.filter((item) =>
         ["failed", "blocked"].includes(item.status),
       ).length,

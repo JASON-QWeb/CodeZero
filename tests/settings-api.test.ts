@@ -26,7 +26,7 @@ describe("settings api", () => {
       list
         .json<{ sections: Array<{ section: string }> }>()
         .sections.map((section) => section.section),
-    ).toContain("agents");
+    ).toEqual(expect.arrayContaining(["agents", "workflow_graph", "memory"]));
 
     const valid = await app.inject({
       method: "POST",
@@ -206,8 +206,6 @@ describe("settings api", () => {
         maxConcurrentIssues: 3,
         projectSkillPath: ".codezero/skills",
         projectRulePath: ".codezero/rules",
-        allowedPermissions: ["read", "repo_write"],
-        blockedPermissions: ["dangerous"],
       },
     });
     const body = response.json<{
@@ -217,10 +215,6 @@ describe("settings api", () => {
           project_skill_path: string;
           project_rule_path: string;
           queue: { max_concurrent_issues: number };
-          permissions: {
-            allowed_permissions: string[];
-            blocked_permissions: string[];
-          };
         }>;
       };
     }>();
@@ -232,11 +226,6 @@ describe("settings api", () => {
     expect(repository?.project_skill_path).toBe(".codezero/skills");
     expect(repository?.project_rule_path).toBe(".codezero/rules");
     expect(repository?.queue.max_concurrent_issues).toBe(3);
-    expect(repository?.permissions.allowed_permissions).toEqual([
-      "read",
-      "repo_write",
-    ]);
-    expect(repository?.permissions.blocked_permissions).toEqual(["dangerous"]);
     expect(
       (await getServices()).config.repositories.find(
         (entry) => entry.id === "shop",
@@ -311,8 +300,6 @@ async function writeCodeZeroConfig(
     agents?: string;
     repositories?: string;
     sandbox?: string;
-    policies?: string;
-    tools?: string;
   } = {},
 ): Promise<void> {
   await mkdir(path.join(rootDir, "config"), { recursive: true });
@@ -332,11 +319,9 @@ async function writeCodeZeroConfig(
           "    provider: default",
           "    system_prompt: prompts/system/prd-agent.md",
           "",
-        ].join("\n"),
+      ].join("\n"),
       sections.repositories ?? "repositories: []\n",
       sections.sandbox ?? "sandbox: {}\n",
-      sections.policies ?? "policies: []\n",
-      sections.tools ?? "tools: []\n",
     ].join("\n"),
   );
 }

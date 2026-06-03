@@ -168,8 +168,6 @@ export async function updateRepositoryRuntimeSettings(
         maxConcurrentIssues: input.maxConcurrentIssues,
         projectSkillPath: input.projectSkillPath,
         projectRulePath: input.projectRulePath,
-        allowedPermissions: input.allowedPermissions,
-        blockedPermissions: input.blockedPermissions,
       }),
     },
   );

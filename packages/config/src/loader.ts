@@ -5,10 +5,10 @@ import {
   codezeroFileSchema,
   type AgentsFileConfig,
   type CodeZeroFileConfig,
-  type PolicyConfig,
+  type MemoryFileConfig,
   type RepositoryConfig,
   type SandboxFileConfig,
-  type ToolConfig
+  type WorkflowGraphFileConfig
 } from "./schema.js";
 
 const loadedEnvRoots = new Set<string>();
@@ -18,8 +18,6 @@ export type AppConfig = {
   agents: AgentsFileConfig;
   repositories: RepositoryConfig[];
   sandbox: SandboxFileConfig["sandbox"];
-  policies: PolicyConfig[];
-  tools: ToolConfig[];
   storage: {
     driver: "file" | "postgres";
     filePath: string;
@@ -27,6 +25,12 @@ export type AppConfig = {
   };
   memory: {
     filePath: string;
+    maxRecords: number;
+    maxBytes: number;
+    maxRecordBytes: number;
+  };
+  workflowGraph: {
+    checkpointFilePath: string;
   };
   github: {
     token?: string;
@@ -52,15 +56,23 @@ export async function loadAppConfig(rootDir?: string): Promise<AppConfig> {
     agents: runtimeConfig.agents,
     repositories: runtimeConfig.repositories,
     sandbox: runtimeConfig.sandbox,
-    policies: runtimeConfig.policies,
-    tools: runtimeConfig.tools,
     storage: {
       driver: process.env.STORAGE_DRIVER === "postgres" && databaseUrl ? "postgres" : "file",
       filePath: resolveFromRoot(resolvedRootDir, process.env.TASK_STORE_FILE ?? path.join("data", "tasks.json")),
       databaseUrl
     },
     memory: {
-      filePath: resolveFromRoot(resolvedRootDir, process.env.MEMORY_STORE_FILE ?? path.join("data", "memory.json"))
+      filePath: resolveFromRoot(resolvedRootDir, process.env.MEMORY_STORE_FILE ?? path.join("data", "memory.json")),
+      maxRecords: numberEnv("MEMORY_MAX_RECORDS") ?? runtimeConfig.memory.max_records,
+      maxBytes: numberEnv("MEMORY_MAX_BYTES") ?? runtimeConfig.memory.max_bytes,
+      maxRecordBytes: numberEnv("MEMORY_MAX_RECORD_BYTES") ?? runtimeConfig.memory.max_record_bytes
+    },
+    workflowGraph: {
+      checkpointFilePath: resolveFromRoot(
+        resolvedRootDir,
+        process.env.LANGGRAPH_CHECKPOINT_FILE ??
+          runtimeConfig.workflowGraph.checkpoint_file
+      )
     },
     github: {
       token: optionalEnv("GITHUB_TOKEN"),
@@ -74,8 +86,8 @@ export type RuntimeConfigSections = {
   agents: AgentsFileConfig;
   repositories: RepositoryConfig[];
   sandbox: SandboxFileConfig["sandbox"];
-  policies: PolicyConfig[];
-  tools: ToolConfig[];
+  memory: MemoryFileConfig["memory"];
+  workflowGraph: WorkflowGraphFileConfig["workflow_graph"];
 };
 
 export function toRuntimeConfigSections(config: CodeZeroFileConfig): RuntimeConfigSections {
@@ -86,8 +98,8 @@ export function toRuntimeConfigSections(config: CodeZeroFileConfig): RuntimeConf
     },
     repositories: config.repositories,
     sandbox: config.sandbox,
-    policies: config.policies,
-    tools: config.tools
+    memory: config.memory,
+    workflowGraph: config.workflow_graph
   };
 }
 
@@ -115,6 +127,17 @@ function githubAppConfig(rootDir: string): AppConfig["github"]["app"] {
 function optionalEnv(key: string): string | undefined {
   const value = process.env[key]?.trim();
   return value ? value : undefined;
+}
+
+function numberEnv(key: string): number | undefined {
+  const value = process.env[key]?.trim();
+
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export async function findWorkspaceRoot(startDir: string): Promise<string> {

@@ -16,7 +16,7 @@ import {
   validateConfig,
   validateProviderConnection,
 } from "./api";
-import { orderedSections, permissionLevels, triggerModes } from "./constants";
+import { orderedSections, triggerModes } from "./constants";
 import {
   applyProviderPresetToAgentsYaml,
   providerPresets,
@@ -34,7 +34,6 @@ import type {
   ProviderApiKeySaveResponse,
   RepositoryQuickConfig,
   RepositoryRuntimeSettingsInput,
-  ToolPermissionLevel,
   TriggerMode,
   ValidationResponse,
 } from "./types";
@@ -45,14 +44,6 @@ const triggerModeLabels: Record<TriggerMode, string> = {
   label: "标签触发",
   manual: "手动",
   disabled: "停用",
-};
-
-const permissionLevelLabels: Record<ToolPermissionLevel, string> = {
-  read: "读取",
-  safe_write: "安全写入",
-  repo_write: "仓库写入",
-  external_write: "外部写入",
-  dangerous: "高风险",
 };
 
 type SettingsConsoleProps = {
@@ -636,12 +627,6 @@ function RepositoryQuickSettingsItem({
   const [projectRulePath, setProjectRulePath] = useState(
     repository.projectRulePath,
   );
-  const [allowedPermissions, setAllowedPermissions] = useState<
-    ToolPermissionLevel[]
-  >(repository.allowedPermissions);
-  const [blockedPermissions, setBlockedPermissions] = useState<
-    ToolPermissionLevel[]
-  >(repository.blockedPermissions);
 
   useEffect(() => {
     setTriggerMode(repository.triggerMode);
@@ -649,8 +634,6 @@ function RepositoryQuickSettingsItem({
     setMaxConcurrentIssues(String(repository.maxConcurrentIssues));
     setProjectSkillPath(repository.projectSkillPath);
     setProjectRulePath(repository.projectRulePath);
-    setAllowedPermissions(repository.allowedPermissions);
-    setBlockedPermissions(repository.blockedPermissions);
   }, [repository]);
 
   return (
@@ -718,17 +701,6 @@ function RepositoryQuickSettingsItem({
         </label>
       </div>
 
-      <PermissionChecklist
-        label="允许权限"
-        onChange={setAllowedPermissions}
-        selected={allowedPermissions}
-      />
-      <PermissionChecklist
-        label="阻止权限"
-        onChange={setBlockedPermissions}
-        selected={blockedPermissions}
-      />
-
       <div className="repositoryQuickActions">
         <button
           className="iconButton positive"
@@ -751,8 +723,6 @@ function RepositoryQuickSettingsItem({
               ),
               projectSkillPath: projectSkillPath.trim(),
               projectRulePath: projectRulePath.trim(),
-              allowedPermissions,
-              blockedPermissions,
             })
           }
           type="button"
@@ -762,42 +732,5 @@ function RepositoryQuickSettingsItem({
         </button>
       </div>
     </article>
-  );
-}
-
-function PermissionChecklist({
-  label,
-  onChange,
-  selected,
-}: {
-  label: string;
-  onChange: (value: ToolPermissionLevel[]) => void;
-  selected: ToolPermissionLevel[];
-}) {
-  return (
-    <fieldset className="permissionChecklist">
-      <legend>{label}</legend>
-      <div>
-        {permissionLevels.map((permission) => {
-          const checked = selected.includes(permission);
-          return (
-            <label key={permission}>
-              <input
-                checked={checked}
-                onChange={(event) => {
-                  onChange(
-                    event.target.checked
-                      ? [...selected, permission]
-                      : selected.filter((item) => item !== permission),
-                  );
-                }}
-                type="checkbox"
-              />
-              <span>{permissionLevelLabels[permission]}</span>
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
   );
 }

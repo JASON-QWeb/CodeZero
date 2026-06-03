@@ -4,9 +4,9 @@ providers:
     base_url: "${OPENAI_BASE_URL}"
     api_key_env: "OPENAI_API_KEY"
     model: "${OPENAI_MODEL}"
-    supports_tools: true
     supports_structured_output: true
     timeout_ms: 900000
+    max_retries: 2
     coding_executor:
       mode: auto
 
@@ -33,6 +33,8 @@ agents:
     system_prompt: prompts/system/review-agent.md
     skills:
       - pr-compliance-review
+      - frontend-verification
+      - backend-verification
 
 repositories:
   - id: codezero
@@ -70,24 +72,6 @@ repositories:
       max_concurrent_issues: 2
     workflow:
       require_prd_review: true
-    permissions:
-      allowed_tools:
-        - repo.search
-        - repo.read_file
-        - codegraph.query
-        - codegraph.context
-        - shell.run
-        - github.create_draft_pr
-        - browser.screenshot
-        - memory.propose_update
-      blocked_tools: []
-      allowed_permissions:
-        - read
-        - safe_write
-        - repo_write
-        - external_write
-      blocked_permissions:
-        - dangerous
     quality_gates:
       build: "pnpm install --frozen-lockfile && pnpm build"
       lint: "pnpm lint"
@@ -135,24 +119,6 @@ repositories:
       max_concurrent_issues: 1
     workflow:
       require_prd_review: true
-    permissions:
-      allowed_tools:
-        - repo.search
-        - repo.read_file
-        - codegraph.query
-        - codegraph.context
-        - shell.run
-        - github.create_draft_pr
-        - browser.screenshot
-        - memory.propose_update
-      blocked_tools: []
-      allowed_permissions:
-        - read
-        - safe_write
-        - repo_write
-        - external_write
-      blocked_permissions:
-        - dangerous
     quality_gates:
       setup: "export DATABASE_URL='postgres://skillhub:skillhub@localhost:5432/skillhub_local?sslmode=disable' REDIS_PORT=6380 REDIS_ADDR=localhost:6380; ./scripts/local.sh db up && ./scripts/local.sh migrate"
       build: "export DATABASE_URL='postgres://skillhub:skillhub@localhost:5432/skillhub_local?sslmode=disable'; cd frontend && npm ci && npm run build && cd ../backend && go test ./..."
@@ -177,6 +143,10 @@ sandbox:
       - api.github.com
   filesystem:
     allow_repo_only: true
+  docker:
+    memory: "4g"
+    cpus: 2
+    pids_limit: 512
   limits:
     max_runtime_minutes: 90
     max_diff_files: 30
@@ -189,70 +159,10 @@ sandbox:
     timeout_ms: 3600000
     env: {}
 
-policies:
-  - id: block-secret-files
-    description: Agent must not modify secrets or private keys.
-    match_paths:
-      - ".env*"
-      - "**/*.pem"
-      - "**/*.key"
-    action: block
-  - id: require-human-review-for-auth-and-billing
-    description: Auth, billing, permission, and ledger changes require human approval.
-    match_paths:
-      - "src/auth/**"
-      - "src/billing/**"
-      - "src/permissions/**"
-      - "src/ledger/**"
-    action: require_approval
-  - id: block-dangerous-shell
-    description: Dangerous shell commands are not allowed in automated runs.
-    match_commands:
-      - "rm -rf"
-      - "npm publish"
-      - "pnpm publish"
-      - "kubectl apply"
-      - "terraform apply"
-    action: block
-  - id: audit-database-migrations
-    description: Database migrations can be generated only with explicit review.
-    match_paths:
-      - "**/migrations/**"
-      - "**/schema.prisma"
-    action: require_approval
+memory:
+  max_records: 500
+  max_bytes: 2000000
+  max_record_bytes: 16000
 
-tools:
-  - name: repo.search
-    description: Search files and symbols inside the task sandbox.
-    permission: read
-    timeout_ms: 10000
-  - name: repo.read_file
-    description: Read a file from the task sandbox.
-    permission: read
-    timeout_ms: 10000
-  - name: codegraph.query
-    description: Query the prebuilt CodeGraph index for symbols and source locations.
-    permission: read
-    timeout_ms: 30000
-  - name: codegraph.context
-    description: Build task context from the prebuilt CodeGraph index.
-    permission: read
-    timeout_ms: 30000
-  - name: shell.run
-    description: Run an allowlisted shell command in the sandbox.
-    permission: repo_write
-    timeout_ms: 120000
-    policy_refs:
-      - block-dangerous-shell
-  - name: github.create_draft_pr
-    description: Create a draft pull request for the task branch.
-    permission: external_write
-    timeout_ms: 30000
-  - name: browser.screenshot
-    description: Capture desktop and mobile screenshots for configured URLs.
-    permission: read
-    timeout_ms: 120000
-  - name: memory.propose_update
-    description: Propose a memory or project-map update artifact.
-    permission: safe_write
-    timeout_ms: 30000
+workflow_graph:
+  checkpoint_file: data/langgraph-checkpoints.json

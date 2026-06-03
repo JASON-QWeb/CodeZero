@@ -115,13 +115,6 @@ export async function updateRepositoryRuntimeSettings(
       max_concurrent_issues:
         patch.maxConcurrentIssues ?? repository.queue.max_concurrent_issues,
     },
-    permissions: {
-      ...repository.permissions,
-      allowed_permissions:
-        patch.allowedPermissions ?? repository.permissions.allowed_permissions,
-      blocked_permissions:
-        patch.blockedPermissions ?? repository.permissions.blocked_permissions,
-    },
   };
 
   return writeConfigSection(rootDir, "repositories", YAML.stringify(config));
@@ -192,10 +185,10 @@ function pickUnifiedConfigSection(
       return { repositories: config.repositories };
     case "sandbox":
       return { sandbox: config.sandbox };
-    case "policies":
-      return { policies: config.policies };
-    case "tools":
-      return { tools: config.tools };
+    case "memory":
+      return { memory: config.memory };
+    case "workflow_graph":
+      return { workflow_graph: config.workflow_graph };
   }
 }
 
@@ -225,19 +218,18 @@ function replaceUnifiedConfigSection(
       >;
       return { ...next, sandbox: parsed.sandbox };
     }
-    case "policies": {
-      const parsed = schemaForSection("policies").parse(parsedSection) as Pick<
+    case "memory": {
+      const parsed = schemaForSection("memory").parse(parsedSection) as Pick<
         CodeZeroFileConfig,
-        "policies"
+        "memory"
       >;
-      return { ...next, policies: parsed.policies };
+      return { ...next, memory: parsed.memory };
     }
-    case "tools": {
-      const parsed = schemaForSection("tools").parse(parsedSection) as Pick<
-        CodeZeroFileConfig,
-        "tools"
-      >;
-      return { ...next, tools: parsed.tools };
+    case "workflow_graph": {
+      const parsed = schemaForSection("workflow_graph").parse(
+        parsedSection,
+      ) as Pick<CodeZeroFileConfig, "workflow_graph">;
+      return { ...next, workflow_graph: parsed.workflow_graph };
     }
   }
 }
