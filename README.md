@@ -8,16 +8,16 @@
 
 # CodeZero
 
-### Automated workflow from requirements to code delivery, no manual coding required
+### 无需人工编码，从需求到代码落地的自动化工作流
 
-**⚡ Write an Issue → Get a verified PR.**
+**写一个 Issue → 拿到一个验证过的 PR。**
 
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-Orchestration_Engine-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
-[![AI SDK](https://img.shields.io/badge/Vercel_AI_SDK-Powered-000000?style=flat-square&logo=vercel&logoColor=white)](https://sdk.vercel.ai/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-编排引擎-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
+[![AI SDK](https://img.shields.io/badge/Vercel_AI_SDK-驱动-000000?style=flat-square&logo=vercel&logoColor=white)](https://sdk.vercel.ai/)
 
-**English** · [中文](README.zh-CN.md)
+[English](README.en.md) · **中文**
 
 ---
 
@@ -25,7 +25,7 @@
 
 <br />
 
-## 🎬 Showcase
+## 展示
 
 <div align="center">
 
@@ -52,101 +52,74 @@
 
 ---
 
-## ✨ Why CodeZero?
+## 为什么选择 CodeZero？
 
-Most AI coding tools stop at **code generation**. CodeZero handles the **entire engineering workflow** — from product intent to a verified, reviewable pull request.
+CodeZero 覆盖的是**整条工程链路** —— 从产品意图到一个经过验证、可以 review 的 Pull Request。
 
 <table>
 <tr>
-<td width="50%" valign="top">
-
-### 🔴 Without CodeZero
-- Write ticket → manually break it down
-- Context switch to IDE → figure out which files to edit
-- Write code → run tests → fix → repeat
-- Open PR → wait for review → fix → repeat
-
+<td align="center" width="33%">
+<h3>规划</h3>
+<p>把 Issue 转化为结构化 PRD/Plan 文档：包含验收标准、风险分析、文件范围、测试项和命令。</p>
 </td>
-<td width="50%" valign="top">
-
-### 🟢 With CodeZero
-- Write a GitHub Issue in natural language
-- CodeZero reads your repo, drafts a PRD, gets approval
-- Agent codes in an isolated sandbox with live progress
-- Auto-runs verification, opens a draft PR with evidence
-
+<td align="center" width="33%">
+<h3>实现</h3>
+<p>AI 编码 Agent 在持久沙箱中实现代码变更，stdout/stderr 实时流式推送到 Run Console。</p>
+</td>
+<td align="center" width="33%">
+<h3>交付</h3>
+<p>执行 build、lint、test、typecheck 和 review 门禁 —— 然后创建带验证证据和本地复现步骤的 draft PR。</p>
 </td>
 </tr>
 </table>
 
 ---
 
-## 🚀 What It Does
+## 核心能力
 
-<table>
-<tr>
-<td align="center" width="33%">
-<h3>📋 Plan</h3>
-<p>Converts Issues into structured PRD/Plan documents with acceptance criteria, risks, file analysis, tests, and commands.</p>
-</td>
-<td align="center" width="33%">
-<h3>🤖 Build</h3>
-<p>An AI coding agent implements changes in a persistent sandbox with live stdout/stderr streaming to the Run Console.</p>
-</td>
-<td align="center" width="33%">
-<h3>✅ Ship</h3>
-<p>Runs build, lint, test, typecheck, and review gates — then opens a draft PR with verification evidence and local repro steps.</p>
-</td>
-</tr>
-</table>
-
----
-
-## 🏗️ Key Features
-
-| Feature | Description |
+| 能力 | 说明 |
 |:---|:---|
-| **Issue → PRD → PR** | Transforms GitHub Issues into structured planning documents, verified diffs, and draft PRs |
-| **LangGraph Orchestration** | Checkpointed graph nodes with approval interrupts and resumable repair loops |
-| **AI SDK Model Layer** | Unified provider registry for PRD, review, context, validation, and routing agents |
-| **Live Agent Progress** | Real-time streaming of coding agent output as board events |
-| **Repository Intelligence** | CodeGraph + Navigation Graph + ContextPack narrow the edit surface before changes begin |
-| **Persistent Task Sandbox** | One sandbox per Issue — survives approval cycles, feedback iterations, and reruns |
-| **Human-in-the-Loop** | PRD approval, policy gates, review subagents, and memory proposals keep humans in control |
-| **Multi-Provider Support** | OpenAI, Anthropic, Gemini, xAI, Mistral, Groq — route different agents to different models |
-| **Operator Console** | Run Console, Settings Console, Memory Inbox, Trace Replay API, Golden Issue Eval CLI |
+| **Issue → PRD → PR** | GitHub Issue 自动转化为结构化执行文档、验证后的 diff 和 draft PR |
+| **LangGraph 编排** | 可 checkpoint 的图节点，支持审批中断和可恢复的修复循环 |
+| **AI SDK 模型层** | 统一 provider registry，处理 PRD、review、context、validation 和 routing 调用 |
+| **实时 Agent 进度** | OpenCode 输出实时捕获为看板事件，随时查看 coding executor 在做什么 |
+| **仓库智能理解** | CodeGraph + Navigation Graph + ContextPack 在改代码前收敛修改范围 |
+| **持久 Task Sandbox** | 每个 Issue 一个沙箱 —— 跨审批、反馈迭代和重跑周期始终复用 |
+| **Human-in-the-Loop** | PRD 审批、Policy 门禁、Review subagent 和 memory proposal 保持人可控 |
+| **多供应商支持** | OpenAI、Anthropic、Gemini、xAI、Mistral、Groq —— 不同 agent 可路由到不同模型 |
+| **操作台完整** | Run Console、Settings Console、Memory Inbox、Trace Replay API、Golden Issue Eval CLI |
 
 ---
 
-## 🔄 How It Works
+## 工作流程
 
 ```
   ┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌─────────────┐
-  │   Trigger    │────▶│   Analyze    │────▶│    Plan      │────▶│   Approve   │
-  │  (Issue /    │     │  (Index repo,│     │  (Generate   │     │  (Human     │
-  │   @mention)  │     │   context)   │     │   PRD/Plan)  │     │   review)   │
+  │   触发任务   │────▶│   分析上下文  │────▶│   制定计划    │────▶│   人工审批   │
+  │  (Issue /   │     │  (索引仓库,   │     │  (生成       │     │  (审核      │
+  │   @提及)    │     │   构建上下文)  │     │   PRD/Plan)  │     │   PRD)     │
   └─────────────┘     └──────────────┘     └──────────────┘     └──────┬──────┘
                                                                        │
   ┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────▼──────┐
-  │   Ship PR   │◀────│   Verify     │◀────│   Stream     │◀────│  Implement  │
-  │  (Draft PR  │     │  (Build/Test/│     │  (Live board │     │  (OpenCode  │
-  │   + evidence│     │   Review)    │     │   events)    │     │   sandbox)  │
+  │   发布 PR   │◀────│   验证结果    │◀────│   流式观测    │◀────│  实现代码   │
+  │  (Draft PR  │     │  (Build/Test/│     │  (实时看板    │     │  (OpenCode  │
+  │   + 证据)   │     │   Review)    │     │   事件)      │     │   沙箱)     │
   └─────────────┘     └──────────────┘     └──────────────┘     └─────────────┘
 ```
 
-1. **Trigger** — GitHub webhook, `@agent` mention, label, or manual import creates a task
-2. **Workspace** — Creates or reuses the persistent task sandbox and issue branch
-3. **Analyze** — Repository indexing, navigation graph, approved memory, and ContextPack identify relevant files
-4. **Plan** — One planning pass produces the PRD/Plan document for approval and implementation
-5. **Approve** — LangGraph interrupts when human approval is needed, then resumes the same thread
-6. **Implement** — OpenCode edits the sandboxed repository using the generated prompt and model config
-7. **Stream** — Executor output becomes real-time board events: progress, files, commands, errors
-8. **Verify** — Build, lint, test, typecheck, screenshots, policy checks, and review subagents run
-9. **Ship** — Pushes branch and opens a draft PR with evidence, risks, and local verification commands
+1. **触发** — GitHub webhook、`@agent` 评论、标签或手动导入创建任务
+2. **工作区** — 创建或复用持久 task sandbox 和 issue 分支
+3. **分析** — 仓库索引、导航图、approved memory 和 ContextPack 找到最相关文件
+4. **规划** — 一次 planning pass 生成 PRD/Plan 文档，用于审批和后续实现
+5. **审批** — 需要人工审批时 LangGraph 中断运行，审批后在同一个 task thread 恢复
+6. **实现** — OpenCode 使用生成的 prompt file 和模型配置，在同一个沙箱仓库内编辑
+7. **流式** — executor 输出实时变成看板事件：进度、文件活动、命令和错误
+8. **验证** — 运行 build、lint、test、typecheck、截图 hook、policy check 和 Review subagent
+9. **发布** — 推送分支并创建 draft PR，附带证据、风险说明和本地验证命令
 
 ---
 
-## 🏛️ Architecture
+## 架构图
 
 ```mermaid
 flowchart TD
@@ -173,96 +146,96 @@ flowchart TD
 
 ---
 
-## 📁 Monorepo Layout
+## Monorepo 结构
 
 ```text
 apps/
-  api/       Fastify API, GitHub webhooks, settings routes, task routes
-  web/       Next.js Run Console, Settings Console, Memory Inbox
-  worker/    Queue worker and repository task execution
+  api/       Fastify API、GitHub webhook、settings routes、task routes
+  web/       Next.js Run Console、Settings Console、Memory Inbox
+  worker/    队列 worker 与仓库任务执行
 packages/
-  codebase-intelligence/  Indexing, hybrid search, ContextPack, repo graph
-  config/                 YAML config loading and validation
-  github/                 GitHub Issue, branch, comment, PR integration
-  memory/                 Approved memory and memory proposal store
-  model-runtime/          AI SDK model registry and structured agent runner
-  observability/          Task traces and replay-friendly event shaping
-  orchestrator/           Task state machine and workflow decisions
-  persistence/            File/Postgres task persistence
-  sandbox/                Docker/worktree sandbox abstraction
-  skills/                 Platform skill loader and built-in skills
-  tool-gateway/           Audited read/search/shell tool boundary
-  verification/           Test, screenshot, and local verification helpers
-  workflow-graph/         LangGraph task graph, checkpoints, callbacks
-  workflows/              Issue-to-PR workflow composition
+  codebase-intelligence/  索引、混合搜索、ContextPack、repo graph
+  config/                 YAML 配置加载与校验
+  github/                 GitHub Issue、branch、comment、PR 集成
+  memory/                 approved memory 与 memory proposal 存储
+  model-runtime/          AI SDK 模型注册表与结构化 agent runner
+  observability/          task traces 与可回放事件整理
+  orchestrator/           任务状态机与 workflow 决策
+  persistence/            文件/Postgres task 持久化
+  sandbox/                Docker/worktree 沙箱抽象
+  skills/                 平台 skill loader 与内置 skills
+  tool-gateway/           可审计的 read/search/shell 工具边界
+  verification/           测试、截图与本地验证辅助能力
+  workflow-graph/         LangGraph task graph、checkpoint 与 callbacks
+  workflows/              Issue-to-PR workflow 编排
 ```
 
 ---
 
-## ⚡ Quick Start
+## 快速开始
 
-### Prerequisites
+### 前置条件
 
 - Node.js ≥ 20
 - [pnpm](https://pnpm.io/) ≥ 10
-- Docker (for local sandbox)
-- [OpenCode CLI](https://github.com/opencode-ai/opencode) on `PATH`
+- Docker（用于本地沙箱）
+- [OpenCode CLI](https://github.com/opencode-ai/opencode) 在 `PATH` 中
 
-### Installation
+### 安装
 
 ```bash
-# Clone the repository
+# 克隆仓库
 git clone https://github.com/JASON-QWeb/CodeZero.git
 cd CodeZero
 
-# Install dependencies
+# 安装依赖
 pnpm install
 
-# Configure environment
+# 配置环境变量
 cp .env.example .env
 ```
 
-### Configuration
+### 配置
 
-Edit `.env` with your provider and GitHub credentials:
+编辑 `.env`，填入 provider 和 GitHub 凭证：
 
 ```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o
-# Prefer GitHub App credentials for CodeZero[bot]-style comments and PRs.
+# 推荐使用 GitHub App，这样 Issue 评论和 PR 会显示为 App/bot 身份。
 GITHUB_APP_ID=123456
 GITHUB_APP_INSTALLATION_ID=789012
 GITHUB_APP_PRIVATE_KEY_PATH=./secrets/codezero-app.pem
-# Optional fallback PAT when GitHub App credentials are not configured.
+# 未配置 GitHub App 时可用 PAT 作为 fallback。
 GITHUB_TOKEN=ghp_...
 GITHUB_WEBHOOK_SECRET=your-webhook-secret
 AGENT_TRIGGER_MENTION=@codezero
 ```
 
-When both `GITHUB_APP_*` and `GITHUB_TOKEN` are configured, CodeZero uses the GitHub App installation token first. Use `GITHUB_APP_PRIVATE_KEY_PATH` for local runs; `GITHUB_APP_PRIVATE_KEY` also works when newlines are escaped as `\n`.
+如果同时配置了 `GITHUB_APP_*` 和 `GITHUB_TOKEN`，CodeZero 会优先使用 GitHub App installation token。本地运行建议使用 `GITHUB_APP_PRIVATE_KEY_PATH`；也可以用 `GITHUB_APP_PRIVATE_KEY`，但需要把换行写成 `\n`。
 
-> 💡 **Tip:** You can switch providers and save API keys later from the **Settings Console** UI.
+> **提示：** 之后也可以在 **Settings Console** UI 中切换活跃 provider 并保存 API key。
 
-### Launch
+### 启动
 
 ```bash
-# Start infrastructure
+# 启动基础设施
 docker compose -f infra/docker/docker-compose.yml up -d
 
-# Start services (in separate terminals or use `pnpm dev` for all)
-pnpm dev:api      # API server
-pnpm dev:worker   # Task worker
-pnpm dev:web      # Web console
+# 启动服务（分别在不同终端，或用 `pnpm dev` 一键全部启动）
+pnpm dev:api      # API 服务
+pnpm dev:worker   # 任务 Worker
+pnpm dev:web      # Web 控制台
 ```
 
-Open the **Web Console** at [`http://localhost:3000`](http://localhost:3000)
+打开 **Web 控制台**：[`http://localhost:3000`](http://localhost:3000)
 
 ---
 
-## 🔧 OpenCode Executor
+## OpenCode Executor
 
-CodeZero's implementation path is **CLI-first**. The default sandbox executor runs OpenCode with a generated prompt file:
+CodeZero 的实现路径是 **CLI-first**。默认沙箱 executor 会带着生成好的 prompt file 运行 OpenCode：
 
 ```bash
 OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
@@ -277,55 +250,55 @@ OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
 ```
 
 <details>
-<summary><strong>Provider Configuration Details</strong></summary>
+<summary><strong>供应商配置详情</strong></summary>
 
-- Install OpenCode on `PATH`, or set `OPENCODE_BIN` in `.env` to a local binary
-- For **OpenAI-compatible gateways**, CodeZero writes a temporary `OPENCODE_CONFIG` that maps provider/model without exposing API keys in artifacts
-- **Native AI SDK providers** (Anthropic, Gemini, xAI, Mistral, Groq) use OpenCode's native provider path by default
-- Advanced executor overrides can be configured under `providers.<id>.coding_executor`
+- 把 OpenCode 安装到 `PATH`，或在 `.env` 里设置 `OPENCODE_BIN` 指向本地二进制
+- 对 **OpenAI-compatible 网关**，CodeZero 会写入临时 `OPENCODE_CONFIG`，映射 provider/model 且不暴露 API key
+- **AI SDK 原生 provider**（Anthropic、Gemini、xAI、Mistral、Groq）默认走 OpenCode 的 native provider 路径
+- 高级 executor 覆盖可配置在 `providers.<id>.coding_executor`
 
 </details>
 
 ---
 
-## 🧠 Knowledge Graphs
+## 项目知识图
 
-CodeZero includes a lightweight repository intelligence pipeline. For richer, per-repository knowledge graphs, install the official [Understand-Anything](https://github.com/Lum1104/Understand-Anything) Codex skill:
+CodeZero 内置了轻量级仓库智能理解流程。如需更完整的项目知识图，安装官方 [Understand-Anything](https://github.com/Lum1104/Understand-Anything) Codex skill：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/install.sh | bash -s codex
 ```
 
-The Run Console invokes the official `$understand` multi-agent pipeline and renders its dashboard inline. Output remains the upstream `.understand-anything/knowledge-graph.json`.
+Run Console 会运行官方 `$understand` 多 Agent pipeline 并在页面内渲染 dashboard。产物保持为上游定义的 `.understand-anything/knowledge-graph.json`。
 
 ---
 
-## 🧪 Validation
+## 验证命令
 
 ```bash
-pnpm check          # Lint + Typecheck + Tests (with coverage) + Build
-pnpm eval:golden    # Score golden issues against candidate artifacts
+pnpm check          # Lint + Typecheck + 带 Coverage 的测试 + Build
+pnpm eval:golden    # 使用 golden issues 评估候选产物
 ```
 
-Eval reports are written to `artifacts/eval-report.md`.
+评估报告写入 `artifacts/eval-report.md`。
 
 ---
 
-## ⚙️ Configuration
+## 配置
 
-Runtime configuration lives in `config/`:
+运行配置位于 `config/` 目录：
 
-| File | Purpose |
+| 文件 | 用途 |
 |:---|:---|
-| `codezero.yaml` | Model providers, agent roles, repositories, sandbox, policies, tool gateway |
-| `codezero.example.yaml` | Clean template for new installations |
+| `codezero.yaml` | 模型 provider、agent 角色、仓库、沙箱、policy 和 tool gateway 默认值 |
+| `codezero.example.yaml` | 新安装可参考的干净模板 |
 
-The **Settings Console** UI can edit and validate these files during local operation.
+本地运行时也可通过 **Settings Console** UI 编辑和校验这些配置。
 
 ---
 
-## 📄 License
+## 开源协议
 
-CodeZero is licensed under the [MIT License](LICENSE).
+CodeZero 基于 [MIT License](LICENSE) 开源。
 
 ---
