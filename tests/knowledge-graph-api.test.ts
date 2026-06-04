@@ -1,4 +1,10 @@
-import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -160,7 +166,12 @@ describe("Understand-Anything project knowledge graph API", () => {
       url: "/repositories/example-web/context-files",
     });
     const files = listResponse.json<{
-      files: Array<{ kind: string; path: string; name: string; content: string }>;
+      files: Array<{
+        kind: string;
+        path: string;
+        name: string;
+        content: string;
+      }>;
     }>().files;
 
     expect(listResponse.statusCode).toBe(200);
@@ -207,6 +218,22 @@ describe("Understand-Anything project knowledge graph API", () => {
     });
 
     expect(blockedResponse.statusCode).toBe(409);
+
+    const englishBlockedResponse = await app.inject({
+      method: "PUT",
+      url: "/repositories/example-web/context-files",
+      headers: { "accept-language": "en-US" },
+      payload: {
+        kind: "skill",
+        path: ".agent/skills/refunds/not-skill.md",
+        content: "# Invalid skill\n",
+      },
+    });
+
+    expect(englishBlockedResponse.statusCode).toBe(409);
+    expect(
+      englishBlockedResponse.json<{ message: string }>().message,
+    ).toContain("SKILL.md");
 
     await app.close();
   });

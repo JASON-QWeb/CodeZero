@@ -1,7 +1,7 @@
 import { createSign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Octokit } from "@octokit/rest";
-import type { IssueContext } from "@agent/shared";
+import { getCircuitBreaker, type IssueContext } from "@agent/shared";
 
 export type GitHubAppConfig = {
   appId?: string;
@@ -17,7 +17,10 @@ export type GitHubClientConfig = {
 
 export type GitHubApiClient = Pick<Octokit, "issues" | "pulls">;
 
-export type GitHubIssueCommentSource = "issue_comment" | "review" | "review_comment";
+export type GitHubIssueCommentSource =
+  | "issue_comment"
+  | "review"
+  | "review_comment";
 
 export type GitHubIssueComment = {
   id?: string;
@@ -48,11 +51,18 @@ export class GitHubClient {
     return this.auth.getToken();
   }
 
-  async getIssue(owner: string, repo: string, issueNumber: number, baseBranch = "main"): Promise<IssueContext> {
+  async getIssue(
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    baseBranch = "main",
+  ): Promise<IssueContext> {
     const octokit = await this.octokit();
     const [{ data: issue }, comments] = await Promise.all([
-      octokit.issues.get({ owner, repo, issue_number: issueNumber }),
-      this.listIssueComments(owner, repo, issueNumber)
+      this.githubRequest(() =>
+        octokit.issues.get({ owner, repo, issue_number: issueNumber }),
+      ),
+      this.listIssueComments(owner, repo, issueNumber),
     ]);
 
     return {
@@ -64,23 +74,35 @@ export class GitHubClient {
       title: issue.title,
       body: issue.body ?? "",
       labels: normalizeLabels(issue.labels),
-      comments: comments.map(({ author, body, createdAt }) => ({ author, body, createdAt })),
-      baseBranch
+      comments: comments.map(({ author, body, createdAt }) => ({
+        author,
+        body,
+        createdAt,
+      })),
+      baseBranch,
     };
   }
 
   async listOpenIssueThreads(
     owner: string,
     repo: string,
-    options: { baseBranch?: string; perPage?: number } = {}
+    options: { baseBranch?: string; perPage?: number } = {},
   ): Promise<GitHubIssueThread[]> {
-    const issues = await this.listOpenIssues(owner, repo, options.perPage ?? 50);
+    const issues = await this.listOpenIssues(
+      owner,
+      repo,
+      options.perPage ?? 50,
+    );
 
     return Promise.all(
       issues
         .filter((issue) => !issue.pull_request)
         .map(async (issue) => {
-          const comments = await this.listIssueComments(owner, repo, issue.number);
+          const comments = await this.listIssueComments(
+            owner,
+            repo,
+            issue.number,
+          );
 
           return {
             provider: "github",
@@ -91,20 +113,36 @@ export class GitHubClient {
             title: issue.title,
             body: issue.body ?? "",
             labels: normalizeLabels(issue.labels),
-            comments: comments.map(({ author, body, createdAt }) => ({ author, body, createdAt })),
+            comments: comments.map(({ author, body, createdAt }) => ({
+              author,
+              body,
+              createdAt,
+            })),
             baseBranch: options.baseBranch ?? "main",
             author: issue.user?.login ?? "unknown",
             updatedAt: issue.updated_at,
-            isPullRequest: Boolean(issue.pull_request)
+            isPullRequest: Boolean(issue.pull_request),
           };
-        })
+        }),
     );
   }
 
-  async listIssueComments(owner: string, repo: string, issueNumber: number): Promise<GitHubIssueComment[]> {
+  async listIssueComments(
+    owner: string,
+    repo: string,
+    issueNumber: number,
+  ): Promise<GitHubIssueComment[]> {
     const comments = await this.listPaginated(async (page, perPage) => {
       const octokit = await this.octokit();
-      const { data } = await octokit.issues.listComments({ owner, repo, issue_number: issueNumber, per_page: perPage, page });
+      const { data } = await this.githubRequest(() =>
+        octokit.issues.listComments({
+          owner,
+          repo,
+          issue_number: issueNumber,
+          per_page: perPage,
+          page,
+        }),
+      );
       return data;
     });
 
@@ -114,45 +152,59 @@ export class GitHubClient {
       author: comment.user?.login ?? "unknown",
       body: comment.body ?? "",
       createdAt: comment.created_at,
-      url: comment.html_url
+      url: comment.html_url,
     }));
   }
 
-  async listPullRequestFeedback(owner: string, repo: string, pullNumber: number): Promise<GitHubIssueComment[]> {
+  async listPullRequestFeedback(
+    owner: string,
+    repo: string,
+    pullNumber: number,
+  ): Promise<GitHubIssueComment[]> {
     const [conversationComments, reviewComments, reviews] = await Promise.all([
       this.listIssueComments(owner, repo, pullNumber),
       this.listPaginated(async (page, perPage) => {
         const octokit = await this.octokit();
-        const { data } = await octokit.pulls.listReviewComments({
-          owner,
-          repo,
-          pull_number: pullNumber,
-          per_page: perPage,
-          page
-        });
+        const { data } = await this.githubRequest(() =>
+          octokit.pulls.listReviewComments({
+            owner,
+            repo,
+            pull_number: pullNumber,
+            per_page: perPage,
+            page,
+          }),
+        );
         return data;
       }),
       this.listPaginated(async (page, perPage) => {
         const octokit = await this.octokit();
-        const { data } = await octokit.pulls.listReviews({
-          owner,
-          repo,
-          pull_number: pullNumber,
-          per_page: perPage,
-          page
-        });
+        const { data } = await this.githubRequest(() =>
+          octokit.pulls.listReviews({
+            owner,
+            repo,
+            pull_number: pullNumber,
+            per_page: perPage,
+            page,
+          }),
+        );
         return data;
-      })
+      }),
     ]);
 
-    const inlineFeedback: GitHubIssueComment[] = reviewComments.map((comment) => ({
-      id: `review_comment-${comment.id}`,
-      source: "review_comment",
-      author: comment.user?.login ?? "unknown",
-      body: formatInlineReviewComment(comment.path, comment.line ?? comment.original_line, comment.body ?? ""),
-      createdAt: comment.created_at,
-      url: comment.html_url
-    }));
+    const inlineFeedback: GitHubIssueComment[] = reviewComments.map(
+      (comment) => ({
+        id: `review_comment-${comment.id}`,
+        source: "review_comment",
+        author: comment.user?.login ?? "unknown",
+        body: formatInlineReviewComment(
+          comment.path,
+          comment.line ?? comment.original_line,
+          comment.body ?? "",
+        ),
+        createdAt: comment.created_at,
+        url: comment.html_url,
+      }),
+    );
     const reviewFeedback: GitHubIssueComment[] = reviews
       .filter((review) => Boolean(review.body?.trim()))
       .map((review) => ({
@@ -161,10 +213,12 @@ export class GitHubClient {
         author: review.user?.login ?? "unknown",
         body: formatPullRequestReview(review.state, review.body ?? ""),
         createdAt: review.submitted_at ?? new Date(0).toISOString(),
-        url: review.html_url
+        url: review.html_url,
       }));
 
-    return [...conversationComments, ...reviewFeedback, ...inlineFeedback].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    return [...conversationComments, ...reviewFeedback, ...inlineFeedback].sort(
+      (left, right) => left.createdAt.localeCompare(right.createdAt),
+    );
   }
 
   async createDraftPullRequest(input: {
@@ -176,15 +230,17 @@ export class GitHubClient {
     base: string;
   }): Promise<string> {
     const octokit = await this.octokit();
-    const { data } = await octokit.pulls.create({
-      owner: input.owner,
-      repo: input.repo,
-      title: input.title,
-      body: input.body,
-      head: input.head,
-      base: input.base,
-      draft: true
-    });
+    const { data } = await this.githubRequest(() =>
+      octokit.pulls.create({
+        owner: input.owner,
+        repo: input.repo,
+        title: input.title,
+        body: input.body,
+        head: input.head,
+        base: input.base,
+        draft: true,
+      }),
+    );
 
     return data.html_url;
   }
@@ -198,26 +254,35 @@ export class GitHubClient {
     state?: "open" | "closed";
   }): Promise<string> {
     const octokit = await this.octokit();
-    const { data } = await octokit.pulls.update({
-      owner: input.owner,
-      repo: input.repo,
-      pull_number: input.pullNumber,
-      title: input.title,
-      body: input.body,
-      state: input.state
-    });
+    const { data } = await this.githubRequest(() =>
+      octokit.pulls.update({
+        owner: input.owner,
+        repo: input.repo,
+        pull_number: input.pullNumber,
+        title: input.title,
+        body: input.body,
+        state: input.state,
+      }),
+    );
 
     return data.html_url;
   }
 
-  async createIssueComment(input: { owner: string; repo: string; issueNumber: number; body: string }): Promise<string> {
+  async createIssueComment(input: {
+    owner: string;
+    repo: string;
+    issueNumber: number;
+    body: string;
+  }): Promise<string> {
     const octokit = await this.octokit();
-    const { data } = await octokit.issues.createComment({
-      owner: input.owner,
-      repo: input.repo,
-      issue_number: input.issueNumber,
-      body: input.body
-    });
+    const { data } = await this.githubRequest(() =>
+      octokit.issues.createComment({
+        owner: input.owner,
+        repo: input.repo,
+        issue_number: input.issueNumber,
+        body: input.body,
+      }),
+    );
 
     return data.html_url;
   }
@@ -231,13 +296,15 @@ export class GitHubClient {
     baseBranch?: string;
   }): Promise<IssueContext> {
     const octokit = await this.octokit();
-    const { data } = await octokit.issues.create({
-      owner: input.owner,
-      repo: input.repo,
-      title: input.title,
-      body: input.body,
-      labels: input.labels
-    });
+    const { data } = await this.githubRequest(() =>
+      octokit.issues.create({
+        owner: input.owner,
+        repo: input.repo,
+        title: input.title,
+        body: input.body,
+        labels: input.labels,
+      }),
+    );
 
     return {
       provider: "github",
@@ -249,39 +316,56 @@ export class GitHubClient {
       body: data.body ?? "",
       labels: normalizeLabels(data.labels),
       comments: [],
-      baseBranch: input.baseBranch ?? "main"
+      baseBranch: input.baseBranch ?? "main",
     };
   }
 
-  async closeIssue(input: { owner: string; repo: string; issueNumber: number; stateReason?: "completed" | "not_planned" }): Promise<string> {
+  async closeIssue(input: {
+    owner: string;
+    repo: string;
+    issueNumber: number;
+    stateReason?: "completed" | "not_planned";
+  }): Promise<string> {
     const octokit = await this.octokit();
-    const { data } = await octokit.issues.update({
-      owner: input.owner,
-      repo: input.repo,
-      issue_number: input.issueNumber,
-      state: "closed",
-      state_reason: input.stateReason
-    });
+    const { data } = await this.githubRequest(() =>
+      octokit.issues.update({
+        owner: input.owner,
+        repo: input.repo,
+        issue_number: input.issueNumber,
+        state: "closed",
+        state_reason: input.stateReason,
+      }),
+    );
 
     return data.html_url;
   }
 
-  private async listOpenIssues(owner: string, repo: string, limit: number): Promise<Awaited<ReturnType<GitHubApiClient["issues"]["listForRepo"]>>["data"]> {
-    const issues: Awaited<ReturnType<GitHubApiClient["issues"]["listForRepo"]>>["data"] = [];
+  private async listOpenIssues(
+    owner: string,
+    repo: string,
+    limit: number,
+  ): Promise<
+    Awaited<ReturnType<GitHubApiClient["issues"]["listForRepo"]>>["data"]
+  > {
+    const issues: Awaited<
+      ReturnType<GitHubApiClient["issues"]["listForRepo"]>
+    >["data"] = [];
     let page = 1;
 
     while (issues.length < limit) {
       const perPage = Math.min(100, limit - issues.length);
       const octokit = await this.octokit();
-      const { data } = await octokit.issues.listForRepo({
-        owner,
-        repo,
-        state: "open",
-        sort: "updated",
-        direction: "desc",
-        per_page: perPage,
-        page
-      });
+      const { data } = await this.githubRequest(() =>
+        octokit.issues.listForRepo({
+          owner,
+          repo,
+          state: "open",
+          sort: "updated",
+          direction: "desc",
+          per_page: perPage,
+          page,
+        }),
+      );
       issues.push(...data);
 
       if (data.length < perPage) {
@@ -294,7 +378,9 @@ export class GitHubClient {
     return issues;
   }
 
-  private async listPaginated<T>(fetchPage: (page: number, perPage: number) => Promise<T[]>): Promise<T[]> {
+  private async listPaginated<T>(
+    fetchPage: (page: number, perPage: number) => Promise<T[]>,
+  ): Promise<T[]> {
     const entries: T[] = [];
     let page = 1;
     const perPage = 100;
@@ -328,19 +414,30 @@ export class GitHubClient {
 
     return this.octokitCache.octokit;
   }
+
+  private async githubRequest<T>(operation: () => Promise<T>): Promise<T> {
+    return githubCircuitBreaker().run(operation);
+  }
 }
 
-export const gitHubAuthRequiredMessage = "GITHUB_TOKEN or GitHub App credentials are required";
+export const gitHubAuthRequiredMessage =
+  "GITHUB_TOKEN or GitHub App credentials are required";
 
 export function hasGitHubAuthConfig(config: GitHubClientConfig): boolean {
   return Boolean(isCompleteGitHubAppConfig(config.app) || config.token);
 }
 
-export async function getGitHubAuthToken(config: GitHubClientConfig): Promise<string | undefined> {
+export async function getGitHubAuthToken(
+  config: GitHubClientConfig,
+): Promise<string | undefined> {
   return new GitHubAuthResolver(config).getToken();
 }
 
-export function createGitHubRemoteUrl(owner: string, repo: string, token?: string): string {
+export function createGitHubRemoteUrl(
+  owner: string,
+  repo: string,
+  token?: string,
+): string {
   if (!token) {
     return `https://github.com/${owner}/${repo}.git`;
   }
@@ -365,7 +462,9 @@ class GitHubAuthResolver {
     return this.config.token;
   }
 
-  private async getInstallationToken(app: CompleteGitHubAppConfig): Promise<string> {
+  private async getInstallationToken(
+    app: CompleteGitHubAppConfig,
+  ): Promise<string> {
     const now = Date.now();
     if (this.appTokenCache && this.appTokenCache.expiresAtMs - now > 60_000) {
       return this.appTokenCache.token;
@@ -373,32 +472,50 @@ class GitHubAuthResolver {
 
     const jwt = await createGitHubAppJwt(app);
     const octokit = new Octokit({ auth: jwt });
-    const { data } = await octokit.request("POST /app/installations/{installation_id}/access_tokens", {
-      installation_id: Number(app.installationId)
-    });
+    const { data } = await githubCircuitBreaker().run(() =>
+      octokit.request(
+        "POST /app/installations/{installation_id}/access_tokens",
+        {
+          installation_id: Number(app.installationId),
+        },
+      ),
+    );
     const expiresAtMs = Date.parse(data.expires_at ?? "") || now + 50 * 60_000;
     this.appTokenCache = { token: data.token, expiresAtMs };
     return data.token;
   }
 }
 
-type CompleteGitHubAppConfig = Required<Pick<GitHubAppConfig, "appId" | "installationId">> &
-  (Required<Pick<GitHubAppConfig, "privateKey">> | Required<Pick<GitHubAppConfig, "privateKeyPath">>);
+type CompleteGitHubAppConfig = Required<
+  Pick<GitHubAppConfig, "appId" | "installationId">
+> &
+  (
+    | Required<Pick<GitHubAppConfig, "privateKey">>
+    | Required<Pick<GitHubAppConfig, "privateKeyPath">>
+  );
 
-function isCompleteGitHubAppConfig(app: GitHubAppConfig | undefined): app is CompleteGitHubAppConfig {
-  return Boolean(app?.appId && app.installationId && (app.privateKey || app.privateKeyPath));
+function isCompleteGitHubAppConfig(
+  app: GitHubAppConfig | undefined,
+): app is CompleteGitHubAppConfig {
+  return Boolean(
+    app?.appId && app.installationId && (app.privateKey || app.privateKeyPath),
+  );
 }
 
-async function createGitHubAppJwt(app: CompleteGitHubAppConfig): Promise<string> {
+async function createGitHubAppJwt(
+  app: CompleteGitHubAppConfig,
+): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };
   const payload = {
     iat: now - 60,
     exp: now + 9 * 60,
-    iss: app.appId
+    iss: app.appId,
   };
   const unsigned = `${base64UrlJson(header)}.${base64UrlJson(payload)}`;
-  const signature = createSign("RSA-SHA256").update(unsigned).sign(await readPrivateKey(app));
+  const signature = createSign("RSA-SHA256")
+    .update(unsigned)
+    .sign(await readPrivateKey(app));
   return `${unsigned}.${base64Url(signature)}`;
 }
 
@@ -423,18 +540,104 @@ function base64UrlJson(value: unknown): string {
 }
 
 function base64Url(value: Buffer): string {
-  return value.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return value
+    .toString("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
 }
 
-function normalizeLabels(labels: Array<string | { name?: string | null }>): string[] {
-  return labels.map((label) => (typeof label === "string" ? label : label.name ?? "")).filter(Boolean);
+function normalizeLabels(
+  labels: Array<string | { name?: string | null }>,
+): string[] {
+  return labels
+    .map((label) => (typeof label === "string" ? label : (label.name ?? "")))
+    .filter(Boolean);
 }
 
-function formatInlineReviewComment(path: string, line: number | null | undefined, body: string): string {
+function githubCircuitBreaker() {
+  return getCircuitBreaker("github-api", {
+    shouldTrip: isTransientGitHubError,
+  });
+}
+
+function isTransientGitHubError(error: unknown): boolean {
+  const status = errorStatus(error);
+  const message = errorMessage(error).toLowerCase();
+  const code = errorCode(error);
+
+  return (
+    (status === 403 && /rate limit|secondary rate|abuse/.test(message)) ||
+    status === 408 ||
+    status === 409 ||
+    status === 425 ||
+    status === 429 ||
+    (status !== undefined && status >= 500) ||
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "UND_ERR_HEADERS_TIMEOUT" ||
+    message.includes("fetch failed") ||
+    message.includes("network") ||
+    message.includes("timeout")
+  );
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const cause =
+      isObject(error.cause) && typeof error.cause.message === "string"
+        ? `: ${error.cause.message}`
+        : "";
+    return `${error.message}${cause}`;
+  }
+
+  return String(error);
+}
+
+function errorStatus(error: unknown): number | undefined {
+  if (isObject(error) && typeof error.status === "number") {
+    return error.status;
+  }
+
+  if (isObject(error) && typeof error.statusCode === "number") {
+    return error.statusCode;
+  }
+
+  if (error instanceof Error && isObject(error.cause)) {
+    return errorStatus(error.cause);
+  }
+
+  return undefined;
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (isObject(error) && typeof error.code === "string") {
+    return error.code;
+  }
+
+  if (error instanceof Error && isObject(error.cause)) {
+    return errorCode(error.cause);
+  }
+
+  return undefined;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function formatInlineReviewComment(
+  path: string,
+  line: number | null | undefined,
+  body: string,
+): string {
   const location = line ? `${path}:${line}` : path;
   return `Inline review on ${location}\n\n${body}`;
 }
 
-function formatPullRequestReview(state: string | undefined, body: string): string {
+function formatPullRequestReview(
+  state: string | undefined,
+  body: string,
+): string {
   return `Pull request review${state ? ` (${state})` : ""}\n\n${body}`;
 }

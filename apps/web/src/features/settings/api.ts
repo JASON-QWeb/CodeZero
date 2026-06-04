@@ -8,6 +8,7 @@ import type {
   ValidationResponse,
 } from "./types";
 import { isMockDataMode } from "../mock-data-mode";
+import { apiFetch } from "../api-client";
 import {
   mockFetchConfig,
   mockSaveConfig,
@@ -25,7 +26,7 @@ export async function fetchConfig(): Promise<ConfigResponse> {
     return mockFetchConfig();
   }
 
-  const response = await fetch(`${apiBaseUrl()}/settings/config`, {
+  const response = await apiFetch(`${apiBaseUrl()}/settings/config`, {
     cache: "no-store",
   });
 
@@ -44,7 +45,7 @@ export async function validateConfig(input: {
     return mockValidateConfig(input);
   }
 
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl()}/settings/config/${input.section}/validate`,
     {
       method: "POST",
@@ -69,7 +70,7 @@ export async function saveConfig(input: {
     return mockSaveConfig(input);
   }
 
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl()}/settings/config/${input.section}`,
     {
       method: "PUT",
@@ -97,11 +98,14 @@ export async function validateProviderConnection(input: {
     return mockValidateProviderConnection(input);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/settings/providers/validate`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/settings/providers/validate`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
   const body = (await response
     .json()
     .catch(() => ({}))) as Partial<ProviderValidationResponse> & {
@@ -128,11 +132,14 @@ export async function saveProviderApiKey(input: {
     return mockSaveProviderApiKey(input);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/settings/providers/api-key`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/settings/providers/api-key`,
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
   const body = (await response
     .json()
     .catch(() => ({}))) as Partial<ProviderApiKeySaveResponse> & {
@@ -157,7 +164,7 @@ export async function updateRepositoryRuntimeSettings(
     return mockUpdateRepositoryRuntimeSettings(input);
   }
 
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl()}/settings/repositories/${encodeURIComponent(input.repositoryId)}/runtime`,
     {
       method: "PUT",

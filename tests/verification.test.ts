@@ -2,7 +2,12 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createQualityGateCommands, runFrontendScreenshotGate, runQualityGate, runQualityGates } from "@agent/verification";
+import {
+  createQualityGateCommands,
+  runFrontendScreenshotGate,
+  runQualityGate,
+  runQualityGates,
+} from "@agent/verification";
 
 describe("verification", () => {
   it("creates quality gate commands from configured gates only", () => {
@@ -11,20 +16,28 @@ describe("verification", () => {
         setup: "npm install",
         build: "pnpm build",
         typecheck: "pnpm typecheck",
-        unitTest: "pnpm test"
-      })
+        unitTest: "pnpm test",
+      }),
     ).toEqual([
       { kind: "setup", command: "npm install", required: true },
       { kind: "build", command: "pnpm build", required: true },
       { kind: "typecheck", command: "pnpm typecheck", required: true },
-      { kind: "unit_test", command: "pnpm test", required: true }
+      { kind: "unit_test", command: "pnpm test", required: true },
     ]);
   });
 
   it("runs quality gates and captures pass/fail output", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-verification-"));
-    const passed = await runQualityGate(cwd, { kind: "unit_test", command: "printf ok", required: true });
-    const failed = await runQualityGate(cwd, { kind: "lint", command: "printf nope && exit 2", required: true });
+    const passed = await runQualityGate(cwd, {
+      kind: "unit_test",
+      command: "printf ok",
+      required: true,
+    });
+    const failed = await runQualityGate(cwd, {
+      kind: "lint",
+      command: "printf nope && exit 2",
+      required: true,
+    });
 
     expect(passed).toMatchObject({ passed: true, exitCode: 0, output: "ok" });
     expect(failed.passed).toBe(false);
@@ -32,29 +45,69 @@ describe("verification", () => {
     expect(failed.output).toContain("nope");
   });
 
-  it("runs quality gates sequentially", async () => {
+  it("runs quality gates in dependency order", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-verification-"));
     const results = await runQualityGates(cwd, [
       { kind: "build", command: "printf build", required: true },
-      { kind: "typecheck", command: "printf types", required: true }
+      { kind: "typecheck", command: "printf types", required: true },
     ]);
 
-    expect(results.map((result) => result.kind)).toEqual(["build", "typecheck"]);
+    expect(results.map((result) => result.kind)).toEqual([
+      "build",
+      "typecheck",
+    ]);
     expect(results.every((result) => result.passed)).toBe(true);
+  });
+
+  it("runs lint and typecheck in parallel after build", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-verification-"));
+    const timedCommand = (name: string, delayMs: number) =>
+      `node -e ${JSON.stringify(
+        [
+          "const fs = require('fs');",
+          `fs.writeFileSync('${name}-start', String(Date.now()));`,
+          `setTimeout(() => fs.writeFileSync('${name}-end', String(Date.now())), ${delayMs});`,
+        ].join(" "),
+      )}`;
+
+    const results = await runQualityGates(cwd, [
+      { kind: "build", command: "printf build", required: true },
+      { kind: "lint", command: timedCommand("lint", 250), required: true },
+      {
+        kind: "typecheck",
+        command: timedCommand("typecheck", 50),
+        required: true,
+      },
+      { kind: "unit_test", command: "printf test", required: true },
+    ]);
+
+    const lintEnd = Number(await readFile(path.join(cwd, "lint-end"), "utf8"));
+    const typecheckStart = Number(
+      await readFile(path.join(cwd, "typecheck-start"), "utf8"),
+    );
+    expect(results.map((result) => result.kind)).toEqual([
+      "build",
+      "lint",
+      "typecheck",
+      "unit_test",
+    ]);
+    expect(typecheckStart).toBeLessThan(lintEnd);
   });
 
   it("returns a failed frontend screenshot gate when configured URLs never become ready", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-verification-"));
     const result = await runFrontendScreenshotGate({
       cwd,
-      devCommand: "node -e \"setTimeout(() => {}, 1000)\"",
+      devCommand: 'node -e "setTimeout(() => {}, 1000)"',
       targets: [{ url: "http://127.0.0.1:9/", name: "unreachable" }],
       artifactDir: path.join(cwd, "screenshots"),
-      timeoutMs: 1
+      timeoutMs: 1,
     });
 
     expect(result.gate.passed).toBe(false);
-    expect(result.gate.output).toContain("Timed out waiting for screenshot URLs");
+    expect(result.gate.output).toContain(
+      "Timed out waiting for screenshot URLs",
+    );
     expect(result.screenshots).toEqual([]);
   });
 
@@ -62,14 +115,16 @@ describe("verification", () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-verification-"));
     const result = await runFrontendScreenshotGate({
       cwd,
-      devCommand: "node -e \"process.exit(2)\"",
+      devCommand: 'node -e "process.exit(2)"',
       targets: [{ url: "data:text/html,<h1>ready</h1>", name: "ready" }],
       artifactDir: path.join(cwd, "screenshots"),
-      timeoutMs: 1_000
+      timeoutMs: 1_000,
     });
 
     expect(result.gate.passed).toBe(false);
-    expect(result.gate.output).toContain("Frontend dev command exited before screenshot capture");
+    expect(result.gate.output).toContain(
+      "Frontend dev command exited before screenshot capture",
+    );
   });
 
   it("terminates the full frontend dev process group after screenshot gate failure", async () => {
@@ -82,7 +137,7 @@ describe("verification", () => {
       devCommand: `node -e ${JSON.stringify(script)}`,
       targets: [{ url: "http://127.0.0.1:9/", name: "unreachable" }],
       artifactDir: path.join(cwd, "screenshots"),
-      timeoutMs: 100
+      timeoutMs: 100,
     });
 
     const pid = Number(await readFile(pidFile, "utf8"));

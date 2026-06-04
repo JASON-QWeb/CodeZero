@@ -1,13 +1,27 @@
-import { Annotation, Command, END, START, StateGraph, interrupt } from "@langchain/langgraph";
+import {
+  Annotation,
+  Command,
+  END,
+  START,
+  StateGraph,
+  interrupt,
+} from "@langchain/langgraph";
 import type { AppConfig, RepositoryConfig } from "@agent/config";
 import { shouldRequirePrdReview } from "@agent/orchestrator";
 import { createTaskEvent, type TaskRepository } from "@agent/persistence";
 import type { JsonValue, PlanningDocument, Task } from "@agent/shared";
+import type { Sandbox } from "@agent/sandbox";
 import {
   createExecutionAgents,
   createWorkflowAgent,
   createWorkflowAgentRunner,
+  autoApprovePlanningPhase,
+  draftPlanningPhase,
+  implementAndVerifyPhase,
   IssueWorkflowRunner,
+  prepareContextPhase,
+  publishPrdIssueComment,
+  publishPrPhase,
   type IssueWorkflowResult,
 } from "@agent/workflows";
 import { createDurableCheckpointer } from "./checkpointer.js";
@@ -18,7 +32,7 @@ export {
   createDurableCheckpointer,
 } from "./checkpointer.js";
 
-type PreparedSandbox = Awaited<ReturnType<IssueWorkflowRunner["prepareSandbox"]>>["sandbox"];
+type PreparedSandbox = Sandbox;
 type GraphRoute =
   | "prepare_context"
   | "pr_feedback_iteration"
@@ -100,36 +114,17 @@ export function createIssueWorkflowGraphRunner(
         state.repositoryConfig,
         "repositoryConfig",
       );
-      let task = requireState(state.task, "task");
-      const planningWasCreated = !task.planningDocument;
-      const approvalAlreadySatisfied = task.status === "PRD_APPROVED";
-
-      if (
-        planningWasCreated &&
-        (task.status === "QUEUED" || task.status === "ISSUE_RECEIVED")
-      ) {
-        task = await workflow.updateStatus(task.id, "CONTEXT_COLLECTING");
-      }
-
-      const prepared = await workflow.prepareSandbox(task, repositoryConfig);
-      task = prepared.task;
-
-      if (!task.contextPack) {
-        const contextPack = await workflow.createContextPack(
-          task,
-          prepared.sandbox,
-          repositoryConfig,
-        );
-        task = await workflow.updateStatus(task.id, "CONTEXT_PACK_CREATED", {
-          contextPack,
-        });
-      }
+      const prepared = await prepareContextPhase({
+        workflow,
+        task: requireState(state.task, "task"),
+        repositoryConfig,
+      });
 
       return {
-        task,
+        task: prepared.task,
         sandbox: prepared.sandbox,
-        planningWasCreated,
-        approvalAlreadySatisfied,
+        planningWasCreated: prepared.planningWasCreated,
+        approvalAlreadySatisfied: prepared.approvalAlreadySatisfied,
       };
     })
     .addNode("draft_plan", async (state) => {
@@ -137,26 +132,24 @@ export function createIssueWorkflowGraphRunner(
         state.repositoryConfig,
         "repositoryConfig",
       );
-      let task = requireState(state.task, "task");
-      let planningDocument = task.planningDocument;
-
-      if (!planningDocument) {
-        const runner = await createWorkflowAgentRunner(config);
-        const planningAgent = await createWorkflowAgent(config, "prd", "prd");
-        planningDocument = await workflow.draftPlanningDocument(
+      const task = requireState(state.task, "task");
+      if (task.planningDocument) {
+        return {
           task,
-          repositoryConfig,
-          runner,
-          planningAgent,
-        );
-        task = await workflow.updateStatus(task.id, "PRD_DRAFTED", {
-          planningDocument,
-        });
+          planningDocument: task.planningDocument,
+        };
       }
+      const planning = await draftPlanningPhase({
+        workflow,
+        task,
+        repositoryConfig,
+        runner: await createWorkflowAgentRunner(config),
+        planningAgent: await createWorkflowAgent(config, "prd", "prd"),
+      });
 
       return {
-        task,
-        planningDocument,
+        task: planning.task,
+        planningDocument: planning.planningDocument,
       };
     })
     .addNode("approval_gate", async (state) => {
@@ -174,8 +167,7 @@ export function createIssueWorkflowGraphRunner(
       const requirePrdReview =
         repositoryConfig.workflow?.require_prd_review ?? true;
       const requiresHumanPrdReview =
-        requirePrdReview &&
-        shouldRequirePrdReview(planningDocument.complexity);
+        requirePrdReview && shouldRequirePrdReview(planningDocument.complexity);
 
       if (
         !approvalAlreadySatisfied &&
@@ -191,7 +183,8 @@ export function createIssueWorkflowGraphRunner(
           );
         }
         if (state.planningWasCreated) {
-          await workflow.publishPrdIssueComment(
+          await publishPrdIssueComment(
+            workflow,
             task,
             repositoryConfig,
             planningDocument,
@@ -253,28 +246,18 @@ export function createIssueWorkflowGraphRunner(
         state.planningDocument,
         "planningDocument",
       );
-      let task = requireState(state.task, "task");
-      const approvalAlreadySatisfied =
-        state.approvalAlreadySatisfied ?? task.status === "PRD_APPROVED";
-
-      if (task.status !== "PRD_APPROVED") {
-        task = await workflow.updateStatus(task.id, "PRD_APPROVED");
-        if (!approvalAlreadySatisfied) {
-          await workflow.event(
-            task.id,
-            "PRD_APPROVED",
-            "PRD auto-approved by repository workflow policy",
-          );
-        }
-        if (state.planningWasCreated) {
-          await workflow.publishPrdIssueComment(
-            task,
-            repositoryConfig,
-            planningDocument,
-            false,
-          );
-        }
-      }
+      const currentTask = requireState(state.task, "task");
+      const task = await autoApprovePlanningPhase({
+        workflow,
+        task: currentTask,
+        repositoryConfig,
+        planningDocument,
+        planningWasCreated: Boolean(state.planningWasCreated),
+        approvalAlreadySatisfied:
+          state.approvalAlreadySatisfied ??
+          currentTask.status === "PRD_APPROVED",
+        message: "PRD auto-approved by repository workflow policy",
+      });
 
       return {
         task,
@@ -292,33 +275,23 @@ export function createIssueWorkflowGraphRunner(
         state.planningDocument,
         "planningDocument",
       );
-      let task = requireState(state.task, "task");
       const runner = await createWorkflowAgentRunner(config);
       const agents = await createExecutionAgents(
         config,
         planningDocument.complexity.score,
       );
-
-      task = await workflow.updateStatus(task.id, "IMPLEMENTING");
-      const selfCheckResult = await workflow.runImplementationSelfCheckLoop(
-        task,
+      const selfCheckResult = await implementAndVerifyPhase({
+        workflow,
+        task: requireState(state.task, "task"),
         sandbox,
         repositoryConfig,
         runner,
-        agents.implementation,
-        agents.review,
-      );
-      task = selfCheckResult.task;
+        implementationAgent: agents.implementation,
+        reviewAgent: agents.review,
+      });
+      const task = selfCheckResult.task;
 
       if (!selfCheckResult.passed) {
-        task = await workflow.updateStatus(task.id, "BLOCKED");
-        await workflow.event(
-          task.id,
-          "TASK_BLOCKED",
-          selfCheckResult.reason,
-          "warn",
-        );
-
         return {
           task,
           status: task.status,
@@ -337,18 +310,17 @@ export function createIssueWorkflowGraphRunner(
         "repositoryConfig",
       );
       const sandbox = requireState(state.sandbox, "sandbox");
-      let task = requireState(state.task, "task");
-      const prUrl = await workflow.createDraftPr(
-        task,
+      const published = await publishPrPhase({
+        workflow,
+        task: requireState(state.task, "task"),
         sandbox,
         repositoryConfig,
-      );
-      task = await workflow.updateStatus(task.id, "WAITING_MERGE", { prUrl });
+      });
 
       return {
-        task,
-        status: task.status,
-        prUrl,
+        task: published.task,
+        status: published.task.status,
+        prUrl: published.prUrl,
         route: "end",
       };
     })
@@ -399,10 +371,9 @@ export function createIssueWorkflowGraphRunner(
             : { taskId };
         const timeoutMs = config.sandbox.limits.max_runtime_minutes * 60_000;
         const result = await withWorkflowTimeout(
-          graph.invoke(
-            input as Parameters<typeof graph.invoke>[0],
-            { configurable: { thread_id: taskId } },
-          ),
+          graph.invoke(input as Parameters<typeof graph.invoke>[0], {
+            configurable: { thread_id: taskId },
+          }),
           timeoutMs,
           taskId,
         );
@@ -497,7 +468,10 @@ function requireState<T>(value: T | undefined, name: string): T {
 function isApprovedResume(
   value: { approved?: boolean } | "approved" | "rejected",
 ): boolean {
-  return value === "approved" || (typeof value === "object" && value.approved === true);
+  return (
+    value === "approved" ||
+    (typeof value === "object" && value.approved === true)
+  );
 }
 
 function hasInterrupts(
@@ -505,9 +479,9 @@ function hasInterrupts(
 ): value is { __interrupt__: Array<{ value: unknown }> } {
   return Boolean(
     value &&
-      typeof value === "object" &&
-      "__interrupt__" in value &&
-      Array.isArray((value as { __interrupt__?: unknown }).__interrupt__),
+    typeof value === "object" &&
+    "__interrupt__" in value &&
+    Array.isArray((value as { __interrupt__?: unknown }).__interrupt__),
   );
 }
 

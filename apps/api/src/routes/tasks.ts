@@ -14,8 +14,12 @@ import {
 import { buildTaskTrace, buildTaskTraceReplay } from "@agent/observability";
 import { transitionTask } from "@agent/orchestrator";
 import { createTaskEvent } from "@agent/persistence";
-import type { JsonObject } from "@agent/shared";
-import { createAndEnqueueTask, enqueueIssueWorkflow, getServices } from "../services/task-services.js";
+import { uniqueNonEmptyStrings, type JsonObject } from "@agent/shared";
+import {
+  createAndEnqueueTask,
+  enqueueIssueWorkflow,
+  getServices,
+} from "../services/task-services.js";
 import { startConfiguredRepositoryOnboarding } from "../services/repository-onboarding.js";
 import { buildRepositoryQueueSummaries } from "./task-queue-summary.js";
 
@@ -27,7 +31,7 @@ const importIssueSchema = z.object({
   title: z.string().min(1),
   body: z.string().default(""),
   labels: z.array(z.string()).default([]),
-  baseBranch: z.string().default("main")
+  baseBranch: z.string().default("main"),
 });
 
 const createIssueFromRequirementSchema = z.object({
@@ -36,13 +40,13 @@ const createIssueFromRequirementSchema = z.object({
   requirement: z.string().min(1),
   labels: z.array(z.string()).default([]),
   baseBranch: z.string().optional(),
-  enqueue: z.boolean().default(true)
+  enqueue: z.boolean().default(true),
 });
 
 const issueDraftSchema = z.object({
   title: z.string().min(1),
   body: z.string().min(1),
-  labels: z.array(z.string()).default([])
+  labels: z.array(z.string()).default([]),
 });
 
 export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
@@ -55,7 +59,12 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
     const services = await getServices();
     const tasks = await services.tasks.listTasks();
     void startConfiguredRepositoryOnboarding(services.config);
-    return { repositories: buildRepositoryQueueSummaries(tasks, services.config.repositories) };
+    return {
+      repositories: buildRepositoryQueueSummaries(
+        tasks,
+        services.config.repositories,
+      ),
+    };
   });
 
   app.get<{ Params: { id: string } }>("/tasks/:id", async (request, reply) => {
@@ -74,12 +83,38 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
     return { events: await services.tasks.listEvents(request.params.id) };
   });
 
-  app.get<{ Params: { id: string } }>("/tasks/:id/artifacts", async (request) => {
-    const services = await getServices();
-    return { artifacts: await services.tasks.listArtifacts(request.params.id) };
-  });
+  app.get<{ Params: { id: string } }>(
+    "/tasks/:id/artifacts",
+    async (request) => {
+      const services = await getServices();
+      return {
+        artifacts: await services.tasks.listArtifacts(request.params.id),
+      };
+    },
+  );
 
-  app.get<{ Params: { id: string } }>("/tasks/:id/trace", async (request, reply) => {
+  app.get<{ Params: { id: string } }>(
+    "/tasks/:id/trace",
+    async (request, reply) => {
+      const services = await getServices();
+      const task = await services.tasks.getTask(request.params.id);
+
+      if (!task) {
+        return reply.code(404).send({ message: "Task not found" });
+      }
+
+      const [events, artifacts] = await Promise.all([
+        services.tasks.listEvents(task.id),
+        services.tasks.listArtifacts(task.id),
+      ]);
+      return { trace: buildTaskTrace({ task, events, artifacts }) };
+    },
+  );
+
+  app.get<{
+    Params: { id: string };
+    Querystring: { cursor?: string; limit?: string };
+  }>("/tasks/:id/trace/replay", async (request, reply) => {
     const services = await getServices();
     const task = await services.tasks.getTask(request.params.id);
 
@@ -87,26 +122,17 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ message: "Task not found" });
     }
 
-    const [events, artifacts] = await Promise.all([services.tasks.listEvents(task.id), services.tasks.listArtifacts(task.id)]);
-    return { trace: buildTaskTrace({ task, events, artifacts }) };
-  });
-
-  app.get<{ Params: { id: string }; Querystring: { cursor?: string; limit?: string } }>("/tasks/:id/trace/replay", async (request, reply) => {
-    const services = await getServices();
-    const task = await services.tasks.getTask(request.params.id);
-
-    if (!task) {
-      return reply.code(404).send({ message: "Task not found" });
-    }
-
-    const [events, artifacts] = await Promise.all([services.tasks.listEvents(task.id), services.tasks.listArtifacts(task.id)]);
+    const [events, artifacts] = await Promise.all([
+      services.tasks.listEvents(task.id),
+      services.tasks.listArtifacts(task.id),
+    ]);
     const trace = buildTaskTrace({ task, events, artifacts });
     const limit = request.query.limit ? Number(request.query.limit) : undefined;
     return {
       replay: buildTaskTraceReplay(trace, {
         cursor: request.query.cursor,
-        limit: Number.isFinite(limit) ? limit : undefined
-      })
+        limit: Number.isFinite(limit) ? limit : undefined,
+      }),
     };
   });
 
@@ -114,7 +140,12 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
     const parsed = importIssueSchema.safeParse(request.body);
 
     if (!parsed.success) {
-      return reply.code(400).send({ message: "Invalid issue payload", issues: parsed.error.issues });
+      return reply
+        .code(400)
+        .send({
+          message: "Invalid issue payload",
+          issues: parsed.error.issues,
+        });
     }
 
     const task = await createAndEnqueueTask({
@@ -127,7 +158,7 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
       body: parsed.data.body,
       labels: parsed.data.labels,
       comments: [],
-      baseBranch: parsed.data.baseBranch
+      baseBranch: parsed.data.baseBranch,
     });
 
     return reply.code(201).send({ task });
@@ -137,11 +168,20 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
     const parsed = createIssueFromRequirementSchema.safeParse(request.body);
 
     if (!parsed.success) {
-      return reply.code(400).send({ message: "Invalid requirement issue payload", issues: parsed.error.issues });
+      return reply
+        .code(400)
+        .send({
+          message: "Invalid requirement issue payload",
+          issues: parsed.error.issues,
+        });
     }
 
     const services = await getServices();
-    const repository = findRepository(services.config, parsed.data.owner, parsed.data.repo);
+    const repository = findRepository(
+      services.config,
+      parsed.data.owner,
+      parsed.data.repo,
+    );
 
     if (!repository) {
       return reply.code(404).send({ message: "Repository is not configured" });
@@ -158,7 +198,7 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
       repo: parsed.data.repo,
       requirement: parsed.data.requirement,
       labels: parsed.data.labels,
-      baseBranch
+      baseBranch,
     });
     const github = new GitHubClient(services.config.github);
     const issue = await github.createIssue({
@@ -166,32 +206,50 @@ export async function registerTaskRoutes(app: FastifyInstance): Promise<void> {
       repo: parsed.data.repo,
       title: draft.title,
       body: draft.body,
-      labels: unique([...parsed.data.labels, ...draft.labels]),
-      baseBranch
+      labels: uniqueNonEmptyStrings([...parsed.data.labels, ...draft.labels]),
+      baseBranch,
     });
-    const task = parsed.data.enqueue ? await createAndEnqueueTask(issue) : undefined;
+    const task = parsed.data.enqueue
+      ? await createAndEnqueueTask(issue)
+      : undefined;
 
     return reply.code(201).send({ issue, task });
   });
 
-  app.post<{ Params: { id: string } }>("/tasks/:id/approve-prd", async (request, reply) => {
-    const services = await getServices();
-    const task = await services.tasks.getTask(request.params.id);
+  app.post<{ Params: { id: string } }>(
+    "/tasks/:id/approve-prd",
+    async (request, reply) => {
+      const services = await getServices();
+      const task = await services.tasks.getTask(request.params.id);
 
-    if (!task) {
-      return reply.code(404).send({ message: "Task not found" });
-    }
+      if (!task) {
+        return reply.code(404).send({ message: "Task not found" });
+      }
 
-    if (task.status !== "PRD_REVIEW_REQUIRED") {
-      return reply.code(409).send({ message: `Task is ${task.status}, not waiting for PRD approval` });
-    }
+      if (task.status !== "PRD_REVIEW_REQUIRED") {
+        return reply
+          .code(409)
+          .send({
+            message: `Task is ${task.status}, not waiting for PRD approval`,
+          });
+      }
 
-    const approved = transitionTask(task, "PRD_APPROVED");
-    const updated = await services.tasks.updateTask(task.id, { status: approved.status, updatedAt: approved.updatedAt });
-    await services.tasks.appendEvent(createTaskEvent({ taskId: task.id, type: "PRD_APPROVED", message: "PRD approved by human" }));
-    await enqueueIssueWorkflow(task.id, `${task.id}-approved-${Date.now()}`);
-    return { task: updated };
-  });
+      const approved = transitionTask(task, "PRD_APPROVED");
+      const updated = await services.tasks.updateTask(task.id, {
+        status: approved.status,
+        updatedAt: approved.updatedAt,
+      });
+      await services.tasks.appendEvent(
+        createTaskEvent({
+          taskId: task.id,
+          type: "PRD_APPROVED",
+          message: "PRD approved by human",
+        }),
+      );
+      await enqueueIssueWorkflow(task.id, `${task.id}-approved-${Date.now()}`);
+      return { task: updated };
+    },
+  );
 }
 
 async function draftIssueFromRequirement(input: {
@@ -206,7 +264,8 @@ async function draftIssueFromRequirement(input: {
     const runner = createModelRuntimeAgentRunner(input.config);
     const configuredAgent = input.config.agents.agents.prd;
     const providerId =
-      configuredAgent?.provider ?? Object.keys(input.config.agents.providers)[0];
+      configuredAgent?.provider ??
+      Object.keys(input.config.agents.providers)[0];
 
     if (!providerId) {
       return fallbackIssueDraft(input.requirement, input.labels);
@@ -226,7 +285,8 @@ async function draftIssueFromRequirement(input: {
     const result = await runJsonAgent({
       runner,
       agent,
-      userPrompt: "Create one actionable GitHub issue draft from the requirement.",
+      userPrompt:
+        "Create one actionable GitHub issue draft from the requirement.",
       context: {
         repository: {
           owner: input.owner,
@@ -275,9 +335,7 @@ function fallbackIssueDraft(
 }
 
 function truncate(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  return value.length <= maxLength
+    ? value
+    : `${value.slice(0, maxLength - 3)}...`;
 }

@@ -1,10 +1,21 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { ContextMemory, ContextPack, IssueContext, JsonObject, JsonValue } from "@agent/shared";
+import {
+  isUniqueValue,
+  type ContextMemory,
+  type ContextPack,
+  type IssueContext,
+  type JsonObject,
+  type JsonValue,
+} from "@agent/shared";
 import type { FileIndexEntry } from "../indexer/file-indexer.js";
 import type { SymbolIndexEntry } from "../indexer/symbol-indexer.js";
 import type { NavigationRoute } from "../navigation-graph/navigation-route.js";
-import { createSearchHypothesis, hybridSearch, toRelevantFiles } from "./hybrid-search.js";
+import {
+  createSearchHypothesis,
+  hybridSearch,
+  toRelevantFiles,
+} from "./hybrid-search.js";
 
 export type ContextPackInput = {
   taskId: string;
@@ -19,25 +30,42 @@ export type ContextPackInput = {
   tokenBudget?: number;
 };
 
-export async function buildContextPack(input: ContextPackInput): Promise<ContextPack> {
-  const issueText = [input.issue.title, input.issue.body, input.issue.labels.join(" ")].join("\n");
-  const memoryHints = (input.memories ?? []).map((memory) => `${memory.title}\n${memory.content}`).join("\n");
-  const hypothesis = createSearchHypothesis(`${issueText}\n${input.businessRules.join("\n")}\n${memoryHints}`);
+export async function buildContextPack(
+  input: ContextPackInput,
+): Promise<ContextPack> {
+  const issueText = [
+    input.issue.title,
+    input.issue.body,
+    input.issue.labels.join(" "),
+  ].join("\n");
+  const memoryHints = (input.memories ?? [])
+    .map((memory) => `${memory.title}\n${memory.content}`)
+    .join("\n");
+  const hypothesis = createSearchHypothesis(
+    `${issueText}\n${input.businessRules.join("\n")}\n${memoryHints}`,
+  );
   const searchResults = hybridSearch(input.files, hypothesis, 18);
   const relevantFiles = mergeCodeGraphFiles(
-    mergeNavigationRouteFiles(toRelevantFiles(searchResults), input.navigationRoute, input.files),
+    mergeNavigationRouteFiles(
+      toRelevantFiles(searchResults),
+      input.navigationRoute,
+      input.files,
+    ),
     input.codeGraphContext,
-    input.files
+    input.files,
   );
   const tests = relevantFiles
     .map((file) => relatedTestCandidates(file.path, input.files))
     .flat()
     .concat(input.navigationRoute?.tests ?? [])
-    .filter(unique)
+    .filter(isUniqueValue)
     .slice(0, 12);
   const relevantSymbols = input.symbols
     .filter((symbol) => relevantFiles.some((file) => symbol.path === file.path))
-    .map((symbol) => `${symbol.kind} ${symbol.name} at ${symbol.path}:${symbol.line}`)
+    .map(
+      (symbol) =>
+        `${symbol.kind} ${symbol.name} at ${symbol.path}:${symbol.line}`,
+    )
     .slice(0, 40);
 
   return {
@@ -51,14 +79,26 @@ export async function buildContextPack(input: ContextPackInput): Promise<Context
     symbols: relevantSymbols,
     tests,
     similarChanges: [],
-    nonRelevantAreas: [...hypothesis.negativeFilters, ...(input.navigationRoute?.doNotModify ?? [])].filter(unique),
-    openQuestions: relevantFiles.length === 0 ? ["No relevant files were found; human review or better project skills are required."] : [],
+    nonRelevantAreas: [
+      ...hypothesis.negativeFilters,
+      ...(input.navigationRoute?.doNotModify ?? []),
+    ].filter(isUniqueValue),
+    openQuestions:
+      relevantFiles.length === 0
+        ? [
+            "No relevant files were found; human review or better project skills are required.",
+          ]
+        : [],
     tokenBudget: input.tokenBudget ?? 30_000,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   };
 }
 
-function mergeCodeGraphFiles(relevantFiles: ContextPack["relevantFiles"], context: JsonObject | undefined, files: FileIndexEntry[]): ContextPack["relevantFiles"] {
+function mergeCodeGraphFiles(
+  relevantFiles: ContextPack["relevantFiles"],
+  context: JsonObject | undefined,
+  files: FileIndexEntry[],
+): ContextPack["relevantFiles"] {
   const filePaths = asStringArray(context?.relatedFiles);
 
   if (filePaths.length === 0) {
@@ -79,8 +119,14 @@ function mergeCodeGraphFiles(relevantFiles: ContextPack["relevantFiles"], contex
     merged.set(normalizedPath, {
       path: normalizedPath,
       reason: "Selected by CodeGraph task context",
-      evidence: [{ kind: "graph", score: 12, summary: "Selected by CodeGraph task context" }],
-      readMode: file.sizeBytes < 40_000 ? "full" : "excerpt"
+      evidence: [
+        {
+          kind: "graph",
+          score: 12,
+          summary: "Selected by CodeGraph task context",
+        },
+      ],
+      readMode: file.sizeBytes < 40_000 ? "full" : "excerpt",
     });
   }
 
@@ -98,7 +144,11 @@ function mergeCodeGraphFiles(relevantFiles: ContextPack["relevantFiles"], contex
   return Array.from(merged.values()).slice(0, 20);
 }
 
-function mergeNavigationRouteFiles(relevantFiles: ContextPack["relevantFiles"], navigationRoute: NavigationRoute | undefined, files: FileIndexEntry[]): ContextPack["relevantFiles"] {
+function mergeNavigationRouteFiles(
+  relevantFiles: ContextPack["relevantFiles"],
+  navigationRoute: NavigationRoute | undefined,
+  files: FileIndexEntry[],
+): ContextPack["relevantFiles"] {
   if (!navigationRoute) {
     return relevantFiles;
   }
@@ -111,7 +161,7 @@ function mergeNavigationRouteFiles(relevantFiles: ContextPack["relevantFiles"], 
     const graphEvidence = {
       kind: "graph" as const,
       score: 10,
-      summary: "Selected by Repo Navigation Graph route"
+      summary: "Selected by Repo Navigation Graph route",
     };
 
     if (existing) {
@@ -124,7 +174,8 @@ function mergeNavigationRouteFiles(relevantFiles: ContextPack["relevantFiles"], 
       path: routeFile,
       reason: "Selected by Repo Navigation Graph route",
       evidence: [graphEvidence],
-      readMode: (fileMap.get(routeFile)?.sizeBytes ?? 0) < 40_000 ? "full" : "excerpt"
+      readMode:
+        (fileMap.get(routeFile)?.sizeBytes ?? 0) < 40_000 ? "full" : "excerpt",
     });
   }
 
@@ -132,7 +183,9 @@ function mergeNavigationRouteFiles(relevantFiles: ContextPack["relevantFiles"], 
 }
 
 function asStringArray(value: JsonValue | undefined): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
 }
 
 export type ReadContextFileSnippetOptions = {
@@ -144,27 +197,51 @@ export type ReadContextFileSnippetOptions = {
 export async function readContextFileSnippets(
   repoDir: string,
   contextPack: ContextPack,
-  optionsOrMaxChars: number | ReadContextFileSnippetOptions = 12_000
+  optionsOrMaxChars: number | ReadContextFileSnippetOptions = 12_000,
 ): Promise<Record<string, string>> {
-  const options = typeof optionsOrMaxChars === "number" ? { maxCharsPerFile: optionsOrMaxChars } : optionsOrMaxChars;
+  const options =
+    typeof optionsOrMaxChars === "number"
+      ? { maxCharsPerFile: optionsOrMaxChars }
+      : optionsOrMaxChars;
   const maxCharsPerFile = options.maxCharsPerFile ?? 12_000;
-  const includePaths = uniquePaths((options.includePaths ?? []).map(normalizeSnippetPath).filter(Boolean));
-  const relevantByPath = new Map(contextPack.relevantFiles.map((file) => [normalizeSnippetPath(file.path), file]));
+  const includePaths = uniquePaths(
+    (options.includePaths ?? []).map(normalizeSnippetPath).filter(Boolean),
+  );
+  const relevantByPath = new Map(
+    contextPack.relevantFiles.map((file) => [
+      normalizeSnippetPath(file.path),
+      file,
+    ]),
+  );
   const files =
     includePaths.length > 0
-      ? includePaths.map((filePath) => relevantByPath.get(filePath) ?? ({ path: filePath, reason: "Selected by execution plan", evidence: [], readMode: "full" } satisfies ContextPack["relevantFiles"][number]))
+      ? includePaths.map(
+          (filePath) =>
+            relevantByPath.get(filePath) ??
+            ({
+              path: filePath,
+              reason: "Selected by execution plan",
+              evidence: [],
+              readMode: "full",
+            } satisfies ContextPack["relevantFiles"][number]),
+        )
       : contextPack.relevantFiles;
   const snippets: Record<string, string> = {};
 
   for (const file of files.slice(0, options.maxFiles ?? files.length)) {
-    const content = await readFile(path.join(repoDir, file.path), "utf8").catch(() => "");
+    const content = await readFile(path.join(repoDir, file.path), "utf8").catch(
+      () => "",
+    );
     snippets[file.path] = createContextSnippet(content, maxCharsPerFile);
   }
 
   return snippets;
 }
 
-export function createContextSnippet(content: string, maxChars: number): string {
+export function createContextSnippet(
+  content: string,
+  maxChars: number,
+): string {
   if (content.length <= maxChars) {
     return content;
   }
@@ -186,17 +263,22 @@ function normalizeSnippetPath(value: string): string {
 }
 
 function uniquePaths(paths: string[]): string[] {
-  return paths.filter((value, index) => value.length > 0 && paths.indexOf(value) === index);
+  return paths.filter(
+    (value, index) => value.length > 0 && paths.indexOf(value) === index,
+  );
 }
 
-function relatedTestCandidates(filePath: string, files: FileIndexEntry[]): string[] {
+function relatedTestCandidates(
+  filePath: string,
+  files: FileIndexEntry[],
+): string[] {
   const basename = path.basename(filePath).replace(/\.[^.]+$/, "");
   return files
     .filter((file) => file.isTest)
-    .filter((file) => file.path.includes(basename) || file.path.toLowerCase().includes(path.dirname(filePath).toLowerCase()))
+    .filter(
+      (file) =>
+        file.path.includes(basename) ||
+        file.path.toLowerCase().includes(path.dirname(filePath).toLowerCase()),
+    )
     .map((file) => file.path);
-}
-
-function unique<T>(value: T, index: number, array: T[]): boolean {
-  return array.indexOf(value) === index;
 }

@@ -1,25 +1,32 @@
 # CodeZero 架构说明
 
-状态：2026-06-03 的现行架构。
+状态：2026-06-04 的现行架构。
 
-## 架构决策
+## 总览
 
-CodeZero 使用三层运行时：
+CodeZero 使用控制平面和执行层分离的设计：
 
-- AI SDK 负责 CodeZero 平台 agent 的模型访问、provider 路由和瞬时失败重试。
-- LangGraph 负责任务图编排、持久 checkpoint、人工审批中断和恢复。
-- OpenCode 负责在沙箱内执行真实代码修改。
+- Fastify API 负责接收 GitHub webhook、控制台操作、配置读写、Memory、Trace、GitHub sync 和知识图接口。
+- BullMQ/Redis 负责把 Issue workflow 投递给 worker，API 不直接执行长任务。
+- Worker 负责仓库并发控制，并启动或恢复 LangGraph workflow。
+- LangGraph 负责任务图、checkpoint、人工审批中断、恢复运行和 PR feedback 迭代。
+- AI SDK 是平台 agent 的模型层，处理 PRD、review、context、routing 等结构化调用。
+- OpenCode CLI 是默认代码执行层，在沙箱内完成真实代码修改。
 
-CodeZero 自身是控制平面，负责 GitHub 集成、仓库配置、沙箱生命周期、上下文生成、审批、质量门禁、artifact、dashboard event、memory、trace replay 和 PR 创建。它不重新实现编码 agent。
+CodeZero 自身负责 GitHub 集成、仓库配置、沙箱生命周期、上下文生成、审批、质量门、artifact、dashboard event、memory、trace replay 和 PR 创建。它不重新实现编码 agent。
 
 ## 系统形态
 
 ```mermaid
 flowchart TD
-  GH["GitHub Issue / PR Comment / Dashboard Action"] --> API["CodeZero API"]
-  API --> LG["LangGraph Workflow Runtime"]
+  GH["GitHub Issue / PR Comment / Label"] --> API["Fastify API"]
+  UI["Web Console"] --> API
 
-  LG --> CTX["Repository Intelligence + ContextPack"]
+  API --> Q["BullMQ / Redis"]
+  Q --> W["Worker"]
+  W --> LG["LangGraph Workflow Runtime"]
+
+  LG --> CTX["Repository Intelligence / ContextPack"]
   LG --> PRD["PRD / Planning Agent"]
   LG --> HITL["Human Approval Interrupts"]
   LG --> EXEC["OpenCode Executor Node"]
@@ -33,22 +40,46 @@ flowchart TD
 
   EXEC --> OC["OpenCode CLI"]
   OC --> SB["Task Sandbox: Worktree / Docker"]
-  SB --> DIFF["Git Diff + Diff Limits"]
+  SB --> DIFF["Git Diff / Diff Limits"]
   DIFF --> QA
   QA --> REV
-  REV --> LG
 
-  LG --> EVENTS["Task Events + Trace"]
-  EVENTS --> UI["Run Console + Trace Replay"]
+  LG --> EVENTS["Task Events / Trace / Artifacts"]
   LG --> CP["Durable Checkpoint Store"]
   LG --> MEM["Memory Store"]
+  EVENTS --> UI
+  CP --> UI
+  MEM --> UI
 ```
 
 ## 责任边界
 
+### API 层
+
+API 负责产品入口和短请求：
+
+- GitHub webhook、GitHub sync、手动创建任务、PRD 审批、任务查询。
+- Settings Console 配置读写和校验。
+- Memory Inbox 的查询、编辑、删除、裁剪。
+- Trace Replay、repository onboarding、context files、knowledge graph 接口。
+- 创建 task 后写入队列，由 worker 执行长任务。
+
+API 不直接跑实现流程，不直接调用 OpenCode，也不承担 LangGraph 长时间执行。
+
+### Worker 与队列
+
+Worker 负责长任务执行：
+
+- 监听 `issue-workflows` BullMQ 队列。
+- 在启动 workflow 前执行仓库级并发控制。
+- 对达到并发上限的任务延迟重排队。
+- 调用 `createIssueWorkflowGraphRunner(config, tasks).run(taskId)` 启动或恢复 LangGraph。
+
+Redis 是队列运行依赖。Postgres 或文件存储是 task facts，二者职责不同。
+
 ### AI SDK 层
 
-AI SDK 是 CodeZero 平台 agent 的唯一模型接口。
+AI SDK 是 CodeZero 平台 agent 的模型接口。
 
 它负责：
 
@@ -58,12 +89,7 @@ AI SDK 是 CodeZero 平台 agent 的唯一模型接口。
 - 对超时、限流、网络瞬断和服务端临时错误进行重试。
 - 按复杂度选择 provider。
 
-它不负责：
-
-- 仓库文件编辑。
-- 任意 shell 执行。
-- 长时间编码循环。
-- 绕过 CodeZero policy 的 GitHub 副作用。
+它不负责仓库文件编辑、任意 shell 执行和长时间编码循环。
 
 ### LangGraph 层
 
@@ -73,9 +99,9 @@ LangGraph 是任务状态的图运行时。
 
 - durable graph execution。
 - 以 `task.id` 作为 `thread_id` 写入和恢复 checkpoint。
-- PRD 审批、人工 retry、cancel、unblock 等中断与恢复。
-- 条件边：审批、修复、阻断、重试、PR 更新、完成。
-- 把节点事件流式写回 CodeZero task event。
+- PRD 审批中断和恢复。
+- 条件边：审批、实现、验证、阻断、发布 PR、PR feedback。
+- 把节点运行结果写回 CodeZero task event。
 
 Checkpoint 当前实现：
 
@@ -89,29 +115,22 @@ OpenCode 是默认实现 executor。
 
 它负责：
 
-- 在 task sandbox 内读取、编辑源码。
+- 在 task sandbox 内读取和编辑源码。
 - 运行实现期间需要的本地命令。
-- 根据质量门禁或 review feedback 修复变更。
+- 根据质量门或 review feedback 修复变更。
 - 产出最终 working tree diff。
 - 流式输出进度，CodeZero 将其转换为 task event。
 
-它不负责：
-
-- PRD 审批。
-- 任务状态流转。
-- PR 创建。
-- memory promotion。
-- 仓库 policy 决策。
-- 最终质量门禁裁决。
+它不负责 PRD 审批、任务状态流转、PR 创建、memory promotion 和最终质量门裁决。
 
 ## 沙箱与隔离
 
 CodeZero 支持两种 sandbox mode。
 
-| 模式 | 实现 |
-|:---|:---|
+| 模式       | 实现                                                                                                                 |
+| :--------- | :------------------------------------------------------------------------------------------------------------------- |
 | `worktree` | 使用 `<sandbox_root>/_git-cache` 镜像仓库缓存，通过 `git worktree add --force -B <branch>` 创建真实 issue 分支工作区 |
-| `docker` | 使用 `docker run` 执行命令，挂载 repo/artifacts/logs 到 `/workspace`，默认关闭网络并应用 Linux container 安全参数 |
+| `docker`   | 使用 `docker run` 执行命令，挂载 repo/artifacts/logs 到 `/workspace`，默认关闭网络并应用 Linux container 安全参数    |
 
 Docker 模式默认参数：
 
@@ -119,14 +138,14 @@ Docker 模式默认参数：
 - `--cap-drop ALL`。
 - `--security-opt no-new-privileges`。
 - `--memory`、`--cpus`、`--pids-limit` 来自 `sandbox.docker`。
-- repo 只挂载到 `/workspace/repo`，artifact 和日志分开挂载。
+- repo、artifact、日志目录分开挂载。
 
 实现完成后会执行 diff 限制：
 
 - `sandbox.limits.max_diff_files`
 - `sandbox.limits.max_diff_lines`
 
-超限会阻断后续质量门禁和 PR 创建。
+超限会阻断后续质量门和 PR 创建。
 
 ## Workflow Graph
 
@@ -156,16 +175,15 @@ flowchart TD
   G --> H["approve_plan"]
   F -->|auto-approved| H
   H --> I["implement_and_verify"]
-  I -->|repair needed| I
   I -->|blocked| J["blocked"]
   I -->|passed| K["publish_pr"]
 ```
 
-LangGraph state 是执行态，CodeZero task repository 是产品事实源。节点必须幂等：checkpoint restore 后重新运行节点时，应该复用已有 artifact 或安全替换节点范围内的 artifact。
+LangGraph state 是执行态，CodeZero task repository 是产品事实源。节点需要保持幂等：checkpoint restore 后重新运行节点时，应复用已有 artifact 或只安全替换当前节点范围内的 artifact。
 
 ## Trace Replay
 
-Trace Replay API 已落地：
+Trace Replay API：
 
 ```http
 GET /tasks/:id/trace/replay?cursor=&limit=
@@ -192,32 +210,7 @@ Memory Store 支持：
 - `max_records`、`max_bytes`、`max_record_bytes` 容量限制。
 - 文件损坏时隔离为 `.corrupt-*` 并返回空记录，避免进程崩溃。
 
-Memory promotion 仍由人工审批控制，agent 只能提出 memory update。
-
-## Agent 能力审计
-
-默认配置覆盖以下能力：
-
-| 能力 | agent / skill | 状态 |
-|:---|:---|:---|
-| 需求澄清与 PRD | `prd` + `brainstorm-requirements` + `draft-prd` | 已配置 |
-| 代码搜索规划 | `search_planner` + `agentic-code-search` | 已配置 |
-| 实现范围规划 | `implementation` + `repo-context-compress` + `implementation-scope-planner` | 已配置 |
-| 代码实现 | OpenCode executor | 已配置 |
-| PR 合规 Review | `review` + `pr-compliance-review` | 已配置 |
-| 前端验证 | `review` + `frontend-verification` + screenshot quality gate | 已配置 |
-| 后端验证 | `review` + `backend-verification` + test/typecheck/build quality gate | 已配置 |
-| PR 正文 | deterministic PR local verification builder | 已配置 |
-
-`AgentDefinition.skillRefs` 会在 agent factory 中解析为 platform skill 内容并注入 system prompt。配置中声明 skill 但不注入 prompt 的问题已经修复。
-
-## 稳定性约束
-
-- Postgres task repository 的 DDL migration 每个 repository 实例只执行一次。
-- Postgres LangGraph checkpoint migration 每个 saver 实例只执行一次。
-- 文件 task store、memory store、checkpoint store 的 JSON parse 都有损坏文件隔离。
-- 模型 provider 支持 `max_retries`，默认值为 2。
-- OpenCode 执行失败或无 diff 时会恢复 implementation checkpoint，避免失败尝试污染下一轮。
+Memory promotion 由人工审批控制，agent 只能提出 memory update。
 
 ## 非目标
 
@@ -225,6 +218,5 @@ CodeZero 不会：
 
 - 重新实现 OpenCode、Codex、Cline 或其他编码 CLI。
 - 让 AI SDK tool call 直接任意写仓库文件。
-- 在 policy 要求人审时静默绕过审批。
 - 默认合并 PR。
 - 未经 review 自动提升 memory 或项目规则。

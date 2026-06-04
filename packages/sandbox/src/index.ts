@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { IssueContext } from "@agent/shared";
+import { pathExists, shellQuote } from "@agent/shared";
 
 export type SandboxMode = "docker" | "worktree";
 
@@ -636,19 +637,8 @@ function sandboxRootDir(sandbox: Sandbox): string {
   return sandbox.rootDir ?? path.dirname(path.dirname(sandbox.repoDir));
 }
 
-async function pathExists(filePath: string): Promise<boolean> {
-  return access(filePath).then(
-    () => true,
-    () => false
-  );
-}
-
 function hashRemote(remoteUrl: string): string {
   return createHash("sha256").update(remoteUrl).digest("hex").slice(0, 24);
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function gitTrackedPathspec(): string {

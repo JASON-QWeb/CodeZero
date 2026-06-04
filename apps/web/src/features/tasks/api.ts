@@ -20,6 +20,7 @@ import type {
 } from "./types";
 import type { Task, TaskTrace } from "@agent/shared";
 import { isMockDataMode } from "../mock-data-mode";
+import { apiFetch } from "../api-client";
 import {
   mockApproveTaskPrd,
   mockFetchGitHubSync,
@@ -37,14 +38,17 @@ import {
   mockUpdateMemoryStatus,
 } from "./mock-data";
 
-export const apiBaseUrl = () => process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+export const apiBaseUrl = () =>
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export async function fetchTasks(): Promise<Task[]> {
   if (isMockDataMode()) {
     return mockFetchTasks();
   }
 
-  const response = await fetch(`${apiBaseUrl()}/tasks`, { cache: "no-store" });
+  const response = await apiFetch(`${apiBaseUrl()}/tasks`, {
+    cache: "no-store",
+  });
 
   if (!response.ok) {
     throw new Error("Failed to load tasks");
@@ -54,12 +58,16 @@ export async function fetchTasks(): Promise<Task[]> {
   return data.tasks;
 }
 
-export async function fetchRepositoryQueues(): Promise<RepositoryQueueSummary[]> {
+export async function fetchRepositoryQueues(): Promise<
+  RepositoryQueueSummary[]
+> {
   if (isMockDataMode()) {
     return mockFetchRepositoryQueues();
   }
 
-  const response = await fetch(`${apiBaseUrl()}/tasks/repositories`, { cache: "no-store" });
+  const response = await apiFetch(`${apiBaseUrl()}/tasks/repositories`, {
+    cache: "no-store",
+  });
 
   if (!response.ok) {
     throw new Error("Failed to load repository queues");
@@ -69,12 +77,17 @@ export async function fetchRepositoryQueues(): Promise<RepositoryQueueSummary[]>
   return data.repositories;
 }
 
-export async function fetchGitHubSync(repositoryId: string): Promise<GitHubSyncState> {
+export async function fetchGitHubSync(
+  repositoryId: string,
+): Promise<GitHubSyncState> {
   if (isMockDataMode()) {
     return mockFetchGitHubSync(repositoryId);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`, { cache: "no-store" });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`,
+    { cache: "no-store" },
+  );
 
   if (!response.ok) {
     throw new Error("Failed to load GitHub sync state");
@@ -83,14 +96,19 @@ export async function fetchGitHubSync(repositoryId: string): Promise<GitHubSyncS
   return ((await response.json()) as GitHubSyncResponse).sync;
 }
 
-export async function triggerGitHubSync(repositoryId: string): Promise<GitHubSyncResponse> {
+export async function triggerGitHubSync(
+  repositoryId: string,
+): Promise<GitHubSyncResponse> {
   if (isMockDataMode()) {
     return mockTriggerGitHubSync(repositoryId);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`, {
-    method: "POST"
-  });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/github-sync`,
+    {
+      method: "POST",
+    },
+  );
 
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as {
@@ -102,26 +120,37 @@ export async function triggerGitHubSync(repositoryId: string): Promise<GitHubSyn
   return (await response.json()) as GitHubSyncResponse;
 }
 
-export async function fetchProjectKnowledgeGraph(repositoryId: string): Promise<ProjectKnowledgeGraph> {
+export async function fetchProjectKnowledgeGraph(
+  repositoryId: string,
+): Promise<ProjectKnowledgeGraph> {
   if (isMockDataMode()) {
     return mockFetchProjectKnowledgeGraph(repositoryId);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph`, { cache: "no-store" });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph`,
+    { cache: "no-store" },
+  );
 
   if (!response.ok) {
     throw new Error("Failed to load project knowledge graph");
   }
 
-  return ((await response.json()) as ProjectKnowledgeGraphResponse).knowledgeGraph;
+  return ((await response.json()) as ProjectKnowledgeGraphResponse)
+    .knowledgeGraph;
 }
 
-export async function fetchRepositoryOnboarding(repositoryId: string): Promise<RepositoryOnboarding> {
+export async function fetchRepositoryOnboarding(
+  repositoryId: string,
+): Promise<RepositoryOnboarding> {
   if (isMockDataMode()) {
     return mockFetchRepositoryOnboarding(repositoryId);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/onboarding`, { cache: "no-store" });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/onboarding`,
+    { cache: "no-store" },
+  );
 
   if (!response.ok) {
     throw new Error("Failed to load repository onboarding");
@@ -130,12 +159,17 @@ export async function fetchRepositoryOnboarding(repositoryId: string): Promise<R
   return ((await response.json()) as RepositoryOnboardingResponse).onboarding;
 }
 
-export async function fetchRepositoryContextFiles(repositoryId: string): Promise<RepositoryContextFile[]> {
+export async function fetchRepositoryContextFiles(
+  repositoryId: string,
+): Promise<RepositoryContextFile[]> {
   if (isMockDataMode()) {
     return mockFetchRepositoryContextFiles(repositoryId);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/context-files`, { cache: "no-store" });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/context-files`,
+    { cache: "no-store" },
+  );
 
   if (!response.ok) {
     throw new Error("Failed to load repository context files");
@@ -154,15 +188,18 @@ export async function saveRepositoryContextFile(input: {
     return mockSaveRepositoryContextFile(input);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/context-files`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      kind: input.kind,
-      path: input.path,
-      content: input.content
-    })
-  });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/context-files`,
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: input.kind,
+        path: input.path,
+        content: input.content,
+      }),
+    },
+  );
 
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as {
@@ -174,44 +211,61 @@ export async function saveRepositoryContextFile(input: {
   return ((await response.json()) as RepositoryContextFilesResponse).files;
 }
 
-export async function generateProjectKnowledgeGraph(input: { repositoryId: string; full?: boolean }): Promise<ProjectKnowledgeGraph> {
+export async function generateProjectKnowledgeGraph(input: {
+  repositoryId: string;
+  full?: boolean;
+}): Promise<ProjectKnowledgeGraph> {
   if (isMockDataMode()) {
     return mockGenerateProjectKnowledgeGraph(input);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/knowledge-graph/generate`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ full: input.full })
-  });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/repositories/${encodeURIComponent(input.repositoryId)}/knowledge-graph/generate`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ full: input.full }),
+    },
+  );
 
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as {
       message?: string;
     };
-    throw new Error(data.message ?? "Failed to generate project knowledge graph");
+    throw new Error(
+      data.message ?? "Failed to generate project knowledge graph",
+    );
   }
 
-  return ((await response.json()) as ProjectKnowledgeGraphResponse).knowledgeGraph;
+  return ((await response.json()) as ProjectKnowledgeGraphResponse)
+    .knowledgeGraph;
 }
 
-export async function openProjectKnowledgeGraphDashboard(repositoryId: string): Promise<ProjectKnowledgeGraph> {
+export async function openProjectKnowledgeGraphDashboard(
+  repositoryId: string,
+): Promise<ProjectKnowledgeGraph> {
   if (isMockDataMode()) {
     return mockOpenProjectKnowledgeGraphDashboard(repositoryId);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph/dashboard`, {
-    method: "POST"
-  });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}/knowledge-graph/dashboard`,
+    {
+      method: "POST",
+    },
+  );
 
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as {
       message?: string;
     };
-    throw new Error(data.message ?? "Failed to start the Understand-Anything dashboard");
+    throw new Error(
+      data.message ?? "Failed to start the Understand-Anything dashboard",
+    );
   }
 
-  return ((await response.json()) as ProjectKnowledgeGraphResponse).knowledgeGraph;
+  return ((await response.json()) as ProjectKnowledgeGraphResponse)
+    .knowledgeGraph;
 }
 
 export async function fetchTrace(taskId: string): Promise<TaskTrace> {
@@ -219,7 +273,9 @@ export async function fetchTrace(taskId: string): Promise<TaskTrace> {
     return mockFetchTrace(taskId);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/tasks/${taskId}/trace`, { cache: "no-store" });
+  const response = await apiFetch(`${apiBaseUrl()}/tasks/${taskId}/trace`, {
+    cache: "no-store",
+  });
 
   if (!response.ok) {
     throw new Error("Failed to load task trace");
@@ -253,10 +309,15 @@ export async function fetchTraceReplay(input: {
         endedAt: span.endedAt,
         durationMs: span.durationMs,
         metadata: span.metadata,
-        canResumeFromHere: span.status === "failed" || span.status === "blocked",
+        canResumeFromHere:
+          span.status === "failed" || span.status === "blocked",
       })),
       resumeActions: [],
-      summary: { ...trace.summary, replayedSpans: trace.spans.length, remainingSpans: 0 },
+      summary: {
+        ...trace.summary,
+        replayedSpans: trace.spans.length,
+        remainingSpans: 0,
+      },
     };
   }
 
@@ -271,7 +332,7 @@ export async function fetchTraceReplay(input: {
   }
 
   const query = params.toString();
-  const response = await fetch(
+  const response = await apiFetch(
     `${apiBaseUrl()}/tasks/${encodeURIComponent(input.taskId)}/trace/replay${query ? `?${query}` : ""}`,
     { cache: "no-store" },
   );
@@ -289,9 +350,12 @@ export async function approveTaskPrd(taskId: string): Promise<Task> {
     return mockApproveTaskPrd(taskId);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/tasks/${encodeURIComponent(taskId)}/approve-prd`, {
-    method: "POST"
-  });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/tasks/${encodeURIComponent(taskId)}/approve-prd`,
+    {
+      method: "POST",
+    },
+  );
 
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as {
@@ -303,12 +367,16 @@ export async function approveTaskPrd(taskId: string): Promise<Task> {
   return ((await response.json()) as { task: Task }).task;
 }
 
-export async function fetchMemories(status: MemoryStatus): Promise<MemoryRecord[]> {
+export async function fetchMemories(
+  status: MemoryStatus,
+): Promise<MemoryRecord[]> {
   if (isMockDataMode()) {
     return mockFetchMemories(status);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/memories?status=${status}`, { cache: "no-store" });
+  const response = await apiFetch(`${apiBaseUrl()}/memories?status=${status}`, {
+    cache: "no-store",
+  });
 
   if (!response.ok) {
     throw new Error("Failed to load memories");
@@ -318,14 +386,20 @@ export async function fetchMemories(status: MemoryStatus): Promise<MemoryRecord[
   return data.memories;
 }
 
-export async function updateMemoryStatus(input: { id: string; status: Extract<MemoryStatus, "approved" | "rejected"> }): Promise<MemoryRecord> {
+export async function updateMemoryStatus(input: {
+  id: string;
+  status: Extract<MemoryStatus, "approved" | "rejected">;
+}): Promise<MemoryRecord> {
   if (isMockDataMode()) {
     return mockUpdateMemoryStatus(input);
   }
 
-  const response = await fetch(`${apiBaseUrl()}/memories/${input.id}/${input.status === "approved" ? "approve" : "reject"}`, {
-    method: "POST"
-  });
+  const response = await apiFetch(
+    `${apiBaseUrl()}/memories/${input.id}/${input.status === "approved" ? "approve" : "reject"}`,
+    {
+      method: "POST",
+    },
+  );
 
   if (!response.ok) {
     throw new Error("Failed to update memory");

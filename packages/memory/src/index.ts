@@ -1,11 +1,12 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type {
-  Artifact,
-  ContextMemory,
-  IssueContext,
-  JsonObject,
-  Task,
+import {
+  uniqueValues,
+  type Artifact,
+  type ContextMemory,
+  type IssueContext,
+  type JsonObject,
+  type Task,
 } from "@agent/shared";
 
 export type MemoryKind = "semantic" | "episodic" | "procedural" | "policy";
@@ -74,7 +75,10 @@ export type MemoryStore = {
   propose(records: MemoryRecord[]): Promise<MemoryRecord[]>;
   update(id: string, patch: MemoryRecordPatch): Promise<MemoryRecord>;
   delete(id: string): Promise<void>;
-  prune(input?: { maxRecords?: number; maxBytes?: number }): Promise<MemoryRecord[]>;
+  prune(input?: {
+    maxRecords?: number;
+    maxBytes?: number;
+  }): Promise<MemoryRecord[]>;
   approve(id: string): Promise<MemoryRecord>;
   reject(id: string): Promise<MemoryRecord>;
   search(issue: IssueContext, limit?: number): Promise<MemorySearchResult[]>;
@@ -86,8 +90,12 @@ type MemoryFile = {
 
 export class FileMemoryStore implements MemoryStore {
   private readonly options: Required<MemoryStoreOptions>;
+  private mutationQueue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly filePath: string, options: MemoryStoreOptions = {}) {
+  constructor(
+    private readonly filePath: string,
+    options: MemoryStoreOptions = {},
+  ) {
     this.options = {
       maxRecords: options.maxRecords ?? 500,
       maxBytes: options.maxBytes ?? 2_000_000,
@@ -117,58 +125,76 @@ export class FileMemoryStore implements MemoryStore {
   }
 
   async propose(records: MemoryRecord[]): Promise<MemoryRecord[]> {
-    const store = await this.read();
-    const existingIds = new Set(store.records.map((record) => record.id));
-    const nextRecords = records.map((record) => normalizeRecord({
-      ...record,
-      status: "proposed" as const,
-    }, this.options.maxRecordBytes));
+    return this.withMutation(async () => {
+      const store = await this.read();
+      const existingIds = new Set(store.records.map((record) => record.id));
+      const nextRecords = records.map((record) =>
+        normalizeRecord(
+          {
+            ...record,
+            status: "proposed" as const,
+          },
+          this.options.maxRecordBytes,
+        ),
+      );
 
-    for (const record of nextRecords) {
-      if (!existingIds.has(record.id)) {
-        store.records.push(record);
+      for (const record of nextRecords) {
+        if (!existingIds.has(record.id)) {
+          store.records.push(record);
+        }
       }
-    }
 
-    await this.write(this.trim(store));
-    return nextRecords;
+      await this.write(this.trim(store));
+      return nextRecords;
+    });
   }
 
   async update(id: string, patch: MemoryRecordPatch): Promise<MemoryRecord> {
-    const store = await this.read();
-    const index = store.records.findIndex((record) => record.id === id);
+    return this.withMutation(async () => {
+      const store = await this.read();
+      const index = store.records.findIndex((record) => record.id === id);
 
-    if (index < 0 || !store.records[index]) {
-      throw new Error(`Memory record not found: ${id}`);
-    }
+      if (index < 0 || !store.records[index]) {
+        throw new Error(`Memory record not found: ${id}`);
+      }
 
-    const next = normalizeRecord({
-      ...store.records[index],
-      ...patch,
-      id,
-      updatedAt: new Date().toISOString(),
-    }, this.options.maxRecordBytes);
-    store.records[index] = next;
-    await this.write(this.trim(store));
-    return next;
+      const next = normalizeRecord(
+        {
+          ...store.records[index],
+          ...patch,
+          id,
+          updatedAt: new Date().toISOString(),
+        },
+        this.options.maxRecordBytes,
+      );
+      store.records[index] = next;
+      await this.write(this.trim(store));
+      return next;
+    });
   }
 
   async delete(id: string): Promise<void> {
-    const store = await this.read();
-    const nextRecords = store.records.filter((record) => record.id !== id);
+    await this.withMutation(async () => {
+      const store = await this.read();
+      const nextRecords = store.records.filter((record) => record.id !== id);
 
-    if (nextRecords.length === store.records.length) {
-      throw new Error(`Memory record not found: ${id}`);
-    }
+      if (nextRecords.length === store.records.length) {
+        throw new Error(`Memory record not found: ${id}`);
+      }
 
-    await this.write({ records: nextRecords });
+      await this.write({ records: nextRecords });
+    });
   }
 
-  async prune(input: { maxRecords?: number; maxBytes?: number } = {}): Promise<MemoryRecord[]> {
-    const store = await this.read();
-    const next = this.trim(store, input);
-    await this.write(next);
-    return next.records;
+  async prune(
+    input: { maxRecords?: number; maxBytes?: number } = {},
+  ): Promise<MemoryRecord[]> {
+    return this.withMutation(async () => {
+      const store = await this.read();
+      const next = this.trim(store, input);
+      await this.write(next);
+      return next.records;
+    });
   }
 
   async approve(id: string): Promise<MemoryRecord> {
@@ -218,6 +244,15 @@ export class FileMemoryStore implements MemoryStore {
     await rename(tempPath, this.filePath);
   }
 
+  private async withMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.mutationQueue.then(operation, operation);
+    this.mutationQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
   private trim(
     store: MemoryFile,
     override: { maxRecords?: number; maxBytes?: number } = {},
@@ -260,7 +295,7 @@ function normalizeRecord(
     ...record,
     title: record.title.trim(),
     content,
-    tags: unique(record.tags).slice(0, 20),
+    tags: uniqueValues(record.tags).slice(0, 20),
     confidence: Math.max(0, Math.min(1, record.confidence)),
   };
 }
@@ -301,7 +336,7 @@ export function createTaskMemoryProposal(input: {
           `Quality gates: ${qualityGateSummary || "not recorded"}`,
           `Review risk: ${reviewRisk}`,
         ].join("\n"),
-        tags: unique([
+        tags: uniqueValues([
           "issue",
           planningDocument?.taskType ?? "unknown",
           ...input.task.issue.labels,
@@ -311,7 +346,7 @@ export function createTaskMemoryProposal(input: {
         evidence: {
           issueUrl: input.task.issue.url,
           prUrl: input.task.prUrl ?? null,
-          artifactTypes: unique(
+          artifactTypes: uniqueValues(
             (input.artifacts ?? []).map((artifact) => artifact.type),
           ),
         },
@@ -327,7 +362,7 @@ export function createTaskMemoryProposal(input: {
         repo: input.task.issue.repo,
         title: `Verification recipe from #${input.task.issue.number}`,
         content: `Use these quality gates for similar tasks: ${qualityGateSummary || "see repository quality_gates config"}.`,
-        tags: unique([
+        tags: uniqueValues([
           "verification",
           "quality-gates",
           planningDocument?.taskType ?? "unknown",
@@ -408,8 +443,4 @@ function tokenize(value: string): Set<string> {
       .map((term) => term.trim())
       .filter((term) => term.length >= 3),
   );
-}
-
-function unique<T>(items: T[]): T[] {
-  return [...new Set(items)];
 }

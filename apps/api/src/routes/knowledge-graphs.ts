@@ -1,15 +1,9 @@
-import {
-  access,
-  mkdir,
-  readdir,
-  readFile,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AppConfig, RepositoryConfig } from "@agent/config";
+import { pathExists } from "@agent/shared";
 import { getServices } from "../services/task-services.js";
 import {
   getProjectKnowledgeGraphState,
@@ -42,6 +36,8 @@ type RepositoryContextFile = {
   content: string;
   updatedAt?: string;
 };
+
+type KnowledgeGraphCopy = ReturnType<typeof copy>;
 
 export async function registerKnowledgeGraphRoutes(
   app: FastifyInstance,
@@ -88,7 +84,10 @@ export async function registerKnowledgeGraphRoutes(
       }
 
       return reply.code(202).send({
-        onboarding: await startRepositoryOnboarding(services.config, repository),
+        onboarding: await startRepositoryOnboarding(
+          services.config,
+          repository,
+        ),
       });
     },
   );
@@ -108,10 +107,7 @@ export async function registerKnowledgeGraphRoutes(
 
       try {
         return {
-          files: await listRepositoryContextFiles(
-            services.config,
-            repository,
-          ),
+          files: await listRepositoryContextFiles(services.config, repository),
         };
       } catch (error) {
         return reply.code(409).send({
@@ -124,47 +120,42 @@ export async function registerKnowledgeGraphRoutes(
   app.put<{
     Params: { repositoryId: string };
     Body: z.infer<typeof contextFileSchema>;
-  }>(
-    "/repositories/:repositoryId/context-files",
-    async (request, reply) => {
-      const parsed = contextFileSchema.safeParse(request.body ?? {});
+  }>("/repositories/:repositoryId/context-files", async (request, reply) => {
+    const parsed = contextFileSchema.safeParse(request.body ?? {});
 
-      if (!parsed.success) {
-        return reply.code(400).send({
-          message: "Invalid repository context file payload",
-          issues: parsed.error.issues,
-        });
-      }
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: "Invalid repository context file payload",
+        issues: parsed.error.issues,
+      });
+    }
 
-      const services = await getServices();
-      const repository = findConfiguredRepository(
-        services.config.repositories,
-        request.params.repositoryId,
+    const services = await getServices();
+    const repository = findConfiguredRepository(
+      services.config.repositories,
+      request.params.repositoryId,
+    );
+
+    if (!repository) {
+      return reply.code(404).send({ message: "Repository not found" });
+    }
+
+    try {
+      await writeRepositoryContextFile(
+        services.config,
+        repository,
+        parsed.data,
+        copy(request.headers["accept-language"]),
       );
-
-      if (!repository) {
-        return reply.code(404).send({ message: "Repository not found" });
-      }
-
-      try {
-        await writeRepositoryContextFile(
-          services.config,
-          repository,
-          parsed.data,
-        );
-        return {
-          files: await listRepositoryContextFiles(
-            services.config,
-            repository,
-          ),
-        };
-      } catch (error) {
-        return reply.code(409).send({
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    },
-  );
+      return {
+        files: await listRepositoryContextFiles(services.config, repository),
+      };
+    } catch (error) {
+      return reply.code(409).send({
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 
   app.get<{ Params: { repositoryId: string } }>(
     "/repositories/:repositoryId/knowledge-graph",
@@ -292,16 +283,17 @@ async function writeRepositoryContextFile(
   config: AppConfig,
   repository: RepositoryConfig,
   input: z.infer<typeof contextFileSchema>,
+  text: KnowledgeGraphCopy = copy(),
 ): Promise<void> {
   const repoDir = await ensureManagedRepositoryCheckout(config, repository);
-  const filePath = resolveContextFilePath(repoDir, repository, input);
+  const filePath = resolveContextFilePath(repoDir, repository, input, text);
 
   if (input.kind === "skill" && path.basename(filePath) !== "SKILL.md") {
-    throw new Error("Skill 文件路径必须以 SKILL.md 结尾。");
+    throw new Error(text.skillPathMustEndWithSkillMd);
   }
 
   if (!/\.(md|mdx|txt|ya?ml)$/i.test(filePath)) {
-    throw new Error("只能编辑 Skill 或 Rule 文本文件。");
+    throw new Error(text.onlyTextContextFiles);
   }
 
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -315,7 +307,7 @@ async function collectContextFiles(
 ): Promise<RepositoryContextFile[]> {
   const root = path.resolve(repoDir, relativeRoot);
 
-  if (!(await exists(root))) {
+  if (!(await pathExists(root))) {
     return [];
   }
 
@@ -370,7 +362,7 @@ async function ensureManagedRepositoryCheckout(
 ): Promise<string> {
   const repoDir = projectRepositoryDir(config, repository);
 
-  if (await exists(path.join(repoDir, ".git"))) {
+  if (await pathExists(path.join(repoDir, ".git"))) {
     return repoDir;
   }
 
@@ -381,6 +373,7 @@ function resolveContextFilePath(
   repoDir: string,
   repository: RepositoryConfig,
   input: z.infer<typeof contextFileSchema>,
+  text: KnowledgeGraphCopy,
 ): string {
   const root =
     input.kind === "skill"
@@ -390,7 +383,7 @@ function resolveContextFilePath(
   const filePath = path.resolve(repoDir, requestedPath);
 
   if (!isInsideDirectory(filePath, root)) {
-    throw new Error("只能编辑当前仓库配置的 Skill 或 Rule 目录。");
+    throw new Error(text.onlyConfiguredContextDirectories);
   }
 
   return filePath;
@@ -399,7 +392,8 @@ function resolveContextFilePath(
 function isInsideDirectory(filePath: string, root: string): boolean {
   const relative = path.relative(root, filePath);
   return (
-    relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
   );
 }
 
@@ -418,9 +412,27 @@ function displayContextFileName(
   return path.basename(filePath);
 }
 
-async function exists(filePath: string): Promise<boolean> {
-  return access(filePath).then(
-    () => true,
-    () => false,
-  );
+function copy(acceptLanguage?: string | string[]): {
+  skillPathMustEndWithSkillMd: string;
+  onlyTextContextFiles: string;
+  onlyConfiguredContextDirectories: string;
+} {
+  const language = Array.isArray(acceptLanguage)
+    ? acceptLanguage.join(",")
+    : acceptLanguage;
+  const locale = language?.toLowerCase().startsWith("en") ? "en" : "zh";
+
+  return locale === "en"
+    ? {
+        skillPathMustEndWithSkillMd: "Skill file paths must end with SKILL.md.",
+        onlyTextContextFiles: "Only Skill or Rule text files can be edited.",
+        onlyConfiguredContextDirectories:
+          "Only the configured Skill or Rule directories for this repository can be edited.",
+      }
+    : {
+        skillPathMustEndWithSkillMd: "Skill 文件路径必须以 SKILL.md 结尾。",
+        onlyTextContextFiles: "只能编辑 Skill 或 Rule 文本文件。",
+        onlyConfiguredContextDirectories:
+          "只能编辑当前仓库配置的 Skill 或 Rule 目录。",
+      };
 }

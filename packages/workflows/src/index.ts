@@ -16,7 +16,7 @@ export {
   shouldExtendReviewSelfCheck,
   shouldExtendSelfCheckAfterFailureKindChange,
   type ImplementationCheckpoint,
-  type IssueWorkflowResult
+  type IssueWorkflowResult,
 } from "./issue-workflow-runner.js";
 export {
   assertAgentPrBodyComplete,
@@ -30,10 +30,24 @@ export {
   validateAgentPrBodyCompleteness,
   type PrLocalVerificationInput,
   type PrLocalVerificationPlan,
-  type PrBodyCompletenessResult
+  type PrBodyCompletenessResult,
 } from "./pr-local-verification.js";
-export { createExecutionAgents, createWorkflowAgent, createWorkflowAgentRunner, selectProviderForComplexity } from "./agent-factory.js";
+export {
+  createExecutionAgents,
+  createWorkflowAgent,
+  createWorkflowAgentRunner,
+  selectProviderForComplexity,
+} from "./agent-factory.js";
 export { createArtifactId, writeTaskArtifact } from "./artifacts.js";
+export {
+  autoApprovePlanningPhase,
+  draftPlanningPhase,
+  implementAndVerifyPhase,
+  prepareContextPhase,
+  publishPrPhase,
+  type IssueWorkflowPhaseHost,
+} from "./phases/issue-workflow-phases.js";
+export { publishPrdIssueComment } from "./phases/planning.js";
 export {
   buildCodingExecutorEnv,
   buildCodingExecutorPrompt,
@@ -43,6 +57,11 @@ export {
   type CodingExecutorPromptInput,
   type CodingExecutorRunInput,
   type CodingExecutorRunResult,
-  type NormalizedImplementationExecutorConfig
+  type NormalizedImplementationExecutorConfig,
 } from "./coding-executor.js";
-export { planSchema, planningDocumentSchema, prdSchema, reviewSchema } from "./schemas.js";
+export {
+  planSchema,
+  planningDocumentSchema,
+  prdSchema,
+  reviewSchema,
+} from "./schemas.js";

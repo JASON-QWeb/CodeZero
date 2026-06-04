@@ -1,10 +1,21 @@
-# CodeZero Documentation
+# CodeZero 文档
 
-This directory is intentionally small. Previous planning documents were removed because they mixed older runtime assumptions with the current architecture.
+这个目录只放当前仍有维护价值的项目文档。README 负责讲清产品流程和启动方式，`docs/` 负责承接架构、运行时边界和核心技术细节。
 
-Current canonical documents:
+## 当前文档
 
-- [Architecture](ARCHITECTURE.md): the current AI SDK model layer, LangGraph workflow runtime, and OpenCode execution boundary.
-- [Refactor Plan](REFACTOR_PLAN.md): the implementation plan for moving the current codebase to that architecture.
+| 文档                        | 用途                                                                   |
+| :-------------------------- | :--------------------------------------------------------------------- |
+| [架构说明](ARCHITECTURE.md) | 当前系统形态、运行链路、责任边界和 workflow graph                      |
+| [核心技术](CORE_TECH.md)    | API、worker、LangGraph、AI SDK、OpenCode、沙箱、仓库智能理解和可观测性 |
 
-These two documents supersede all older product, runtime, workflow, memory, codebase-intelligence, and operations drafts.
+## 归档文档
+
+历史重构计划已经移动到 [archive/](archive/)。这些文档只作为背景材料保留，不再作为当前架构的入口文档。
+
+## 维护规则
+
+- 新增 docs 文档默认使用中文。
+- README 保持中英文两份：`README.md` 为默认中文入口，`README.en.md` 为英文版。
+- 计划类、阶段性方案类文档完成后放入 `docs/archive/`。
+- 当前入口文档只描述已经落地或正在维护的架构，避免混入旧运行时假设。

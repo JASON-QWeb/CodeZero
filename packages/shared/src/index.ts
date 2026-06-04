@@ -1,6 +1,155 @@
+import { access } from "node:fs/promises";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
+
+export async function pathExists(filePath: string): Promise<boolean> {
+  return access(filePath).then(
+    () => true,
+    () => false,
+  );
+}
+
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+export function uniqueValues<T>(items: T[]): T[] {
+  return [...new Set(items)];
+}
+
+export function isUniqueValue<T>(value: T, index: number, array: T[]): boolean {
+  return array.indexOf(value) === index;
+}
+
+export function uniqueNonEmptyStrings(values: string[]): string[] {
+  return uniqueValues(values.map((value) => value.trim()).filter(Boolean));
+}
+
+export type CircuitBreakerState = "closed" | "open" | "half_open";
+
+export type CircuitBreakerOptions = {
+  failureThreshold?: number;
+  resetTimeoutMs?: number;
+  shouldTrip?: (error: unknown) => boolean;
+};
+
+export class CircuitBreakerOpenError extends Error {
+  readonly serviceId: string;
+  readonly retryAfterMs: number;
+
+  constructor(serviceId: string, retryAfterMs: number) {
+    super(
+      `Circuit breaker for ${serviceId} is open; retry after ${retryAfterMs}ms`,
+    );
+    this.name = "CircuitBreakerOpenError";
+    this.serviceId = serviceId;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+export class CircuitBreaker {
+  private failureCount = 0;
+  private openedUntilMs = 0;
+  private state: CircuitBreakerState = "closed";
+
+  constructor(
+    readonly serviceId: string,
+    private readonly options: Required<CircuitBreakerOptions>,
+  ) {}
+
+  async run<T>(operation: () => Promise<T>): Promise<T> {
+    const now = Date.now();
+
+    if (this.state === "open") {
+      if (now < this.openedUntilMs) {
+        throw new CircuitBreakerOpenError(
+          this.serviceId,
+          this.openedUntilMs - now,
+        );
+      }
+
+      this.state = "half_open";
+    }
+
+    try {
+      const result = await operation();
+      this.recordSuccess();
+      return result;
+    } catch (error) {
+      this.recordFailure(error);
+      throw error;
+    }
+  }
+
+  snapshot(): {
+    serviceId: string;
+    state: CircuitBreakerState;
+    failureCount: number;
+    openedUntilMs: number;
+  } {
+    return {
+      serviceId: this.serviceId,
+      state: this.state,
+      failureCount: this.failureCount,
+      openedUntilMs: this.openedUntilMs,
+    };
+  }
+
+  reset(): void {
+    this.failureCount = 0;
+    this.openedUntilMs = 0;
+    this.state = "closed";
+  }
+
+  private recordSuccess(): void {
+    this.failureCount = 0;
+    this.openedUntilMs = 0;
+    this.state = "closed";
+  }
+
+  private recordFailure(error: unknown): void {
+    if (!this.options.shouldTrip(error)) {
+      return;
+    }
+
+    this.failureCount += 1;
+
+    if (this.failureCount >= this.options.failureThreshold) {
+      this.state = "open";
+      this.openedUntilMs = Date.now() + this.options.resetTimeoutMs;
+    }
+  }
+}
+
+const circuitBreakers = new Map<string, CircuitBreaker>();
+
+export function getCircuitBreaker(
+  serviceId: string,
+  options: CircuitBreakerOptions = {},
+): CircuitBreaker {
+  const breaker = circuitBreakers.get(serviceId);
+
+  if (breaker) {
+    return breaker;
+  }
+
+  const next = new CircuitBreaker(serviceId, {
+    failureThreshold: options.failureThreshold ?? 3,
+    resetTimeoutMs: options.resetTimeoutMs ?? 60_000,
+    shouldTrip: options.shouldTrip ?? (() => true),
+  });
+  circuitBreakers.set(serviceId, next);
+  return next;
+}
+
+export function resetCircuitBreakersForTests(): void {
+  for (const breaker of circuitBreakers.values()) {
+    breaker.reset();
+  }
+  circuitBreakers.clear();
+}
 
 export const taskStatuses = [
   "QUEUED",

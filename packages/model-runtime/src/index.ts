@@ -5,7 +5,12 @@ import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
 import type { AppConfig } from "@agent/config";
-import type { AgentRole, JsonObject, JsonValue } from "@agent/shared";
+import {
+  getCircuitBreaker,
+  type AgentRole,
+  type JsonObject,
+  type JsonValue,
+} from "@agent/shared";
 import { generateText, type LanguageModel } from "ai";
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
@@ -61,26 +66,31 @@ export class AiSdkModelProvider implements ModelProvider {
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     const timeoutMs = this.config.timeout_ms ?? 120_000;
-    const result = await runWithTransientRetry(
-      (abortSignal) =>
-        generateText({
-          model: this.model,
-          messages: request.messages.map((message) => ({
-            role: message.role === "tool" ? "user" : message.role,
-            content: message.content,
-          })),
-          temperature: this.config.temperature,
-          maxOutputTokens: this.config.max_tokens,
-          abortSignal,
-        }),
-      {
-        maxRetries: this.config.max_retries ?? 2,
-        timeoutMs,
-        timeoutMessage: () =>
-          new Error(
-            `Provider ${this.id} timed out after ${timeoutMs}ms while calling model ${this.config.model}`,
-          ),
-      },
+    const breaker = getCircuitBreaker(`model:${this.id}`, {
+      shouldTrip: isTransientModelError,
+    });
+    const result = await breaker.run(() =>
+      runWithTransientRetry(
+        (abortSignal) =>
+          generateText({
+            model: this.model,
+            messages: request.messages.map((message) => ({
+              role: message.role === "tool" ? "user" : message.role,
+              content: message.content,
+            })),
+            temperature: this.config.temperature,
+            maxOutputTokens: this.config.max_tokens,
+            abortSignal,
+          }),
+        {
+          maxRetries: this.config.max_retries ?? 2,
+          timeoutMs,
+          timeoutMessage: () =>
+            new Error(
+              `Provider ${this.id} timed out after ${timeoutMs}ms while calling model ${this.config.model}`,
+            ),
+        },
+      ),
     );
 
     return {
@@ -143,7 +153,10 @@ export async function runWithTransientRetry<T>(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const abortController = new AbortController();
-    const timeout = setTimeout(() => abortController.abort(), options.timeoutMs);
+    const timeout = setTimeout(
+      () => abortController.abort(),
+      options.timeoutMs,
+    );
 
     try {
       return {

@@ -1,12 +1,17 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import { createServer } from "node:net";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AppConfig, RepositoryConfig } from "@agent/config";
-import { createGitHubRemoteUrl, getGitHubAuthToken, redactRemoteUrl } from "@agent/github";
+import {
+  createGitHubRemoteUrl,
+  getGitHubAuthToken,
+  redactRemoteUrl,
+} from "@agent/github";
 import { runCommand, type CommandResult } from "@agent/sandbox";
+import { pathExists, shellQuote } from "@agent/shared";
 
 export const understandAnythingProjectUrl =
   "https://github.com/Lum1104/Understand-Anything";
@@ -150,7 +155,7 @@ export async function openProjectKnowledgeGraphDashboard(
 ): Promise<ProjectKnowledgeGraphState> {
   const graphFile = projectGraphFile(config, repository);
 
-  if (!(await exists(graphFile))) {
+  if (!(await pathExists(graphFile))) {
     throw new Error(
       "No Understand-Anything knowledge graph exists for this repository. Generate it first.",
     );
@@ -303,7 +308,7 @@ async function generateProjectKnowledgeGraph(
     );
   }
 
-  if (!(await exists(projectGraphFile(config, repository)))) {
+  if (!(await pathExists(projectGraphFile(config, repository)))) {
     throw new Error(
       "Official Understand-Anything analysis finished without producing .understand-anything/knowledge-graph.json.",
     );
@@ -328,7 +333,7 @@ export async function prepareRepositoryCheckout(
   );
   await mkdir(path.dirname(repoDir), { recursive: true });
 
-  if (!(await exists(path.join(repoDir, ".git")))) {
+  if (!(await pathExists(path.join(repoDir, ".git")))) {
     const result = await runCommand({
       cwd: path.dirname(repoDir),
       command: `git clone --depth 1 --branch ${shellQuote(repository.default_branch)} ${shellQuote(remoteUrl)} ${shellQuote(repoDir)}`,
@@ -383,7 +388,7 @@ async function resolveUnderstandAnythingPluginRoot(): Promise<
 
   for (const candidate of candidates) {
     if (
-      await exists(path.join(candidate, "skills", "understand", "SKILL.md"))
+      await pathExists(path.join(candidate, "skills", "understand", "SKILL.md"))
     ) {
       return candidate;
     }
@@ -394,7 +399,9 @@ async function resolveUnderstandAnythingPluginRoot(): Promise<
 
 async function prepareOfficialCore(pluginRoot: string): Promise<void> {
   if (
-    await exists(path.join(pluginRoot, "packages", "core", "dist", "index.js"))
+    await pathExists(
+      path.join(pluginRoot, "packages", "core", "dist", "index.js"),
+    )
   ) {
     return;
   }
@@ -548,17 +555,6 @@ function failureMessage(result: CommandResult): string {
   return (
     redactRemoteUrl(`${result.stderr}\n${result.stdout}`).trim().slice(-4000) ||
     `exit ${result.exitCode}`
-  );
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-async function exists(filePath: string): Promise<boolean> {
-  return access(filePath).then(
-    () => true,
-    () => false,
   );
 }
 

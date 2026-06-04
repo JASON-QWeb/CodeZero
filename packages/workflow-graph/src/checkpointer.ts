@@ -66,140 +66,12 @@ export function createDurableCheckpointer(
     return new PostgresLangGraphCheckpointSaver(config.storage.databaseUrl);
   }
 
-  return new FileLangGraphCheckpointSaver(config.workflowGraph.checkpointFilePath);
+  return new FileLangGraphCheckpointSaver(
+    config.workflowGraph.checkpointFilePath,
+  );
 }
 
-export class FileLangGraphCheckpointSaver extends BaseCheckpointSaver {
-  private queue: Promise<void> = Promise.resolve();
-
-  constructor(private readonly filePath: string) {
-    super();
-  }
-
-  async getTuple(config: RunnableConfigLike): Promise<CheckpointTuple | undefined> {
-    const store = await this.read();
-    const checkpoint = selectCheckpoint(store.checkpoints, config);
-    return checkpoint ? this.toTuple(checkpoint, store.writes, config) : undefined;
-  }
-
-  async *list(
-    config: RunnableConfigLike,
-    options: CheckpointListOptions = {},
-  ): AsyncGenerator<CheckpointTuple> {
-    const store = await this.read();
-    const candidates = listCheckpoints(store.checkpoints, config, options);
-    let remaining = options.limit;
-
-    for (const checkpoint of candidates) {
-      const tuple = await this.toTuple(checkpoint, store.writes);
-
-      if (options.filter && !metadataMatches(tuple.metadata, options.filter)) {
-        continue;
-      }
-
-      if (remaining !== undefined) {
-        if (remaining <= 0) {
-          break;
-        }
-
-        remaining -= 1;
-      }
-
-      yield tuple;
-    }
-  }
-
-  async put(
-    config: RunnableConfigLike,
-    checkpoint: Checkpoint,
-    metadata: CheckpointMetadata,
-    _newVersions: ChannelVersions,
-  ): Promise<RunnableConfigLike> {
-    const threadId = requiredString(config.configurable?.thread_id, "thread_id");
-    const checkpointNamespace = stringValue(config.configurable?.checkpoint_ns) ?? "";
-    const parentCheckpointId = stringValue(config.configurable?.checkpoint_id);
-    const preparedCheckpoint = copyCheckpoint(checkpoint);
-    const stored: StoredCheckpoint = {
-      threadId,
-      checkpointNamespace,
-      checkpointId: checkpoint.id,
-      parentCheckpointId,
-      checkpoint: await this.serialize(preparedCheckpoint),
-      metadata: await this.serialize(metadata),
-      createdAt: new Date().toISOString(),
-    };
-
-    await this.mutate((store) => {
-      store.checkpoints = [
-        ...store.checkpoints.filter(
-          (entry) =>
-            !sameCheckpoint(entry, threadId, checkpointNamespace, checkpoint.id),
-        ),
-        stored,
-      ];
-    });
-
-    return {
-      configurable: {
-        thread_id: threadId,
-        checkpoint_ns: checkpointNamespace,
-        checkpoint_id: checkpoint.id,
-      },
-    };
-  }
-
-  async putWrites(
-    config: RunnableConfigLike,
-    writes: PendingWrite[],
-    taskId: string,
-  ): Promise<void> {
-    const threadId = requiredString(config.configurable?.thread_id, "thread_id");
-    const checkpointNamespace = stringValue(config.configurable?.checkpoint_ns) ?? "";
-    const checkpointId = requiredString(
-      config.configurable?.checkpoint_id,
-      "checkpoint_id",
-    );
-    const storedWrites = await Promise.all(
-      writes.map(async ([channel, value], index): Promise<StoredWrite> => ({
-        threadId,
-        checkpointNamespace,
-        checkpointId,
-        taskId,
-        writeIndex: WRITES_IDX_MAP[String(channel)] ?? index,
-        channel: String(channel),
-        value: await this.serialize(value),
-        createdAt: new Date().toISOString(),
-      })),
-    );
-
-    await this.mutate((store) => {
-      for (const write of storedWrites) {
-        const existingIndex = store.writes.findIndex((entry) =>
-          sameWrite(entry, write),
-        );
-
-        if (existingIndex >= 0 && write.writeIndex >= 0) {
-          continue;
-        }
-
-        if (existingIndex >= 0) {
-          store.writes[existingIndex] = write;
-        } else {
-          store.writes.push(write);
-        }
-      }
-    });
-  }
-
-  async deleteThread(threadId: string): Promise<void> {
-    await this.mutate((store) => {
-      store.checkpoints = store.checkpoints.filter(
-        (checkpoint) => checkpoint.threadId !== threadId,
-      );
-      store.writes = store.writes.filter((write) => write.threadId !== threadId);
-    });
-  }
-
+abstract class BaseSerializingCheckpointSaver extends BaseCheckpointSaver {
   protected async toTuple(
     checkpoint: StoredCheckpoint,
     writes: StoredWrite[],
@@ -310,6 +182,159 @@ export class FileLangGraphCheckpointSaver extends BaseCheckpointSaver {
       Buffer.from(value.data, "base64"),
     ) as Promise<T>;
   }
+}
+
+export class FileLangGraphCheckpointSaver extends BaseSerializingCheckpointSaver {
+  private queue: Promise<void> = Promise.resolve();
+
+  constructor(private readonly filePath: string) {
+    super();
+  }
+
+  async getTuple(
+    config: RunnableConfigLike,
+  ): Promise<CheckpointTuple | undefined> {
+    const store = await this.read();
+    const checkpoint = selectCheckpoint(store.checkpoints, config);
+    return checkpoint
+      ? this.toTuple(checkpoint, store.writes, config)
+      : undefined;
+  }
+
+  async *list(
+    config: RunnableConfigLike,
+    options: CheckpointListOptions = {},
+  ): AsyncGenerator<CheckpointTuple> {
+    const store = await this.read();
+    const candidates = listCheckpoints(store.checkpoints, config, options);
+    let remaining = options.limit;
+
+    for (const checkpoint of candidates) {
+      const tuple = await this.toTuple(checkpoint, store.writes);
+
+      if (options.filter && !metadataMatches(tuple.metadata, options.filter)) {
+        continue;
+      }
+
+      if (remaining !== undefined) {
+        if (remaining <= 0) {
+          break;
+        }
+
+        remaining -= 1;
+      }
+
+      yield tuple;
+    }
+  }
+
+  async put(
+    config: RunnableConfigLike,
+    checkpoint: Checkpoint,
+    metadata: CheckpointMetadata,
+    _newVersions: ChannelVersions,
+  ): Promise<RunnableConfigLike> {
+    const threadId = requiredString(
+      config.configurable?.thread_id,
+      "thread_id",
+    );
+    const checkpointNamespace =
+      stringValue(config.configurable?.checkpoint_ns) ?? "";
+    const parentCheckpointId = stringValue(config.configurable?.checkpoint_id);
+    const preparedCheckpoint = copyCheckpoint(checkpoint);
+    const stored: StoredCheckpoint = {
+      threadId,
+      checkpointNamespace,
+      checkpointId: checkpoint.id,
+      parentCheckpointId,
+      checkpoint: await this.serialize(preparedCheckpoint),
+      metadata: await this.serialize(metadata),
+      createdAt: new Date().toISOString(),
+    };
+
+    await this.mutate((store) => {
+      store.checkpoints = [
+        ...store.checkpoints.filter(
+          (entry) =>
+            !sameCheckpoint(
+              entry,
+              threadId,
+              checkpointNamespace,
+              checkpoint.id,
+            ),
+        ),
+        stored,
+      ];
+    });
+
+    return {
+      configurable: {
+        thread_id: threadId,
+        checkpoint_ns: checkpointNamespace,
+        checkpoint_id: checkpoint.id,
+      },
+    };
+  }
+
+  async putWrites(
+    config: RunnableConfigLike,
+    writes: PendingWrite[],
+    taskId: string,
+  ): Promise<void> {
+    const threadId = requiredString(
+      config.configurable?.thread_id,
+      "thread_id",
+    );
+    const checkpointNamespace =
+      stringValue(config.configurable?.checkpoint_ns) ?? "";
+    const checkpointId = requiredString(
+      config.configurable?.checkpoint_id,
+      "checkpoint_id",
+    );
+    const storedWrites = await Promise.all(
+      writes.map(
+        async ([channel, value], index): Promise<StoredWrite> => ({
+          threadId,
+          checkpointNamespace,
+          checkpointId,
+          taskId,
+          writeIndex: WRITES_IDX_MAP[String(channel)] ?? index,
+          channel: String(channel),
+          value: await this.serialize(value),
+          createdAt: new Date().toISOString(),
+        }),
+      ),
+    );
+
+    await this.mutate((store) => {
+      for (const write of storedWrites) {
+        const existingIndex = store.writes.findIndex((entry) =>
+          sameWrite(entry, write),
+        );
+
+        if (existingIndex >= 0 && write.writeIndex >= 0) {
+          continue;
+        }
+
+        if (existingIndex >= 0) {
+          store.writes[existingIndex] = write;
+        } else {
+          store.writes.push(write);
+        }
+      }
+    });
+  }
+
+  async deleteThread(threadId: string): Promise<void> {
+    await this.mutate((store) => {
+      store.checkpoints = store.checkpoints.filter(
+        (checkpoint) => checkpoint.threadId !== threadId,
+      );
+      store.writes = store.writes.filter(
+        (write) => write.threadId !== threadId,
+      );
+    });
+  }
 
   private async read(): Promise<CheckpointFile> {
     const content = await readFile(this.filePath, "utf8").catch(() => "");
@@ -321,18 +346,23 @@ export class FileLangGraphCheckpointSaver extends BaseCheckpointSaver {
     try {
       const parsed = JSON.parse(content) as CheckpointFile;
       return {
-        checkpoints: Array.isArray(parsed.checkpoints) ? parsed.checkpoints : [],
+        checkpoints: Array.isArray(parsed.checkpoints)
+          ? parsed.checkpoints
+          : [],
         writes: Array.isArray(parsed.writes) ? parsed.writes : [],
       };
     } catch {
-      await rename(this.filePath, `${this.filePath}.corrupt-${Date.now()}`).catch(
-        () => undefined,
-      );
+      await rename(
+        this.filePath,
+        `${this.filePath}.corrupt-${Date.now()}`,
+      ).catch(() => undefined);
       return emptyCheckpointFile();
     }
   }
 
-  private async mutate(operation: (store: CheckpointFile) => void): Promise<void> {
+  private async mutate(
+    operation: (store: CheckpointFile) => void,
+  ): Promise<void> {
     const next = this.queue.then(async () => {
       const store = await this.read();
       operation(store);
@@ -353,12 +383,12 @@ export class FileLangGraphCheckpointSaver extends BaseCheckpointSaver {
   }
 }
 
-export class PostgresLangGraphCheckpointSaver extends FileLangGraphCheckpointSaver {
+export class PostgresLangGraphCheckpointSaver extends BaseSerializingCheckpointSaver {
   private readonly pool: Pool;
   private migration?: Promise<void>;
 
   constructor(databaseUrl: string) {
-    super("__postgres__");
+    super();
     this.pool = new Pool({ connectionString: databaseUrl });
   }
 
@@ -367,7 +397,9 @@ export class PostgresLangGraphCheckpointSaver extends FileLangGraphCheckpointSav
   ): Promise<CheckpointTuple | undefined> {
     const store = await this.readPostgres(config);
     const checkpoint = selectCheckpoint(store.checkpoints, config);
-    return checkpoint ? this.toTuple(checkpoint, store.writes, config) : undefined;
+    return checkpoint
+      ? this.toTuple(checkpoint, store.writes, config)
+      : undefined;
   }
 
   override async *list(
@@ -404,10 +436,16 @@ export class PostgresLangGraphCheckpointSaver extends FileLangGraphCheckpointSav
     _newVersions: ChannelVersions,
   ): Promise<RunnableConfigLike> {
     await this.migrate();
-    const threadId = requiredString(config.configurable?.thread_id, "thread_id");
-    const checkpointNamespace = stringValue(config.configurable?.checkpoint_ns) ?? "";
+    const threadId = requiredString(
+      config.configurable?.thread_id,
+      "thread_id",
+    );
+    const checkpointNamespace =
+      stringValue(config.configurable?.checkpoint_ns) ?? "";
     const parentCheckpointId = stringValue(config.configurable?.checkpoint_id);
-    const serializedCheckpoint = await this.serialize(copyCheckpoint(checkpoint));
+    const serializedCheckpoint = await this.serialize(
+      copyCheckpoint(checkpoint),
+    );
     const serializedMetadata = await this.serialize(metadata);
 
     await this.pool.query(
@@ -448,8 +486,12 @@ export class PostgresLangGraphCheckpointSaver extends FileLangGraphCheckpointSav
     taskId: string,
   ): Promise<void> {
     await this.migrate();
-    const threadId = requiredString(config.configurable?.thread_id, "thread_id");
-    const checkpointNamespace = stringValue(config.configurable?.checkpoint_ns) ?? "";
+    const threadId = requiredString(
+      config.configurable?.thread_id,
+      "thread_id",
+    );
+    const checkpointNamespace =
+      stringValue(config.configurable?.checkpoint_ns) ?? "";
     const checkpointId = requiredString(
       config.configurable?.checkpoint_id,
       "checkpoint_id",
@@ -496,7 +538,9 @@ export class PostgresLangGraphCheckpointSaver extends FileLangGraphCheckpointSav
   }
 
   private async migrate(): Promise<void> {
-    this.migration ??= this.pool.query(`
+    this.migration ??= this.pool
+      .query(
+        `
       create table if not exists langgraph_checkpoints (
         thread_id text not null,
         checkpoint_ns text not null,
@@ -522,7 +566,9 @@ export class PostgresLangGraphCheckpointSaver extends FileLangGraphCheckpointSav
         created_at timestamptz not null default now(),
         primary key (thread_id, checkpoint_ns, checkpoint_id, task_id, write_idx)
       );
-    `).then(() => undefined);
+    `,
+      )
+      .then(() => undefined);
     await this.migration;
   }
 
@@ -604,7 +650,11 @@ function buildCheckpointSelectQuery(input: {
 }): { sql: string; values: string[] } {
   const values: string[] = [];
   const filters: string[] = [];
-  const addFilter = (column: string, value: string | undefined, operator = "=") => {
+  const addFilter = (
+    column: string,
+    value: string | undefined,
+    operator = "=",
+  ) => {
     if (value === undefined) {
       return;
     }
@@ -625,7 +675,9 @@ function buildCheckpointSelectQuery(input: {
        from langgraph_checkpoints`,
       filters.length > 0 ? `where ${filters.join(" and ")}` : "",
       "order by checkpoint_id desc",
-    ].filter(Boolean).join("\n"),
+    ]
+      .filter(Boolean)
+      .join("\n"),
     values,
   };
 }
@@ -655,7 +707,9 @@ function buildWritesSelectQuery(input: {
        from langgraph_checkpoint_writes`,
       filters.length > 0 ? `where ${filters.join(" and ")}` : "",
       "order by write_idx asc",
-    ].filter(Boolean).join("\n"),
+    ]
+      .filter(Boolean)
+      .join("\n"),
     values,
   };
 }
@@ -665,7 +719,8 @@ function selectCheckpoint(
   config: RunnableConfigLike,
 ): StoredCheckpoint | undefined {
   const threadId = stringValue(config.configurable?.thread_id);
-  const checkpointNamespace = stringValue(config.configurable?.checkpoint_ns) ?? "";
+  const checkpointNamespace =
+    stringValue(config.configurable?.checkpoint_ns) ?? "";
   const checkpointId = getCheckpointId(config as CheckpointTuple["config"]);
   const candidates = checkpoints.filter(
     (checkpoint) =>
@@ -703,7 +758,8 @@ function metadataMatches(
   filter: Record<string, unknown>,
 ): boolean {
   return Object.entries(filter).every(
-    ([key, value]) => (metadata as Record<string, unknown> | undefined)?.[key] === value,
+    ([key, value]) =>
+      (metadata as Record<string, unknown> | undefined)?.[key] === value,
   );
 }
 
@@ -718,7 +774,10 @@ function compareCheckpointDesc(
 }
 
 function sameCheckpoint(
-  checkpoint: Pick<StoredCheckpoint, "threadId" | "checkpointNamespace" | "checkpointId">,
+  checkpoint: Pick<
+    StoredCheckpoint,
+    "threadId" | "checkpointNamespace" | "checkpointId"
+  >,
   threadId: string,
   checkpointNamespace: string,
   checkpointId: string,

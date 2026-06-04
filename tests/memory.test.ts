@@ -131,7 +131,33 @@ describe("memory", () => {
 
     await writeFile(filePath, "{not-json");
     expect(await store.list()).toEqual([]);
-    expect((await readdir(dir)).some((file) => file.includes(".corrupt-"))).toBe(true);
+    expect(
+      (await readdir(dir)).some((file) => file.includes(".corrupt-")),
+    ).toBe(true);
+  });
+
+  it("serializes concurrent mutations in a single file-backed store", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agent-memory-"));
+    const store = new FileMemoryStore(path.join(dir, "memory.json"));
+    const first = createTaskMemoryProposal({
+      task: createTask({ ...issue, number: 101, title: "First policy" }),
+    });
+    const second = createTaskMemoryProposal({
+      task: createTask({ ...issue, number: 102, title: "Second policy" }),
+    });
+
+    await Promise.all([
+      store.propose(first.records),
+      store.propose(second.records),
+    ]);
+
+    const recordIds = (await store.list()).map((record) => record.id);
+    expect(recordIds).toEqual(
+      expect.arrayContaining([
+        ...first.records.map((record) => record.id),
+        ...second.records.map((record) => record.id),
+      ]),
+    );
   });
 
   it("injects approved memory search results into ContextPack", async () => {
